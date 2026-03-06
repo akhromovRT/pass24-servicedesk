@@ -3,9 +3,10 @@ from __future__ import annotations
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from pathlib import Path
 
-from backend.tickets.router import router as tickets_router, _TICKETS
-from backend.tickets.schemas import TicketCreate
+from .tickets.router import router as tickets_router, _TICKETS
+from .tickets.schemas import TicketCreate
 
 
 def create_app() -> FastAPI:
@@ -21,7 +22,8 @@ def create_app() -> FastAPI:
     app.include_router(tickets_router)
 
     # Базовая графическая оболочка (Jinja2 шаблоны)
-    templates = Jinja2Templates(directory="backend/templates")
+    templates_dir = Path(__file__).resolve().parent / "templates"
+    templates = Jinja2Templates(directory=str(templates_dir))
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> HTMLResponse:
@@ -61,7 +63,7 @@ def create_app() -> FastAPI:
             access_point_id=access_point_id or None,
         )
         # Импортируем здесь, чтобы избежать циклов при старте
-        from backend.tickets.router import create_ticket
+        from .tickets.router import create_ticket
 
         create_ticket(payload=payload)
 
