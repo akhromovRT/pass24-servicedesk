@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <title>PASS24 Service Desk</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"
+    />
+    <style>
+      body {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 1.5rem;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 2fr) minmax(0, 1.3fr);
+        gap: 1.5rem;
+      }
+      @media (max-width: 900px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+      .ticket-card {
+        border-radius: 0.75rem;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        padding: 1rem 1.25rem;
+        background: linear-gradient(
+          135deg,
+          rgba(248, 250, 252, 0.9),
+          rgba(241, 245, 249, 0.9)
+        );
+        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.06);
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.1rem 0.6rem;
+        border-radius: 999px;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .badge-status {
+        background: rgba(59, 130, 246, 0.08);
+        color: #1d4ed8;
+      }
+      .badge-priority-low {
+        background: rgba(34, 197, 94, 0.08);
+        color: #16a34a;
+      }
+      .badge-priority-normal {
+        background: rgba(148, 163, 184, 0.15);
+        color: #4b5563;
+      }
+      .badge-priority-high {
+        background: rgba(249, 115, 22, 0.12);
+        color: #ea580c;
+      }
+      .badge-priority-critical {
+        background: rgba(239, 68, 68, 0.12);
+        color: #b91c1c;
+      }
+      .muted {
+        color: #6b7280;
+        font-size: 0.85rem;
+      }
+      .tickets-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.9rem;
+      }
+      .page-header h1 {
+        margin-bottom: 0.1rem;
+      }
+      .page-header p {
+        margin-top: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-header">
+      <h1>PASS24 Service Desk</h1>
+      <p class="muted">
+        Создавайте обращения и отслеживайте статус по объектам PASS24.
+      </p>
+    </header>
+
+    <main class="layout">
+      <section>
+        <h2>Последние тикеты</h2>
+        {% if tickets %}
+        <div class="tickets-list">
+          {% for ticket in tickets %}
+          <article class="ticket-card">
+            <header style="display: flex; justify-content: space-between; gap: 0.75rem;">
+              <div>
+                <strong>{{ ticket.title }}</strong>
+                <div class="muted">
+                  ID: {{ ticket.id }} · Автор: {{ ticket.creator_id }}
+                </div>
+              </div>
+              <div style="text-align: right;">
+                <span class="badge badge-status">
+                  {{ ticket.status.name }}
+                </span>
+                {% set pr = ticket.priority.name.lower() %}
+                <span class="badge badge-priority-{{ pr }}">
+                  {{ ticket.priority.name }}
+                </span>
+              </div>
+            </header>
+            <p style="margin-top: 0.5rem; white-space: pre-line;">
+              {{ ticket.description }}
+            </p>
+            <footer class="muted">
+              Объект: {{ ticket.object_id or "—" }} · Точка доступа:
+              {{ ticket.access_point_id or "—" }}<br />
+              Создан:
+              {{ ticket.created_at.strftime("%Y-%m-%d %H:%M") }}
+            </footer>
+          </article>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="muted">Пока нет тикетов. Создайте первый справа.</p>
+        {% endif %}
+      </section>
+
+      <section>
+        <h2>Новый тикет</h2>
+        <form method="post" action="/create">
+          <label>
+            Заголовок
+            <input
+              type="text"
+              name="title"
+              required
+              maxlength="200"
+              placeholder="Например: Не могу попасть в подъезд"
+            />
+          </label>
+
+          <label>
+            Описание
+            <textarea
+              name="description"
+              rows="4"
+              required
+              maxlength="4000"
+              placeholder="Кратко опишите проблему, время, подъезд/офис..."
+            ></textarea>
+          </label>
+
+          <label>
+            Объект (ЖК / БЦ)
+            <input
+              type="text"
+              name="object_id"
+              placeholder="Например: ЖК Солнечный, корпус 3"
+            />
+          </label>
+
+          <label>
+            Точка доступа
+            <input
+              type="text"
+              name="access_point_id"
+              placeholder="Например: Подъезд 3, домофон"
+            />
+          </label>
+
+          <label>
+            Идентификатор пользователя (для тестов)
+            <input
+              type="text"
+              name="creator_id"
+              value="demo-user"
+              placeholder="PASS24 user id"
+            />
+          </label>
+
+          <button type="submit">Создать тикет</button>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>
+
