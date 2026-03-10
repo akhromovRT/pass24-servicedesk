@@ -1,6 +1,6 @@
 import pytest
 
-from AndrewTEST.backend.tickets.models import Ticket, TicketPriority, TicketStatus
+from backend.tickets.models import Ticket, TicketPriority, TicketStatus
 
 
 def test_critical_priority_when_user_cannot_enter_home():
