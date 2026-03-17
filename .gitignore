@@ -101,3 +101,6 @@ coverage/
 
 main # Если бинарник называется main
 luac.out
+
+# Superpowers brainstorm sessions
+.superpowers/
