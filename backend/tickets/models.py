@@ -42,7 +42,16 @@ class Ticket:
     creator_id: str
     object_id: Optional[str] = None  # ЖК / БЦ
     access_point_id: Optional[str] = None  # дверь / домофон / шлагбаум
+    # Тип проблемы: авторизация, пропуска, шлагбаум и т.п.
     category: str = "general"
+    # Кто пишет: житель, гость, УК, администратор
+    user_role: Optional[str] = None
+    # Когда примерно произошла проблема (свободный текст)
+    occurred_at: Optional[str] = None
+    # Как связаться: телефон или email
+    contact: Optional[str] = None
+    # Отметка "не могу войти / въехать прямо сейчас"
+    urgent: bool = False
     title: str = ""
     description: str = ""
     status: TicketStatus = TicketStatus.NEW

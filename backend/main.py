@@ -4,6 +4,7 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
+from typing import Optional
 
 from .tickets.router import router as tickets_router, _TICKETS
 from .tickets.schemas import TicketCreate
@@ -48,8 +49,8 @@ def create_app() -> FastAPI:
         title: str = Form(...),
         description: str = Form(...),
         creator_id: str = Form("demo-user"),
-        object_id: str | None = Form(None),
-        access_point_id: str | None = Form(None),
+        object_id: Optional[str] = Form(None),
+        access_point_id: Optional[str] = Form(None),
     ) -> HTMLResponse:
         """
         Обработчик формы создания тикета.
