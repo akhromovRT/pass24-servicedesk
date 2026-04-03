@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from .auth.router import router as auth_router
 from .database import init_db
 from .knowledge.router import router as knowledge_router
+from .notifications.inbound import email_polling_loop
 from .tickets.router import router as tickets_router
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -18,9 +20,12 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Создание таблиц БД при старте приложения."""
+    """Создание таблиц БД и запуск фоновых задач."""
     await init_db()
+    # Запускаем фоновый опрос входящей почты
+    poll_task = asyncio.create_task(email_polling_loop())
     yield
+    poll_task.cancel()
 
 
 def create_app() -> FastAPI:
