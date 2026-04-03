@@ -309,6 +309,7 @@ async def add_comment(
             background_tasks.add_task(
                 notify_ticket_comment,
                 creator_email=creator_user.email,
+                ticket_id=ticket.id,
                 title=ticket.title,
                 comment_text=payload.text,
                 author_name=current_user.full_name or current_user.email,

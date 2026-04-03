@@ -52,6 +52,11 @@ async def _send_email(to: str, subject: str, html_body: str) -> None:
         logger.error("Ошибка отправки email: %s — %s", subject, exc)
 
 
+def ticket_subject_tag(ticket_id: str) -> str:
+    """Формирует тег тикета для темы письма: [PASS24-abc12345]."""
+    return f"[PASS24-{ticket_id[:8]}]"
+
+
 async def notify_ticket_created(
     creator_email: str,
     ticket_id: str,
@@ -60,9 +65,10 @@ async def notify_ticket_created(
 ) -> None:
     """Уведомление о создании тикета."""
     priority_label = PRIORITY_LABELS.get(priority, priority)
+    tag = ticket_subject_tag(ticket_id)
     await _send_email(
         to=creator_email,
-        subject=f"Заявка создана: {title}",
+        subject=f"{tag} Заявка создана: {title}",
         html_body=f"""
         <div style="font-family: -apple-system, Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <div style="background: #0f172a; color: #f8fafc; padding: 16px 24px; border-radius: 8px 8px 0 0;">
@@ -93,9 +99,10 @@ async def notify_ticket_status_changed(
     """Уведомление о смене статуса тикета."""
     old_label = STATUS_LABELS.get(old_status, old_status)
     new_label = STATUS_LABELS.get(new_status, new_status)
+    tag = ticket_subject_tag(ticket_id)
     await _send_email(
         to=creator_email,
-        subject=f"Статус заявки изменён: {title}",
+        subject=f"{tag} Статус заявки изменён: {title}",
         html_body=f"""
         <div style="font-family: -apple-system, Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <div style="background: #0f172a; color: #f8fafc; padding: 16px 24px; border-radius: 8px 8px 0 0;">
@@ -122,14 +129,16 @@ async def notify_ticket_status_changed(
 
 async def notify_ticket_comment(
     creator_email: str,
+    ticket_id: str,
     title: str,
     comment_text: str,
     author_name: str,
 ) -> None:
     """Уведомление о новом комментарии к тикету."""
+    tag = ticket_subject_tag(ticket_id)
     await _send_email(
         to=creator_email,
-        subject=f"Новый комментарий: {title}",
+        subject=f"{tag} Новый комментарий: {title}",
         html_body=f"""
         <div style="font-family: -apple-system, Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <div style="background: #0f172a; color: #f8fafc; padding: 16px 24px; border-radius: 8px 8px 0 0;">

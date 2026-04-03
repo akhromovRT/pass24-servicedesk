@@ -1,11 +1,14 @@
 """
-Приём входящих email и автоматическое создание тикетов.
+Приём входящих email: создание тикетов, ответы → комментарии, вложения, авто-анализ.
 
 Логика:
 1. Подключается к IMAP, читает непрочитанные письма
-2. Парсит тему и тело → определяет поля тикета
-3. Если достаточно информации → создаёт тикет, отвечает подтверждением
-4. Если недостаточно → отвечает с запросом уточнений
+2. Если тема содержит [PASS24-xxxxxxxx] → это ответ на тикет → добавить комментарий + вложения
+3. Иначе → новый тикет:
+   a. Парсит тему и тело → определяет категорию
+   b. Ищет релевантные статьи в базе знаний (FTS)
+   c. Если найдены → отправляет ссылки и спрашивает "помогло ли?"
+   d. Если нет → создаёт тикет, отвечает подтверждением
 """
 from __future__ import annotations
 
@@ -14,15 +17,20 @@ import email
 import imaplib
 import logging
 import re
+import uuid
 from email.header import decode_header
 from email.utils import parseaddr
+from pathlib import Path
 from typing import Optional
 
+from sqlalchemy import text as sa_text
 from sqlmodel import select
 
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
+
+UPLOAD_DIR = Path("/app/data/attachments")
 
 # Ключевые слова для определения категории
 CATEGORY_KEYWORDS = {
@@ -33,9 +41,12 @@ CATEGORY_KEYWORDS = {
     "app": ["приложен", "мобильн", "android", "ios", "обновлен", "установ"],
 }
 
+# Паттерн тега тикета в теме: [PASS24-abc12345]
+TICKET_TAG_RE = re.compile(r"\[PASS24-([a-f0-9]{8})\]", re.IGNORECASE)
+
 
 def _decode_mime_header(raw: str) -> str:
-    """Декодирует MIME-заголовок (Subject, From и т.д.)."""
+    """Декодирует MIME-заголовок."""
     parts = decode_header(raw)
     decoded = []
     for part, charset in parts:
@@ -50,12 +61,10 @@ def _extract_text_body(msg: email.message.Message) -> str:
     """Извлекает текст из email (text/plain или text/html fallback)."""
     if msg.is_multipart():
         for part in msg.walk():
-            content_type = part.get_content_type()
-            if content_type == "text/plain":
+            if part.get_content_type() == "text/plain":
                 payload = part.get_payload(decode=True)
                 charset = part.get_content_charset() or "utf-8"
                 return payload.decode(charset, errors="replace") if payload else ""
-        # Fallback на HTML
         for part in msg.walk():
             if part.get_content_type() == "text/html":
                 payload = part.get_payload(decode=True)
@@ -67,6 +76,43 @@ def _extract_text_body(msg: email.message.Message) -> str:
         charset = msg.get_content_charset() or "utf-8"
         return payload.decode(charset, errors="replace") if payload else ""
     return ""
+
+
+def _extract_attachments(msg: email.message.Message) -> list[dict]:
+    """Извлекает вложения из email (файлы, не inline-текст)."""
+    attachments = []
+    if not msg.is_multipart():
+        return attachments
+
+    for part in msg.walk():
+        content_disposition = str(part.get("Content-Disposition", ""))
+        content_type = part.get_content_type()
+
+        # Пропускаем текстовые части
+        if content_type in ("text/plain", "text/html") and "attachment" not in content_disposition:
+            continue
+
+        filename = part.get_filename()
+        if filename:
+            filename = _decode_mime_header(filename)
+        elif "attachment" in content_disposition:
+            ext = content_type.split("/")[-1] if "/" in content_type else "bin"
+            filename = f"attachment.{ext}"
+        else:
+            continue
+
+        payload = part.get_payload(decode=True)
+        if not payload:
+            continue
+
+        attachments.append({
+            "filename": filename,
+            "content_type": content_type,
+            "data": payload,
+            "size": len(payload),
+        })
+
+    return attachments
 
 
 def _detect_category(text: str) -> str:
@@ -83,20 +129,17 @@ def _clean_body(body: str) -> str:
     lines = body.split("\n")
     cleaned = []
     for line in lines:
-        # Остановиться на строках-разделителях подписей
         if line.strip().startswith("--") and len(line.strip()) <= 5:
             break
         if line.strip().startswith(">"):
             continue
         cleaned.append(line)
     result = "\n".join(cleaned).strip()
-    # Ограничить длину
     return result[:4000] if result else ""
 
 
 def _is_sufficient(subject: str, body: str) -> bool:
     """Проверяет достаточно ли информации для создания тикета."""
-    # Нужна тема (или тело > 10 символов) и описание > 20 символов
     has_title = len(subject.strip()) >= 3
     has_description = len(body.strip()) >= 20
     return has_title and has_description
@@ -131,13 +174,13 @@ def _fetch_unseen_emails() -> list[dict]:
             _, from_email = parseaddr(from_header)
             from_name = _decode_mime_header(from_header.split("<")[0].strip().strip('"'))
             body = _extract_text_body(msg)
-            message_id = msg.get("Message-ID", "")
+            attachments = _extract_attachments(msg)
 
-            # Пропускаем собственные письма (от support@)
+            # Пропускаем собственные письма
             if from_email.lower() == settings.smtp_user.lower():
                 continue
 
-            # Пропускаем auto-reply и bounce
+            # Пропускаем auto-reply
             if any(h in (msg.get("Auto-Submitted", "") or "").lower() for h in ["auto-replied", "auto-generated"]):
                 continue
 
@@ -146,7 +189,7 @@ def _fetch_unseen_emails() -> list[dict]:
                 "from_email": from_email,
                 "from_name": from_name or from_email.split("@")[0],
                 "body": _clean_body(body),
-                "message_id": message_id,
+                "attachments": attachments,
             })
 
         mail.logout()
@@ -156,142 +199,305 @@ def _fetch_unseen_emails() -> list[dict]:
     return results
 
 
-async def process_incoming_emails() -> int:
-    """
-    Обрабатывает входящие email: создаёт тикеты или запрашивает уточнения.
-    Возвращает количество обработанных писем.
-    """
-    from backend.notifications.email import _send_email
+async def _save_attachment(ticket_id: str, uploader_id: str, att_data: dict, session) -> None:
+    """Сохраняет вложение из email на диск и в БД."""
+    from backend.tickets.models import Attachment
 
-    # Читаем почту в отдельном потоке (imaplib — sync)
-    emails = await asyncio.to_thread(_fetch_unseen_emails)
-    if not emails:
-        return 0
+    file_id = str(uuid.uuid4())
+    ext = Path(att_data["filename"]).suffix or ".bin"
+    storage_path = f"{ticket_id}/{file_id}{ext}"
+    full_path = UPLOAD_DIR / storage_path
+    full_path.parent.mkdir(parents=True, exist_ok=True)
+    full_path.write_bytes(att_data["data"])
 
-    # Lazy import чтобы избежать circular imports
+    attachment = Attachment(
+        ticket_id=ticket_id,
+        uploader_id=uploader_id,
+        filename=att_data["filename"],
+        content_type=att_data["content_type"],
+        size=att_data["size"],
+        storage_path=storage_path,
+    )
+    session.add(attachment)
+
+
+async def _search_knowledge_base(query: str, session) -> list[dict]:
+    """Ищет релевантные статьи в базе знаний через FTS."""
+    from backend.knowledge.models import Article
+
+    fts_condition = sa_text(
+        "to_tsvector('russian', coalesce(title, '') || ' ' || coalesce(content, '')) "
+        "@@ plainto_tsquery('russian', :query)"
+    ).bindparams(query=query)
+
+    result = await session.execute(
+        select(Article)
+        .where(Article.is_published == True, fts_condition)  # noqa: E712
+        .limit(3)
+    )
+    articles = result.scalars().all()
+
+    if not articles:
+        # Fallback ILIKE
+        pattern = f"%{query[:50]}%"
+        result = await session.execute(
+            select(Article)
+            .where(
+                Article.is_published == True,  # noqa: E712
+                Article.title.ilike(pattern) | Article.content.ilike(pattern),
+            )
+            .limit(3)
+        )
+        articles = result.scalars().all()
+
+    return [{"title": a.title, "slug": a.slug, "category": a.category} for a in articles]
+
+
+async def _handle_reply(mail_data: dict, ticket_id_prefix: str) -> bool:
+    """Обрабатывает ответ на существующий тикет: комментарий + вложения."""
     from backend.database import async_session_factory
     from backend.auth.models import User
-    from backend.tickets.models import Ticket, TicketEvent
+    from backend.tickets.models import Ticket, TicketComment
 
-    processed = 0
-
-    for mail_data in emails:
-        from_email = mail_data["from_email"]
-        subject = mail_data["subject"]
-        body = mail_data["body"]
-        from_name = mail_data["from_name"]
-
-        if not _is_sufficient(subject, body):
-            # Недостаточно информации → запросить уточнения
-            await _send_email(
-                to=from_email,
-                subject=f"Re: {subject or 'Ваше обращение'} — нужна дополнительная информация",
-                html_body=f"""
-                <div style="font-family: -apple-system, Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                    <div style="background: #0f172a; color: #f8fafc; padding: 16px 24px; border-radius: 8px 8px 0 0;">
-                        <strong>PASS24 Service Desk</strong>
-                    </div>
-                    <div style="padding: 24px; background: #fff; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px;">
-                        <h2 style="margin: 0 0 16px; color: #1e293b;">Нужна дополнительная информация</h2>
-                        <p style="color: #475569;">Здравствуйте, {from_name}!</p>
-                        <p style="color: #475569;">Мы получили ваше обращение, но для создания заявки нам нужно больше деталей. Пожалуйста, ответьте на это письмо, указав:</p>
-                        <ol style="color: #475569; line-height: 1.8;">
-                            <li><strong>Тема обращения</strong> — кратко опишите проблему в теме письма</li>
-                            <li><strong>Подробное описание</strong> — что произошло, когда, где</li>
-                            <li><strong>Адрес объекта</strong> — ЖК или БЦ, подъезд, этаж</li>
-                            <li><strong>Контактный телефон</strong> — для оперативной связи</li>
-                        </ol>
-                        <p style="color: #64748b; font-size: 14px; margin-top: 16px;">
-                            После получения информации заявка будет создана автоматически.
-                        </p>
-                    </div>
-                </div>
-                """,
-            )
-            logger.info("Запрошены уточнения у %s по теме: %s", from_email, subject)
-            processed += 1
-            continue
-
-        # Достаточно информации → создаём тикет
-        category = _detect_category(f"{subject} {body}")
-        title = subject.strip() if subject.strip() else body[:100].strip()
-
-        async with async_session_factory() as session:
-            # Ищем пользователя по email
-            result = await session.execute(
-                select(User).where(User.email == from_email)
-            )
-            user = result.scalar_one_or_none()
-
-            # Если пользователя нет — создаём гостевого
-            if not user:
-                from backend.auth.utils import hash_password
-                import uuid
-                user = User(
-                    email=from_email,
-                    hashed_password=hash_password(uuid.uuid4().hex[:12]),
-                    full_name=from_name,
-                )
-                session.add(user)
-                await session.commit()
-                await session.refresh(user)
-                logger.info("Создан пользователь из email: %s", from_email)
-
-            # Создаём тикет
-            ticket = Ticket(
-                creator_id=str(user.id),
-                title=title[:200],
-                description=body[:4000],
-                category=category,
-                contact=from_email,
-            )
-            ticket.assign_priority_based_on_context()
-
-            event = TicketEvent(
-                ticket_id=ticket.id,
-                actor_id=str(user.id),
-                description="Тикет создан из email",
-            )
-
-            session.add(ticket)
-            session.add(event)
-            await session.commit()
-            await session.refresh(ticket)
-
-            logger.info(
-                "Тикет создан из email: %s -> %s (приоритет: %s, категория: %s)",
-                from_email, ticket.id[:8], ticket.priority.value, ticket.category,
-            )
-
-        # Подтверждение создателю
-        from backend.notifications.email import PRIORITY_LABELS
-        priority_label = PRIORITY_LABELS.get(
-            ticket.priority.value if hasattr(ticket.priority, 'value') else str(ticket.priority),
-            "Обычный",
+    async with async_session_factory() as session:
+        # Найти тикет по начальным 8 символам id
+        result = await session.execute(
+            select(Ticket).where(Ticket.id.startswith(ticket_id_prefix))
         )
+        ticket = result.scalar_one_or_none()
+        if not ticket:
+            logger.warning("Тикет %s... не найден для ответа от %s", ticket_id_prefix, mail_data["from_email"])
+            return False
+
+        # Найти пользователя
+        user_result = await session.execute(
+            select(User).where(User.email == mail_data["from_email"])
+        )
+        user = user_result.scalar_one_or_none()
+        author_name = user.full_name if user else mail_data["from_name"]
+        author_id = str(user.id) if user else "email"
+
+        # Добавить комментарий
+        body = mail_data["body"]
+        if body.strip():
+            comment = TicketComment(
+                ticket_id=ticket.id,
+                author_id=author_id,
+                author_name=author_name,
+                text=body,
+            )
+            session.add(comment)
+
+        # Сохранить вложения
+        for att in mail_data.get("attachments", []):
+            await _save_attachment(ticket.id, author_id, att, session)
+
+        await session.commit()
+
+        att_count = len(mail_data.get("attachments", []))
+        logger.info(
+            "Email-ответ → комментарий к тикету %s от %s (%d вложений)",
+            ticket.id[:8], mail_data["from_email"], att_count,
+        )
+        return True
+
+
+async def _handle_new_ticket(mail_data: dict) -> None:
+    """Создаёт новый тикет из email с авто-анализом по базе знаний."""
+    from backend.database import async_session_factory
+    from backend.auth.models import User
+    from backend.auth.utils import hash_password
+    from backend.tickets.models import Ticket, TicketEvent
+    from backend.notifications.email import _send_email, ticket_subject_tag, PRIORITY_LABELS
+
+    from_email = mail_data["from_email"]
+    subject = mail_data["subject"]
+    body = mail_data["body"]
+    from_name = mail_data["from_name"]
+
+    if not _is_sufficient(subject, body):
         await _send_email(
             to=from_email,
-            subject=f"Re: {title} — заявка создана",
+            subject=f"Re: {subject or 'Ваше обращение'} — нужна дополнительная информация",
             html_body=f"""
             <div style="font-family: -apple-system, Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <div style="background: #0f172a; color: #f8fafc; padding: 16px 24px; border-radius: 8px 8px 0 0;">
                     <strong>PASS24 Service Desk</strong>
                 </div>
                 <div style="padding: 24px; background: #fff; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px;">
-                    <h2 style="margin: 0 0 16px; color: #1e293b;">Заявка принята</h2>
+                    <h2 style="margin: 0 0 16px; color: #1e293b;">Нужна дополнительная информация</h2>
                     <p style="color: #475569;">Здравствуйте, {from_name}!</p>
-                    <p style="color: #475569; margin: 12px 0;"><strong>Тема:</strong> {title}</p>
-                    <p style="color: #475569; margin: 12px 0;"><strong>Приоритет:</strong> {priority_label}</p>
-                    <p style="color: #475569; margin: 12px 0;"><strong>Категория:</strong> {category}</p>
-                    <p style="color: #475569; margin: 12px 0;"><strong>ID:</strong> {ticket.id[:8]}...</p>
-                    <p style="color: #64748b; font-size: 14px; margin-top: 16px;">
-                        Мы приступим к рассмотрению вашей заявки в ближайшее время.
-                        Все обновления будут приходить на этот email.
-                    </p>
+                    <p style="color: #475569;">Для создания заявки, пожалуйста, ответьте на это письмо, указав:</p>
+                    <ol style="color: #475569; line-height: 1.8;">
+                        <li><strong>Тема</strong> — кратко опишите проблему</li>
+                        <li><strong>Описание</strong> — что произошло, когда, где</li>
+                        <li><strong>Адрес объекта</strong> — ЖК или БЦ</li>
+                    </ol>
                 </div>
             </div>
             """,
         )
+        return
+
+    category = _detect_category(f"{subject} {body}")
+    title = subject.strip() if subject.strip() else body[:100].strip()
+
+    async with async_session_factory() as session:
+        # Пользователь
+        result = await session.execute(select(User).where(User.email == from_email))
+        user = result.scalar_one_or_none()
+        if not user:
+            user = User(
+                email=from_email,
+                hashed_password=hash_password(uuid.uuid4().hex[:12]),
+                full_name=from_name,
+            )
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+
+        # Создаём тикет
+        ticket = Ticket(
+            creator_id=str(user.id),
+            title=title[:200],
+            description=body[:4000],
+            category=category,
+            contact=from_email,
+        )
+        ticket.assign_priority_based_on_context()
+
+        event = TicketEvent(
+            ticket_id=ticket.id,
+            actor_id=str(user.id),
+            description="Тикет создан из email",
+        )
+        session.add(ticket)
+        session.add(event)
+
+        # Сохранить вложения из письма
+        for att in mail_data.get("attachments", []):
+            await _save_attachment(ticket.id, str(user.id), att, session)
+
+        await session.commit()
+        await session.refresh(ticket)
+
+        # Авто-анализ: поиск по базе знаний
+        search_query = f"{title} {body[:200]}"
+        articles = await _search_knowledge_base(search_query, session)
+
+        tag = ticket_subject_tag(ticket.id)
+        priority_label = PRIORITY_LABELS.get(
+            ticket.priority.value if hasattr(ticket.priority, 'value') else str(ticket.priority),
+            "Обычный",
+        )
+        att_count = len(mail_data.get("attachments", []))
+
+        if articles:
+            # Найдены статьи — отправляем ссылки
+            articles_html = ""
+            base_url = "https://support.pass24pro.ru"
+            for art in articles:
+                articles_html += f"""
+                <li style="margin: 8px 0;">
+                    <a href="{base_url}/knowledge/{art['slug']}" style="color: #2563eb; text-decoration: none; font-weight: 500;">{art['title']}</a>
+                </li>
+                """
+
+            await _send_email(
+                to=from_email,
+                subject=f"{tag} Заявка принята — возможно, эти статьи помогут: {title}",
+                html_body=f"""
+                <div style="font-family: -apple-system, Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <div style="background: #0f172a; color: #f8fafc; padding: 16px 24px; border-radius: 8px 8px 0 0;">
+                        <strong>PASS24 Service Desk</strong>
+                    </div>
+                    <div style="padding: 24px; background: #fff; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px;">
+                        <h2 style="margin: 0 0 16px; color: #1e293b;">Заявка принята</h2>
+                        <p style="color: #475569;">Здравствуйте, {from_name}!</p>
+                        <p style="color: #475569;"><strong>Тема:</strong> {title}</p>
+                        <p style="color: #475569;"><strong>Приоритет:</strong> {priority_label}</p>
+                        {f'<p style="color: #475569;"><strong>Вложений:</strong> {att_count}</p>' if att_count else ''}
+
+                        <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                            <p style="color: #0369a1; font-weight: 600; margin: 0 0 8px;">
+                                💡 Возможно, эти статьи помогут решить вашу проблему:
+                            </p>
+                            <ul style="color: #475569; padding-left: 20px; margin: 0;">{articles_html}</ul>
+                        </div>
+
+                        <p style="color: #475569;">
+                            Если статьи не помогли — просто <strong>ответьте на это письмо</strong>,
+                            подробнее описав проблему, и менеджер техподдержки подключится к вашей заявке.
+                        </p>
+                        <p style="color: #64748b; font-size: 14px; margin-top: 16px;">
+                            ID заявки: {ticket.id[:8]}
+                        </p>
+                    </div>
+                </div>
+                """,
+            )
+        else:
+            # Статьи не найдены — обычное подтверждение
+            await _send_email(
+                to=from_email,
+                subject=f"{tag} Заявка принята: {title}",
+                html_body=f"""
+                <div style="font-family: -apple-system, Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <div style="background: #0f172a; color: #f8fafc; padding: 16px 24px; border-radius: 8px 8px 0 0;">
+                        <strong>PASS24 Service Desk</strong>
+                    </div>
+                    <div style="padding: 24px; background: #fff; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px;">
+                        <h2 style="margin: 0 0 16px; color: #1e293b;">Заявка принята</h2>
+                        <p style="color: #475569;">Здравствуйте, {from_name}!</p>
+                        <p style="color: #475569;"><strong>Тема:</strong> {title}</p>
+                        <p style="color: #475569;"><strong>Приоритет:</strong> {priority_label}</p>
+                        {f'<p style="color: #475569;"><strong>Вложений:</strong> {att_count}</p>' if att_count else ''}
+                        <p style="color: #475569; margin-top: 16px;">
+                            Менеджер техподдержки рассмотрит вашу заявку в ближайшее время.
+                            Все обновления будут приходить на этот email.
+                        </p>
+                        <p style="color: #64748b; font-size: 14px; margin-top: 16px;">
+                            ID заявки: {ticket.id[:8]}
+                        </p>
+                    </div>
+                </div>
+                """,
+            )
+
+    logger.info(
+        "Тикет из email: %s → %s (приоритет: %s, категория: %s, вложений: %d, статей найдено: %d)",
+        from_email, ticket.id[:8], ticket.priority.value, ticket.category,
+        att_count, len(articles),
+    )
+
+
+async def process_incoming_emails() -> int:
+    """
+    Обрабатывает входящие email.
+    - Ответы на тикеты → комментарии + вложения
+    - Новые письма → тикеты + авто-анализ по базе знаний
+    """
+    emails = await asyncio.to_thread(_fetch_unseen_emails)
+    if not emails:
+        return 0
+
+    processed = 0
+
+    for mail_data in emails:
+        subject = mail_data["subject"]
+
+        # Проверяем: это ответ на существующий тикет?
+        tag_match = TICKET_TAG_RE.search(subject)
+        if tag_match:
+            ticket_id_prefix = tag_match.group(1)
+            handled = await _handle_reply(mail_data, ticket_id_prefix)
+            if handled:
+                processed += 1
+                continue
+            # Если тикет не найден — обрабатываем как новый
+
+        # Новый тикет
+        await _handle_new_ticket(mail_data)
         processed += 1
 
     return processed
