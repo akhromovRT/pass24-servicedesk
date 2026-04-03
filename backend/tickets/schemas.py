@@ -41,7 +41,7 @@ class TicketCreate(BaseModel):
 class GuestTicketCreate(BaseModel):
     """Создание тикета без авторизации — только email."""
 
-    email: str = Field(..., max_length=320, description="Email заявителя")
+    email: str = Field(..., min_length=5, max_length=320, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$", description="Email заявителя")
     name: Optional[str] = Field(default=None, max_length=256, description="Имя")
     title: str = Field(..., max_length=200)
     description: str = Field(..., max_length=4000)
