@@ -302,6 +302,68 @@ async def _handle_reply(mail_data: dict, ticket_id_prefix: str) -> bool:
         return True
 
 
+async def _handle_reply_by_subject(mail_data: dict) -> bool:
+    """Fallback: ищет тикет по заголовку из Re: темы."""
+    from backend.database import async_session_factory
+    from backend.auth.models import User
+    from backend.tickets.models import Ticket, TicketComment
+
+    subject = mail_data["subject"]
+    # Убираем Re:/Fwd: и ищем оригинальный заголовок
+    clean = re.sub(r"^(Re|Fwd|FW):\s*", "", subject, flags=re.IGNORECASE).strip()
+    # Убираем известные префиксы из наших уведомлений
+    for prefix in ["Заявка создана: ", "Новый комментарий: ", "Статус заявки изменён: ",
+                    "Заявка принята: ", "Заявка принята — возможно, эти статьи помогут: "]:
+        if clean.startswith(prefix):
+            clean = clean[len(prefix):]
+            break
+
+    if len(clean) < 3:
+        return False
+
+    async with async_session_factory() as session:
+        # Ищем тикет с таким заголовком от этого пользователя
+        user_result = await session.execute(
+            select(User).where(User.email == mail_data["from_email"])
+        )
+        user = user_result.scalar_one_or_none()
+        if not user:
+            return False
+
+        result = await session.execute(
+            select(Ticket)
+            .where(Ticket.creator_id == str(user.id), Ticket.title == clean)
+            .order_by(Ticket.created_at.desc())
+            .limit(1)
+        )
+        ticket = result.scalar_one_or_none()
+        if not ticket:
+            return False
+
+        author_name = user.full_name
+        body = mail_data["body"]
+        if body.strip():
+            comment = TicketComment(
+                ticket_id=ticket.id,
+                author_id=str(user.id),
+                author_name=author_name,
+                text=body,
+            )
+            session.add(comment)
+
+        for att in mail_data.get("attachments", []):
+            await _save_attachment(ticket.id, str(user.id), att, session)
+
+        await session.commit()
+
+        att_count = len(mail_data.get("attachments", []))
+        logger.info(
+            "Email-ответ (по теме) → комментарий к тикету %s от %s (%d вложений)",
+            ticket.id[:8], mail_data["from_email"], att_count,
+        )
+        return True
+
+
 async def _handle_new_ticket(mail_data: dict) -> None:
     """Создаёт новый тикет из email с авто-анализом по базе знаний."""
     from backend.database import async_session_factory
@@ -486,7 +548,7 @@ async def process_incoming_emails() -> int:
     for mail_data in emails:
         subject = mail_data["subject"]
 
-        # Проверяем: это ответ на существующий тикет?
+        # 1. Ответ с тегом [PASS24-xxxxxxxx]
         tag_match = TICKET_TAG_RE.search(subject)
         if tag_match:
             ticket_id_prefix = tag_match.group(1)
@@ -494,9 +556,15 @@ async def process_incoming_emails() -> int:
             if handled:
                 processed += 1
                 continue
-            # Если тикет не найден — обрабатываем как новый
 
-        # Новый тикет
+        # 2. Ответ без тега (Re: ...) — поиск тикета по заголовку
+        if subject.lower().startswith("re:"):
+            handled = await _handle_reply_by_subject(mail_data)
+            if handled:
+                processed += 1
+                continue
+
+        # 3. Новый тикет
         await _handle_new_ticket(mail_data)
         processed += 1
 
