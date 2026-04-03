@@ -13,6 +13,7 @@ from .auth.router import router as auth_router
 from .database import run_migrations
 from .knowledge.router import router as knowledge_router
 from .notifications.inbound import email_polling_loop
+from .assistant.router import router as assistant_router
 from .stats.router import router as stats_router
 from .tickets.router import router as tickets_router
 
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(tickets_router)
     app.include_router(knowledge_router)
     app.include_router(stats_router)
+    app.include_router(assistant_router)
 
     @app.get("/health")
     async def health():

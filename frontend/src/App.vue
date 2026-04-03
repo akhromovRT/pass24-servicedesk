@@ -5,6 +5,7 @@ import Menubar from 'primevue/menubar'
 import Button from 'primevue/button'
 import Toast from 'primevue/toast'
 import { useAuthStore } from './stores/auth'
+import AiChat from './components/AiChat.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -80,6 +81,8 @@ function logout() {
     <main class="layout-main">
       <router-view />
     </main>
+
+    <AiChat v-if="auth.isLoggedIn" />
   </div>
 </template>
 

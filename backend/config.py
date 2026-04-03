@@ -22,6 +22,14 @@ class Settings(BaseSettings):
     imap_port: int = 993
     imap_poll_interval: int = 60  # секунд
 
+    # AI Assistant (Claude + Qdrant)
+    anthropic_api_key: str = ""
+    anthropic_base_url: str = "https://api.anthropic.com"
+    anthropic_model: str = "claude-sonnet-4-20250514"
+    qdrant_url: str = "http://pass24-qdrant:6333"
+    qdrant_api_key: str = ""
+    qdrant_collection: str = "pass24_knowledge"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
