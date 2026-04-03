@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .auth.router import router as auth_router
 from .database import init_db
 from .knowledge.router import router as knowledge_router
 from .tickets.router import router as tickets_router
+
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 
 @asynccontextmanager
@@ -49,6 +54,18 @@ def create_app() -> FastAPI:
     async def health():
         """Проверка работоспособности сервиса."""
         return {"status": "ok"}
+
+    # Раздача SPA: static файлы + fallback на index.html для vue-router
+    if STATIC_DIR.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(STATIC_DIR / "assets")), name="static-assets")
+
+        @app.get("/{full_path:path}")
+        async def serve_spa(request: Request, full_path: str):
+            """Отдаёт index.html для всех не-API путей (SPA fallback)."""
+            file_path = STATIC_DIR / full_path
+            if file_path.is_file():
+                return FileResponse(str(file_path))
+            return FileResponse(str(STATIC_DIR / "index.html"))
 
     return app
 
