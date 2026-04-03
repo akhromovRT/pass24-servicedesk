@@ -37,12 +37,12 @@ const sections: Section[] = [
     gradient: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
     guides: [
       { title: 'Установка и первый вход', description: 'Скачивание, регистрация, настройка профиля', icon: 'pi pi-download', slug: 'kak-ustanovit-i-nastroit-prilozhenie-pass24' },
-      { title: 'Создание пропуска для пешехода', description: 'Пошаговая инструкция для гостевого прохода', icon: 'pi pi-user', slug: 'mob-propusk-peshekhod' },
-      { title: 'Создание пропуска на автомобиль', description: 'Пропуск для проезда через шлагбаум', icon: 'pi pi-car', slug: 'mob-propusk-avto' },
-      { title: 'Приглашение — гость заполняет сам', description: 'Отправьте ссылку, гость введёт свои данные', icon: 'pi pi-send', slug: 'mob-priglashenie' },
-      { title: 'Управление пропусками', description: 'Мои пропуска: поиск, шаблоны, закрытие', icon: 'pi pi-list', slug: 'mob-moi-propuska' },
-      { title: 'Запросы в УК', description: 'Доверенность, новый адрес, постоянный пропуск, обращение в УК', icon: 'pi pi-file-edit', slug: 'mob-zaprosy' },
-      { title: 'FAQ по приложению', description: '9 частых вопросов и ответов', icon: 'pi pi-question-circle', slug: 'mob-faq', badge: 'FAQ' },
+      { title: 'Создание пропуска для пешехода', description: 'Пошаговая инструкция для гостевого прохода', icon: 'pi pi-user', slug: 'sozdanie-propuska-dlya-peshekhoda-v-mobilnom-prilozhenii' },
+      { title: 'Создание пропуска на автомобиль', description: 'Пропуск для проезда через шлагбаум', icon: 'pi pi-car', slug: 'sozdanie-propuska-na-avtomobil-v-mobilnom-prilozhenii' },
+      { title: 'Приглашение — гость заполняет сам', description: 'Отправьте ссылку, гость введёт свои данные', icon: 'pi pi-send', slug: 'priglashenie-gost-zapolnyaet-dannye-samostoyatelno' },
+      { title: 'Управление пропусками', description: 'Мои пропуска: поиск, шаблоны, закрытие', icon: 'pi pi-list', slug: 'upravlenie-propuskami-razdel-moi-propuska' },
+      { title: 'Запросы в УК', description: 'Доверенность, новый адрес, постоянный пропуск, обращение в УК', icon: 'pi pi-file-edit', slug: 'zaprosy-v-mobilnom-prilozhenii-doverennost-adres-obrashchenie-v-uk' },
+      { title: 'FAQ по приложению', description: '9 частых вопросов и ответов', icon: 'pi pi-question-circle', slug: 'faq-po-mobilnomu-prilozheniyu-pass24', badge: 'FAQ' },
     ],
   },
   {
@@ -53,12 +53,12 @@ const sections: Section[] = [
     color: '#8b5cf6',
     gradient: 'linear-gradient(135deg, #8b5cf6, #6d28d9)',
     guides: [
-      { title: 'Модуль «Пропуска»', description: 'Создание, закрытие, массовые операции, экспорт', icon: 'pi pi-id-card', slug: 'web-modul-propuska' },
-      { title: 'Модуль «Пользователи»', description: 'Добавление, импорт, блокировка пользователей', icon: 'pi pi-users', slug: 'web-modul-polzovateli' },
-      { title: 'Модуль «Запросы»', description: 'Одобрение заявок от жителей на пропуска и доступ', icon: 'pi pi-inbox', slug: 'web-modul-zaprosy' },
-      { title: 'Модуль «Адреса»', description: 'Управление адресами, импорт, привязка жителей', icon: 'pi pi-map-marker', slug: 'web-modul-adresa' },
-      { title: 'Модуль «Объекты»', description: 'Настройки объекта, КПП, типы транспорта, чёрный список', icon: 'pi pi-building', slug: 'web-modul-obekty' },
-      { title: 'Массовая рассылка пропусков', description: 'Импорт из Excel и массовая отправка', icon: 'pi pi-upload', slug: 'web-massovaya-rassylka' },
+      { title: 'Модуль «Пропуска»', description: 'Создание, закрытие, массовые операции, экспорт', icon: 'pi pi-id-card', slug: 'modul-propuska-sozdanie-i-upravlenie-v-veb-interfeyse' },
+      { title: 'Модуль «Пользователи»', description: 'Добавление, импорт, блокировка пользователей', icon: 'pi pi-users', slug: 'modul-polzovateli-upravlenie-zhitelyami-i-sotrudnikami' },
+      { title: 'Модуль «Запросы»', description: 'Одобрение заявок от жителей на пропуска и доступ', icon: 'pi pi-inbox', slug: 'modul-zaprosy-odobrenie-zayavok-ot-zhiteley' },
+      { title: 'Модуль «Адреса»', description: 'Управление адресами, импорт, привязка жителей', icon: 'pi pi-map-marker', slug: 'modul-adresa-upravlenie-adresami-obekta' },
+      { title: 'Модуль «Объекты»', description: 'Настройки объекта, КПП, типы транспорта, чёрный список', icon: 'pi pi-building', slug: 'modul-obekty-nastroyki-zhk-bts' },
+      { title: 'Массовая рассылка пропусков', description: 'Импорт из Excel и массовая отправка', icon: 'pi pi-upload', slug: 'massovaya-rassylka-peshekhodnykh-propuskov' },
     ],
   },
   {
@@ -69,9 +69,9 @@ const sections: Section[] = [
     color: '#f59e0b',
     gradient: 'linear-gradient(135deg, #f59e0b, #d97706)',
     guides: [
-      { title: 'Установка PASS24.Key', description: 'Скачивание приложения и активация ключа', icon: 'pi pi-download', slug: 'ble-ustanovka' },
-      { title: 'Активация BLE-ключа по QR-коду', description: 'Сканирование QR, подключение Bluetooth', icon: 'pi pi-qrcode', slug: 'ble-aktivatsiya-qr' },
-      { title: 'Настройка Bluetooth и разрешений', description: 'iOS и Android — какие разрешения нужны', icon: 'pi pi-cog', slug: 'ble-nastroyka-bluetooth' },
+      { title: 'Установка PASS24.Key', description: 'Скачивание приложения и активация ключа', icon: 'pi pi-download', slug: 'ustanovka-prilozheniya-pass24-key-dlya-ble-klyuchey' },
+      { title: 'Активация BLE-ключа по QR-коду', description: 'Сканирование QR, подключение Bluetooth', icon: 'pi pi-qrcode', slug: 'aktivatsiya-ble-klyucha-po-qr-kodu' },
+      { title: 'Настройка Bluetooth и разрешений', description: 'iOS и Android — какие разрешения нужны', icon: 'pi pi-cog', slug: 'nastroyka-bluetooth-i-razresheniy-dlya-pass24-key' },
     ],
   },
   {
@@ -82,8 +82,8 @@ const sections: Section[] = [
     color: '#10b981',
     gradient: 'linear-gradient(135deg, #10b981, #059669)',
     guides: [
-      { title: 'Как работает QR-пропуск', description: 'Полный цикл: создание → отправка → проход → деактивация', icon: 'pi pi-sync', slug: 'qr-kak-rabotaet' },
-      { title: 'Создание приглашения с QR-кодом', description: 'Пошаговая инструкция для жителя', icon: 'pi pi-plus', slug: 'qr-sozdanie-priglasheniya' },
+      { title: 'Как работает QR-пропуск', description: 'Полный цикл: создание → отправка → проход → деактивация', icon: 'pi pi-sync', slug: 'kak-rabotaet-qr-propusk-v-pass24' },
+      { title: 'Создание приглашения с QR-кодом', description: 'Пошаговая инструкция для жителя', icon: 'pi pi-plus', slug: 'sozdanie-priglasheniya-s-qr-kodom-poshagovaya-instruktsiya' },
     ],
   },
   {
@@ -106,7 +106,7 @@ const sections: Section[] = [
     color: '#0ea5e9',
     gradient: 'linear-gradient(135deg, #0ea5e9, #0284c7)',
     guides: [
-      { title: 'Заказ пропуска через Telegram', description: 'Бот @PASS24ROBOT: подтверждение, выбор объекта, создание пропуска', icon: 'pi pi-comment', slug: 'telegram-bot-propusk' },
+      { title: 'Заказ пропуска через Telegram', description: 'Бот @PASS24ROBOT: подтверждение, выбор объекта, создание пропуска', icon: 'pi pi-comment', slug: 'zakaz-propuska-cherez-telegram-bot-pass24' },
     ],
   },
 ]
