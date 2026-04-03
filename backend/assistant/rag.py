@@ -56,15 +56,16 @@ def search_knowledge(query: str, limit: int = 5) -> list[dict]:
 
         # Ищем в Qdrant
         qdrant = _get_qdrant()
-        results = qdrant.search(
+        from qdrant_client.models import models
+        results = qdrant.query_points(
             collection_name=settings.qdrant_collection,
-            query_vector=query_vector,
+            query=query_vector,
             limit=limit,
             with_payload=True,
         )
 
         docs = []
-        for point in results:
+        for point in results.points:
             docs.append({
                 "text": point.payload.get("text", "")[:2000],
                 "source_file": point.payload.get("source_file", "unknown"),
