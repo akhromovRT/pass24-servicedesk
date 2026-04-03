@@ -30,12 +30,9 @@ def _get_openai():
     global _openai_client
     if _openai_client is None:
         from openai import OpenAI
-        # Используем тот же proxy что и pass24-api
-        base_url = settings.anthropic_base_url.replace("/anthropic", "/openai/v1")
-        _openai_client = OpenAI(
-            api_key=settings.anthropic_api_key,
-            base_url=base_url,
-        )
+        base_url = settings.openai_base_url or None
+        api_key = settings.openai_api_key or settings.anthropic_api_key
+        _openai_client = OpenAI(api_key=api_key, base_url=base_url)
     return _openai_client
 
 
