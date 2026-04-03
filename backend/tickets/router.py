@@ -33,7 +33,7 @@ async def create_ticket(
 ) -> TicketRead:
     """Создать новый тикет. Автор определяется по JWT-токену."""
     ticket = Ticket(
-        creator_id=current_user.id,
+        creator_id=str(current_user.id),
         title=payload.title,
         description=payload.description,
         category=payload.category,
@@ -49,7 +49,7 @@ async def create_ticket(
     # Событие создания
     event = TicketEvent(
         ticket_id=ticket.id,
-        actor_id=current_user.id,
+        actor_id=str(current_user.id),
         description="Тикет создан",
     )
 
@@ -163,7 +163,7 @@ async def update_ticket_status(
 
     try:
         event = ticket.transition(
-            actor_id=current_user.id,
+            actor_id=str(current_user.id),
             new_status=payload.new_status,
         )
     except ValueError as exc:
@@ -206,7 +206,7 @@ async def add_comment(
 
     comment = TicketComment(
         ticket_id=ticket_id,
-        author_id=current_user.id,
+        author_id=str(current_user.id),
         author_name=current_user.full_name or "",
         text=payload.text,
     )
