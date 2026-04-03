@@ -23,6 +23,12 @@ const menuItems = computed(() => {
       class: route.path === '/' || route.path.startsWith('/tickets') ? 'p-menuitem-active' : '',
     },
     {
+      label: 'Инструкции',
+      icon: 'pi pi-map',
+      command: () => router.push('/instructions'),
+      class: route.path === '/instructions' ? 'p-menuitem-active' : '',
+    },
+    {
       label: 'База знаний',
       icon: 'pi pi-book',
       command: () => router.push('/knowledge'),
