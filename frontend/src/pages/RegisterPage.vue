@@ -20,9 +20,8 @@ const error = ref('')
 const submitted = ref(false)
 
 const roleOptions = [
-  { label: 'Житель', value: 'resident' },
+  { label: 'Житель / сотрудник', value: 'resident' },
   { label: 'Администратор УК', value: 'property_manager' },
-  { label: 'Агент поддержки', value: 'support_agent' },
 ]
 
 const emailInvalid = () => submitted.value && !email.value.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)

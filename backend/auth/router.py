@@ -19,7 +19,19 @@ async def register(
     payload: UserCreate,
     session: AsyncSession = Depends(get_session),
 ) -> UserRead:
-    """Регистрация нового пользователя."""
+    """Регистрация нового пользователя.
+
+    Роли support_agent и admin нельзя выбрать при регистрации —
+    они назначаются только администратором.
+    """
+    from .models import UserRole
+
+    SELF_REGISTER_ROLES = {UserRole.RESIDENT, UserRole.PROPERTY_MANAGER}
+    if payload.role not in SELF_REGISTER_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Эту роль нельзя выбрать при регистрации",
+        )
 
     # Проверяем уникальность email
     result = await session.execute(select(User).where(User.email == payload.email))
