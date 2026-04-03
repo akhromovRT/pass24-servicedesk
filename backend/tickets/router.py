@@ -35,6 +35,8 @@ from .schemas import (
     AttachmentRead,
     CommentCreate,
     CommentRead,
+    GuestTicketCreate,
+    GuestTicketResponse,
     TicketCreate,
     TicketListResponse,
     TicketRead,
@@ -51,6 +53,114 @@ def _ticket_load_options():
     ]
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
+
+
+@router.post("/guest", response_model=GuestTicketResponse, status_code=status.HTTP_201_CREATED)
+async def create_guest_ticket(
+    payload: GuestTicketCreate,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+) -> GuestTicketResponse:
+    """
+    Создание тикета без авторизации — по email.
+
+    Если email уже зарегистрирован → создаёт тикет от имени существующего пользователя.
+    Если email новый → авто-регистрирует пользователя и создаёт тикет.
+    """
+    from backend.auth.models import User
+    from backend.auth.utils import hash_password
+    from backend.notifications.email import _send_email, notify_ticket_created
+    import uuid as uuid_mod
+
+    email = payload.email.strip().lower()
+
+    # Ищем пользователя по email
+    result = await session.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+
+    is_new_user = False
+    if not user:
+        # Авто-регистрация
+        temp_password = uuid_mod.uuid4().hex[:10]
+        user = User(
+            email=email,
+            hashed_password=hash_password(temp_password),
+            full_name=payload.name or email.split("@")[0],
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        is_new_user = True
+
+    # Создаём тикет
+    ticket = Ticket(
+        creator_id=str(user.id),
+        title=payload.title,
+        description=payload.description,
+        product=payload.product or "pass24_online",
+        category=payload.category or "other",
+        ticket_type=payload.ticket_type or "problem",
+        source="web",
+        object_name=payload.object_name,
+        contact_name=payload.name or user.full_name,
+        contact_email=email,
+        contact_phone=payload.contact_phone,
+        urgent=payload.urgent,
+    )
+    ticket.auto_detect_category()
+    ticket.assign_priority_based_on_context()
+
+    event = TicketEvent(
+        ticket_id=ticket.id,
+        actor_id=str(user.id),
+        description="Тикет создан (гостевой)",
+    )
+
+    session.add(ticket)
+    session.add(event)
+    await session.commit()
+    await session.refresh(ticket)
+
+    # Email: уведомление о тикете
+    background_tasks.add_task(
+        notify_ticket_created,
+        creator_email=email,
+        ticket_id=ticket.id,
+        title=ticket.title,
+        priority=ticket.priority.value if hasattr(ticket.priority, 'value') else str(ticket.priority),
+    )
+
+    # Если новый пользователь — приветственное письмо
+    if is_new_user:
+        background_tasks.add_task(
+            _send_email,
+            to=email,
+            subject="Добро пожаловать в PASS24 Service Desk",
+            html_body=f"""
+            <div style="font-family: -apple-system, Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <div style="background: #0f172a; color: #f8fafc; padding: 16px 24px; border-radius: 8px 8px 0 0;">
+                    <strong>PASS24 Service Desk</strong>
+                </div>
+                <div style="padding: 24px; background: #fff; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px;">
+                    <h2 style="margin: 0 0 16px; color: #1e293b;">Добро пожаловать!</h2>
+                    <p style="color: #475569;">Здравствуйте, {user.full_name}!</p>
+                    <p style="color: #475569;">Ваша заявка <strong>«{ticket.title}»</strong> принята. Мы сообщим о ходе решения на этот email.</p>
+                    <p style="color: #475569;">Все обновления по заявке будут приходить на <strong>{email}</strong>. Вы можете отвечать прямо на письма — ваш ответ будет добавлен как комментарий.</p>
+                    <div style="background: #f8fafc; border-radius: 8px; padding: 16px; margin: 16px 0; border: 1px solid #e2e8f0;">
+                        <p style="color: #334155; font-weight: 600; margin: 0 0 8px;">Хотите видеть все заявки на портале?</p>
+                        <p style="color: #64748b; margin: 0;">Зарегистрируйтесь на портале Service Desk с этим же email — все ваши заявки уже будут привязаны к аккаунту.</p>
+                    </div>
+                </div>
+            </div>
+            """,
+        )
+
+    return GuestTicketResponse(
+        ticket_id=ticket.id,
+        title=ticket.title,
+        status="new",
+        auth_required=False,
+    )
 
 
 @router.post("/", response_model=TicketRead, status_code=status.HTTP_201_CREATED)

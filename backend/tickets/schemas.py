@@ -38,6 +38,30 @@ class TicketCreate(BaseModel):
     urgent: bool = Field(default=False)
 
 
+class GuestTicketCreate(BaseModel):
+    """Создание тикета без авторизации — только email."""
+
+    email: str = Field(..., max_length=320, description="Email заявителя")
+    name: Optional[str] = Field(default=None, max_length=256, description="Имя")
+    title: str = Field(..., max_length=200)
+    description: str = Field(..., max_length=4000)
+    product: Optional[str] = Field(default="pass24_online", max_length=64)
+    category: Optional[str] = Field(default="other", max_length=64)
+    ticket_type: Optional[str] = Field(default="problem", max_length=64)
+    object_name: Optional[str] = Field(default=None, max_length=256)
+    contact_phone: Optional[str] = Field(default=None, max_length=20)
+    urgent: bool = Field(default=False)
+
+
+class GuestTicketResponse(BaseModel):
+    """Ответ на создание гостевого тикета."""
+
+    ticket_id: str
+    title: str
+    status: str = "new"
+    auth_required: bool = False  # True если email уже зарегистрирован с паролем
+
+
 class EventRead(BaseModel):
     id: str
     ticket_id: str
