@@ -1,0 +1,365 @@
+"""
+Интеграционный тест входящей почты.
+
+Запускается внутри контейнера на сервере:
+  docker exec site-pass24-servicedesk python -m pytest tests/test_inbound_email_integration.py -v
+
+Тестирует:
+1. Создание тикета из email (новое письмо)
+2. Ответ на тикет по тегу [PASS24-xxx] → комментарий
+3. Ответ без тега (Re: ...) → комментарий по теме
+4. Сохранение вложений из email
+5. Авто-анализ: поиск по базе знаний
+"""
+import asyncio
+import uuid
+
+import pytest
+
+# Для запуска async тестов
+pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture
+def event_loop():
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
+
+
+def _fake_attachment(filename="photo.jpg", content_type="image/jpeg", size=1024):
+    return {
+        "filename": filename,
+        "content_type": content_type,
+        "data": b"\xff\xd8" + b"\x00" * (size - 2),
+        "size": size,
+    }
+
+
+async def _get_or_create_user(email_addr: str, name: str = "Test User"):
+    from backend.database import async_session_factory
+    from backend.auth.models import User
+    from backend.auth.utils import hash_password
+    from sqlmodel import select
+
+    async with async_session_factory() as session:
+        result = await session.execute(select(User).where(User.email == email_addr))
+        user = result.scalar_one_or_none()
+        if user:
+            return user
+
+        user = User(
+            email=email_addr,
+            hashed_password=hash_password("test123"),
+            full_name=name,
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+
+async def _get_ticket(ticket_id: str):
+    from backend.database import async_session_factory
+    from backend.tickets.models import Ticket
+    from sqlalchemy.orm import selectinload
+    from sqlmodel import select
+
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(Ticket)
+            .where(Ticket.id == ticket_id)
+            .options(
+                selectinload(Ticket.comments),
+                selectinload(Ticket.attachments),
+            )
+        )
+        return result.scalar_one_or_none()
+
+
+async def _create_ticket(user_id: str, title: str):
+    from backend.database import async_session_factory
+    from backend.tickets.models import Ticket, TicketEvent
+
+    async with async_session_factory() as session:
+        ticket = Ticket(
+            creator_id=user_id,
+            title=title,
+            description=f"Тестовое описание для: {title}",
+            source="email",
+            contact_email="test-inbound@example.com",
+        )
+        ticket.assign_priority_based_on_context()
+        event = TicketEvent(
+            ticket_id=ticket.id,
+            actor_id=user_id,
+            description="Тикет создан (тест)",
+        )
+        session.add(ticket)
+        session.add(event)
+        await session.commit()
+        await session.refresh(ticket)
+        return ticket
+
+
+async def _cleanup_ticket(ticket_id: str):
+    from backend.database import async_session_factory
+    from backend.tickets.models import Ticket, TicketEvent, TicketComment, Attachment
+    from sqlalchemy import delete as sa_delete
+
+    async with async_session_factory() as session:
+        await session.execute(sa_delete(Attachment).where(Attachment.ticket_id == ticket_id))
+        await session.execute(sa_delete(TicketComment).where(TicketComment.ticket_id == ticket_id))
+        await session.execute(sa_delete(TicketEvent).where(TicketEvent.ticket_id == ticket_id))
+        await session.execute(sa_delete(Ticket).where(Ticket.id == ticket_id))
+        await session.commit()
+
+
+# -----------------------------------------------------------------------
+# Тесты
+# -----------------------------------------------------------------------
+
+
+class TestReplyByTag:
+    """Ответ с тегом [PASS24-xxxxxxxx] → комментарий к тикету."""
+
+    async def test_reply_creates_comment(self):
+        from backend.notifications.inbound import _handle_reply
+
+        user = await _get_or_create_user("test-inbound@example.com", "Тест Ответ")
+        ticket = await _create_ticket(str(user.id), "Тест тега в ответе")
+
+        try:
+            mail_data = {
+                "subject": f"Re: [PASS24-{ticket.id[:8]}] Заявка создана: Тест тега в ответе",
+                "from_email": "test-inbound@example.com",
+                "from_name": "Тест Ответ",
+                "body": "Вот дополнительная информация по заявке",
+                "attachments": [],
+            }
+
+            result = await _handle_reply(mail_data, ticket.id[:8])
+            assert result is True, "Ответ должен быть обработан"
+
+            updated = await _get_ticket(ticket.id)
+            assert len(updated.comments) == 1, f"Ожидался 1 комментарий, получено {len(updated.comments)}"
+            assert "дополнительная информация" in updated.comments[0].text
+            assert updated.comments[0].author_name == "Тест Ответ"
+        finally:
+            await _cleanup_ticket(ticket.id)
+
+    async def test_reply_with_attachment(self):
+        from backend.notifications.inbound import _handle_reply
+
+        user = await _get_or_create_user("test-inbound@example.com", "Тест Ответ")
+        ticket = await _create_ticket(str(user.id), "Тест вложения в ответе")
+
+        try:
+            mail_data = {
+                "subject": f"Re: [PASS24-{ticket.id[:8]}] Тест",
+                "from_email": "test-inbound@example.com",
+                "from_name": "Тест Ответ",
+                "body": "Прикрепляю скриншот",
+                "attachments": [_fake_attachment("screenshot.png", "image/png", 2048)],
+            }
+
+            result = await _handle_reply(mail_data, ticket.id[:8])
+            assert result is True
+
+            updated = await _get_ticket(ticket.id)
+            assert len(updated.comments) == 1
+            assert len(updated.attachments) == 1, f"Ожидалось 1 вложение, получено {len(updated.attachments)}"
+            assert updated.attachments[0].filename == "screenshot.png"
+            assert updated.attachments[0].size == 2048
+        finally:
+            await _cleanup_ticket(ticket.id)
+
+    async def test_reply_nonexistent_ticket(self):
+        from backend.notifications.inbound import _handle_reply
+
+        mail_data = {
+            "subject": "Re: [PASS24-00000000] Несуществующий",
+            "from_email": "test-inbound@example.com",
+            "from_name": "Test",
+            "body": "Текст",
+            "attachments": [],
+        }
+
+        result = await _handle_reply(mail_data, "00000000")
+        assert result is False, "Должен вернуть False для несуществующего тикета"
+
+
+class TestReplyBySubject:
+    """Ответ без тега (Re: ...) → поиск тикета по теме."""
+
+    async def test_reply_by_subject_creates_comment(self):
+        from backend.notifications.inbound import _handle_reply_by_subject
+
+        user = await _get_or_create_user("test-inbound@example.com", "Тест Ответ")
+        ticket = await _create_ticket(str(user.id), "Проблема с домофоном")
+
+        try:
+            mail_data = {
+                "subject": "Re: Заявка создана: Проблема с домофоном",
+                "from_email": "test-inbound@example.com",
+                "from_name": "Тест Ответ",
+                "body": "Уточняю: домофон на 3 подъезде",
+                "attachments": [_fake_attachment()],
+            }
+
+            result = await _handle_reply_by_subject(mail_data)
+            assert result is True, "Ответ по теме должен быть обработан"
+
+            updated = await _get_ticket(ticket.id)
+            assert len(updated.comments) == 1
+            assert "домофон на 3 подъезде" in updated.comments[0].text
+            assert len(updated.attachments) == 1
+        finally:
+            await _cleanup_ticket(ticket.id)
+
+    async def test_reply_by_subject_wrong_user(self):
+        from backend.notifications.inbound import _handle_reply_by_subject
+
+        user = await _get_or_create_user("test-inbound@example.com", "Тест Ответ")
+        ticket = await _create_ticket(str(user.id), "Мой тикет")
+
+        try:
+            mail_data = {
+                "subject": "Re: Заявка создана: Мой тикет",
+                "from_email": "other-user@example.com",
+                "from_name": "Другой",
+                "body": "Не мой тикет",
+                "attachments": [],
+            }
+
+            result = await _handle_reply_by_subject(mail_data)
+            assert result is False, "Чужой пользователь не должен привязаться к тикету"
+        finally:
+            await _cleanup_ticket(ticket.id)
+
+
+class TestNewTicketFromEmail:
+    """Новое письмо → тикет + авто-анализ."""
+
+    async def test_new_ticket_created(self):
+        from backend.notifications.inbound import _handle_new_ticket
+        from backend.database import async_session_factory
+        from backend.tickets.models import Ticket
+        from sqlmodel import select
+
+        test_email = f"test-new-{uuid.uuid4().hex[:8]}@example.com"
+
+        await _handle_new_ticket({
+            "subject": "Не работает шлагбаум на парковке",
+            "from_email": test_email,
+            "from_name": "Новый Пользователь",
+            "body": "Шлагбаум не открывается, стою на парковке ЖК Солнечный уже 30 минут. Приложение показывает ошибку.",
+            "attachments": [_fake_attachment("error.png", "image/png", 500)],
+        })
+
+        # Проверяем что тикет создан
+        async with async_session_factory() as session:
+            result = await session.execute(
+                select(Ticket).where(Ticket.contact_email == test_email)
+            )
+            ticket = result.scalar_one_or_none()
+            assert ticket is not None, "Тикет должен быть создан"
+            assert "шлагбаум" in ticket.title.lower() or "шлагбаум" in ticket.description.lower()
+            assert ticket.source == "email"
+
+            # Cleanup
+            await _cleanup_ticket(ticket.id)
+
+            # Cleanup user
+            from backend.auth.models import User
+            from sqlalchemy import delete as sa_delete
+            await session.execute(sa_delete(User).where(User.email == test_email))
+            await session.commit()
+
+    async def test_insufficient_info_no_ticket(self):
+        from backend.notifications.inbound import _handle_new_ticket
+        from backend.database import async_session_factory
+        from backend.tickets.models import Ticket
+        from sqlmodel import select
+
+        test_email = f"test-short-{uuid.uuid4().hex[:8]}@example.com"
+
+        await _handle_new_ticket({
+            "subject": "Ок",
+            "from_email": test_email,
+            "from_name": "Test",
+            "body": "Ок",
+            "attachments": [],
+        })
+
+        # Тикет НЕ должен быть создан (недостаточно информации)
+        async with async_session_factory() as session:
+            result = await session.execute(
+                select(Ticket).where(Ticket.contact_email == test_email)
+            )
+            ticket = result.scalar_one_or_none()
+            assert ticket is None, "Тикет не должен быть создан при недостаточной информации"
+
+
+class TestKnowledgeBaseSearch:
+    """Авто-анализ: поиск релевантных статей."""
+
+    async def test_search_finds_articles(self):
+        from backend.notifications.inbound import _search_knowledge_base
+        from backend.database import async_session_factory
+
+        async with async_session_factory() as session:
+            articles = await _search_knowledge_base("открыть дверь", session)
+            # Может найти или не найти — зависит от данных в БД
+            # Проверяем что функция работает без ошибок
+            assert isinstance(articles, list)
+            for art in articles:
+                assert "title" in art
+                assert "slug" in art
+
+
+class TestTagParsing:
+    """Парсинг тега [PASS24-xxxxxxxx] из темы."""
+
+    def test_tag_found(self):
+        from backend.notifications.inbound import TICKET_TAG_RE
+
+        subject = "Re: [PASS24-4467ddd8] Новый комментарий: Не могу зайти"
+        match = TICKET_TAG_RE.search(subject)
+        assert match is not None
+        assert match.group(1) == "4467ddd8"
+
+    def test_tag_not_found(self):
+        from backend.notifications.inbound import TICKET_TAG_RE
+
+        subject = "Re: Новый комментарий: Не могу зайти"
+        match = TICKET_TAG_RE.search(subject)
+        assert match is None
+
+    def test_tag_case_insensitive(self):
+        from backend.notifications.inbound import TICKET_TAG_RE
+
+        subject = "Re: [pass24-AABB1122] Test"
+        match = TICKET_TAG_RE.search(subject)
+        assert match is not None
+        assert match.group(1).lower() == "aabb1122"
+
+
+class TestCleanBody:
+    """Очистка тела письма."""
+
+    def test_removes_quotes(self):
+        from backend.notifications.inbound import _clean_body
+
+        body = "Мой ответ\n> Цитата из предыдущего письма\n> Ещё цитата"
+        cleaned = _clean_body(body)
+        assert "Мой ответ" in cleaned
+        assert "Цитата" not in cleaned
+
+    def test_stops_at_signature(self):
+        from backend.notifications.inbound import _clean_body
+
+        body = "Текст ответа\n--\nС уважением, Тест"
+        cleaned = _clean_body(body)
+        assert "Текст ответа" in cleaned
+        assert "С уважением" not in cleaned
