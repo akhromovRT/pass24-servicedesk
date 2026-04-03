@@ -9,6 +9,41 @@
 
 ## Записи
 
+### 2026-04-03 — Полный backend: auth, tickets DB, knowledge base, деплой
+
+**Что сделано:**
+- Создан модуль аутентификации (`backend/auth/`): JWT-токены, bcrypt-хеширование, RBAC (4 роли: resident, property_manager, support_agent, admin)
+- Переписан модуль тикетов на SQLModel + PostgreSQL: пагинация, фильтрация, комментарии, аудит-трейл событий; сохранена бизнес-логика (автоприоритет, FSM)
+- Создан модуль базы знаний (`backend/knowledge/`): CRUD статей, полнотекстовый поиск (ILIKE), транслитерация slug, ролевой доступ
+- Общая инфраструктура: `config.py` (pydantic-settings + .env), `database.py` (async PostgreSQL), CORS, healthcheck
+- Docker: compose с PostgreSQL 16, Dockerfile с healthcheck и non-root user
+- Юнит-тесты расширены до 14 (автоприоритет, FSM, события)
+- Деплой на VPS (5.42.101.27): CI/CD через GitHub Actions, БД `pass24_servicedesk` на существующем `pass24-postgres`
+- Интеграционный тест: 25/25 pass на production
+
+**Баги найденные при деплое:**
+- passlib несовместим с bcrypt 5.x → заменён на прямой `bcrypt` (ADR-002)
+- UUID из User.id не конвертировался в str для Ticket.creator_id → добавлен `str()`
+- SQLModel Relationship ломается с `from __future__ import annotations` на Python 3.9 → использованы строковые forward references
+
+**Обновления:**
+- [x] Документация обновлена
+- [x] ADR-002 создан (bcrypt vs passlib)
+- [x] Тесты: 14 unit + 25 integration
+
+**API endpoints (20):**
+- AUTH: POST /auth/register, POST /auth/login, GET /auth/me
+- TICKETS: POST/GET /tickets/, GET /tickets/{id}, POST /tickets/{id}/status, POST /tickets/{id}/comments, DELETE /tickets/{id}
+- KNOWLEDGE: GET /knowledge/, GET /knowledge/search, GET /knowledge/{slug}, POST/PUT/DELETE /knowledge/
+- SYSTEM: GET /health, GET /docs
+
+**Следующие шаги:**
+- Vue 3 SPA frontend (замена Jinja2 mockup)
+- Email-уведомления при смене статуса тикета
+- Alembic миграции для управления схемой БД
+
+---
+
 ### 2026-03-04 — Инициализация проекта и заполнение документации
 
 **Что сделано:**

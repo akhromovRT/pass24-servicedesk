@@ -8,33 +8,70 @@ Help Desk портал для пользователей СКУД-системы
 - Создавать заявки в техподдержку и отслеживать их статус
 - Искать ответы в базе знаний (FAQ, инструкции)
 
-## Структура проекта
+## Технический стек
 
-```
-├── AGENTS.md                 # Правила для AI-агентов
-├── CLAUDE.md                 # Настройки Claude Code
-├── .gitignore
-└── agent_docs/               # Проектная документация
-    ├── index.md              # Навигация по документам
-    ├── architecture.md       # Архитектура и компоненты
-    ├── adr.md                # Архитектурные решения
-    ├── development-history.md # История разработки
-    ├── guides/               # Гайды
-    └── templates/            # Шаблоны документов
-```
+- **Backend:** Python 3.12, FastAPI, SQLModel, PostgreSQL 16
+- **Auth:** JWT + bcrypt, RBAC (4 роли)
+- **Frontend:** Vue 3 + TypeScript + PrimeVue (в разработке)
+- **Деплой:** Docker, GitHub Actions CI/CD
 
 ## Быстрый старт
 
-1. Ознакомьтесь с архитектурой: `agent_docs/architecture.md`
-2. Проверьте историю решений: `agent_docs/adr.md`
-3. Навигация по документам: `agent_docs/index.md`
+### С Docker (рекомендуется)
+
+```bash
+docker compose up -d
+# API: http://localhost:8000
+# Swagger: http://localhost:8000/docs
+```
+
+### Без Docker
+
+```bash
+pip install -r requirements.txt
+# Создать .env из .env.example, настроить DATABASE_URL
+uvicorn backend.main:app --reload
+```
+
+## API endpoints (20)
+
+| Модуль | Метод | Путь | Описание |
+|--------|-------|------|----------|
+| Auth | POST | /auth/register | Регистрация |
+| Auth | POST | /auth/login | Вход (JWT) |
+| Auth | GET | /auth/me | Текущий пользователь |
+| Tickets | POST | /tickets/ | Создать тикет |
+| Tickets | GET | /tickets/ | Список (пагинация, фильтры) |
+| Tickets | GET | /tickets/{id} | Детали тикета |
+| Tickets | POST | /tickets/{id}/status | Сменить статус (FSM) |
+| Tickets | POST | /tickets/{id}/comments | Добавить комментарий |
+| Tickets | DELETE | /tickets/{id} | Удалить (admin) |
+| KB | GET | /knowledge/ | Список статей |
+| KB | GET | /knowledge/search | Поиск |
+| KB | GET | /knowledge/{slug} | Статья по slug |
+| KB | POST | /knowledge/ | Создать статью |
+| KB | PUT | /knowledge/{id} | Обновить статью |
+| KB | DELETE | /knowledge/{id} | Удалить статью |
+| System | GET | /health | Healthcheck |
+| System | GET | /docs | Swagger UI |
+
+## Структура проекта
+
+```
+backend/
+├── main.py              # FastAPI app
+├── config.py            # Настройки (.env)
+├── database.py          # PostgreSQL async
+├── auth/                # Аутентификация, RBAC
+├── tickets/             # Тикеты, комментарии, FSM
+└── knowledge/           # База знаний, поиск
+tests/                   # Юнит-тесты (pytest)
+agent_docs/              # Проектная документация
+```
 
 ## Документация
 
 - `AGENTS.md` — правила работы и описание проекта
-- `agent_docs/architecture.md` — архитектура, роли, компоненты
-- `agent_docs/adr.md` — архитектурные решения (ADR)
-
-## Ветка разработки
-
-Активная ветка разработки: `AndrewDEV`.
+- `agent_docs/architecture.md` — архитектура, роли, компоненты, roadmap
+- `agent_docs/adr.md` — архитектурные решения (ADR-001, ADR-002)
+- `agent_docs/development-history.md` — история итераций

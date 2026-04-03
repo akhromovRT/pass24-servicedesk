@@ -46,4 +46,27 @@
 
 ---
 
+### [2026-04-03] ADR-002: bcrypt напрямую вместо passlib
+
+#### Статус
+Принято
+
+#### Контекст
+При деплое на production (Python 3.12, bcrypt 5.x) модуль `passlib` вызывал ошибку `ValueError: password cannot be longer than 72 bytes`. Проект passlib не поддерживается (последний релиз — 2020), несовместим с bcrypt >= 4.1.
+
+#### Решение
+Заменить `passlib.context.CryptContext` на прямые вызовы `bcrypt.hashpw()` / `bcrypt.checkpw()`.
+
+#### Обоснование
+- passlib — unmaintained (последний коммит 2020, нет поддержки bcrypt 4+)
+- Прямой bcrypt API — 2 функции, нет лишних абстракций
+- bcrypt 5.x — актуальная библиотека, активно поддерживается
+
+#### Последствия
+- (+) Совместимость с bcrypt 5.x на Python 3.12
+- (+) Убрана неподдерживаемая зависимость (passlib)
+- (-) Нет автоматического выбора схемы хеширования (только bcrypt)
+
+---
+
 Шаблон записи: `agent_docs/templates/adr.md`
