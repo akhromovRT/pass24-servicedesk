@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
 from .models import TicketPriority, TicketStatus
 
 
-class TicketBase(BaseModel):
+# ---------------------------------------------------------------------------
+# Тикеты
+# ---------------------------------------------------------------------------
+
+
+class TicketCreate(BaseModel):
+    """Схема создания тикета. creator_id берётся из JWT-токена."""
+
     title: str = Field(..., max_length=200)
     description: str = Field(..., max_length=4000)
-    # Код типа проблемы (например: access, pass, gate, notifications, other)
     category: str = Field(default="general", max_length=64)
     object_id: Optional[str] = Field(
         default=None, description="Идентификатор объекта PASS24 (ЖК / БЦ)"
@@ -40,23 +46,71 @@ class TicketBase(BaseModel):
     )
 
 
-class TicketCreate(TicketBase):
-    creator_id: str = Field(..., description="Идентификатор пользователя PASS24")
+class EventRead(BaseModel):
+    """Схема чтения события тикета."""
+
+    id: str
+    ticket_id: str
+    actor_id: Optional[str]
+    description: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
-class TicketRead(TicketBase):
+class CommentCreate(BaseModel):
+    """Схема создания комментария. author_id берётся из JWT-токена."""
+
+    text: str = Field(..., min_length=1, max_length=4000)
+
+
+class CommentRead(BaseModel):
+    """Схема чтения комментария."""
+
+    id: str
+    ticket_id: str
+    author_id: str
+    author_name: str
+    text: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TicketRead(BaseModel):
+    """Полная схема чтения тикета с событиями и комментариями."""
+
     id: str
     creator_id: str
+    title: str
+    description: str
+    category: str
+    object_id: Optional[str]
+    access_point_id: Optional[str]
+    user_role: Optional[str]
+    occurred_at: Optional[str]
+    contact: Optional[str]
+    urgent: bool
     status: TicketStatus
     priority: TicketPriority
     created_at: datetime
     updated_at: datetime
+    events: List[EventRead] = []
+    comments: List[CommentRead] = []
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class TicketStatusUpdate(BaseModel):
-    new_status: TicketStatus
-    actor_id: str = Field(..., description="Кто меняет статус (агент/УК)")
+    """Схема обновления статуса тикета. actor_id берётся из JWT-токена."""
 
+    new_status: TicketStatus
+
+
+class TicketListResponse(BaseModel):
+    """Пагинированный ответ со списком тикетов."""
+
+    items: List[TicketRead]
+    total: int
+    page: int
+    per_page: int

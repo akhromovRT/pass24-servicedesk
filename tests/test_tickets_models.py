@@ -1,78 +1,129 @@
+"""
+Юнит-тесты для доменной логики тикетов.
+
+Тестируют бизнес-правила без БД и фреймворков:
+- Автоприоритет по ключевым словам
+- FSM переходов статусов
+- Неизменяемость закрытых тикетов
+"""
+
+from __future__ import annotations
+
 import pytest
 
 from backend.tickets.models import Ticket, TicketPriority, TicketStatus
 
 
+def _make_ticket(title: str = "", description: str = "") -> Ticket:
+    """Создать тикет для теста без обращения к БД."""
+    return Ticket(creator_id="test-user", title=title, description=description)
+
+
+# ---------------------------------------------------------------------------
+# Автоприоритет
+# ---------------------------------------------------------------------------
+
+
 def test_critical_priority_when_user_cannot_enter_home():
-    ticket = Ticket(
-        id="t1",
-        creator_id="user-1",
-        title="Не могу попасть домой",
-        description="Дверь не открылась в подъезд 3",
-    )
-
+    ticket = _make_ticket(title="Не могу попасть домой")
     ticket.assign_priority_based_on_context()
+    assert ticket.priority == TicketPriority.CRITICAL
 
+
+def test_critical_priority_door_not_opened():
+    ticket = _make_ticket(description="дверь не открылась, стою перед подъездом")
+    ticket.assign_priority_based_on_context()
+    assert ticket.priority == TicketPriority.CRITICAL
+
+
+def test_critical_priority_not_letting_in():
+    ticket = _make_ticket(title="Домофон не пускает")
+    ticket.assign_priority_based_on_context()
     assert ticket.priority == TicketPriority.CRITICAL
 
 
 def test_high_priority_for_parking_or_gate_issues():
-    ticket = Ticket(
-        id="t2",
-        creator_id="user-1",
-        title="Не открывается шлагбаум",
-        description="Парковка блокирована",
-    )
-
+    ticket = _make_ticket(title="Шлагбаум не поднимается")
     ticket.assign_priority_based_on_context()
+    assert ticket.priority == TicketPriority.HIGH
 
+
+def test_high_priority_for_parking():
+    ticket = _make_ticket(description="Проблема с парковка")
+    ticket.assign_priority_based_on_context()
     assert ticket.priority == TicketPriority.HIGH
 
 
 def test_low_priority_for_notification_issues():
-    ticket = Ticket(
-        id="t3",
-        creator_id="user-1",
-        title="Не приходят пуш‑уведомления",
-        description="Пуш уведомлен о проходах не приходит",
-    )
-
+    ticket = _make_ticket(title="Не приходят пуш-уведомления")
     ticket.assign_priority_based_on_context()
-
     assert ticket.priority == TicketPriority.LOW
 
 
-def test_status_transitions_follow_rules():
-    ticket = Ticket(id="t4", creator_id="user-1")
+def test_normal_priority_for_generic_issues():
+    ticket = _make_ticket(title="Вопрос по интерфейсу")
+    ticket.assign_priority_based_on_context()
+    assert ticket.priority == TicketPriority.NORMAL
 
-    # NEW -> IN_PROGRESS
+
+# ---------------------------------------------------------------------------
+# FSM переходов статусов
+# ---------------------------------------------------------------------------
+
+
+def test_status_transitions_follow_rules():
+    ticket = _make_ticket(title="Тест FSM")
+    assert ticket.status == TicketStatus.NEW
+
     ticket.transition(actor_id="agent-1", new_status=TicketStatus.IN_PROGRESS)
     assert ticket.status == TicketStatus.IN_PROGRESS
 
-    # IN_PROGRESS -> WAITING_FOR_USER
     ticket.transition(actor_id="agent-1", new_status=TicketStatus.WAITING_FOR_USER)
     assert ticket.status == TicketStatus.WAITING_FOR_USER
 
-    # WAITING_FOR_USER -> IN_PROGRESS
     ticket.transition(actor_id="agent-1", new_status=TicketStatus.IN_PROGRESS)
+    assert ticket.status == TicketStatus.IN_PROGRESS
+
+
+def test_transition_new_to_resolved():
+    ticket = _make_ticket(title="Быстрое решение")
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.RESOLVED)
+    assert ticket.status == TicketStatus.RESOLVED
+
+
+def test_transition_resolved_to_closed():
+    ticket = _make_ticket(title="Закрытие")
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.RESOLVED)
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.CLOSED)
+    assert ticket.status == TicketStatus.CLOSED
+
+
+def test_transition_reopen():
+    ticket = _make_ticket(title="Переоткрытие")
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.RESOLVED)
+    ticket.transition(actor_id="user-1", new_status=TicketStatus.IN_PROGRESS)
     assert ticket.status == TicketStatus.IN_PROGRESS
 
 
 def test_invalid_transition_raises():
-    ticket = Ticket(id="t5", creator_id="user-1")
-
-    # Нельзя перейти из NEW сразу в CLOSED
-    with pytest.raises(ValueError):
+    ticket = _make_ticket(title="Недопустимый переход")
+    with pytest.raises(ValueError, match="Недопустимый переход"):
         ticket.transition(actor_id="agent-1", new_status=TicketStatus.CLOSED)
 
 
 def test_closed_ticket_cannot_change_status():
-    ticket = Ticket(id="t6", creator_id="user-1")
+    ticket = _make_ticket(title="Закрытый тикет")
     ticket.transition(actor_id="agent-1", new_status=TicketStatus.RESOLVED)
     ticket.transition(actor_id="agent-1", new_status=TicketStatus.CLOSED)
 
-    assert ticket.status == TicketStatus.CLOSED
-
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="закрытого тикета"):
         ticket.transition(actor_id="agent-1", new_status=TicketStatus.IN_PROGRESS)
 
+
+def test_transition_creates_event():
+    ticket = _make_ticket(title="Событие перехода")
+    event = ticket.transition(actor_id="agent-1", new_status=TicketStatus.IN_PROGRESS)
+
+    assert event is not None
+    assert event.actor_id == "agent-1"
+    assert "in_progress" in event.description

@@ -1,80 +1,84 @@
-from __future__ import annotations
-
-from dataclasses import dataclass, field
+import uuid
 from datetime import datetime
-from enum import Enum, auto
-from typing import List, Optional
+from enum import Enum
+from typing import TYPE_CHECKING, List, Optional
+
+from sqlmodel import Field, Relationship, SQLModel
+
+if TYPE_CHECKING:
+    pass
 
 
-class TicketStatus(Enum):
-    NEW = auto()
-    IN_PROGRESS = auto()
-    WAITING_FOR_USER = auto()
-    RESOLVED = auto()
-    CLOSED = auto()
+# ---------------------------------------------------------------------------
+# Перечисления (строковые значения для PostgreSQL)
+# ---------------------------------------------------------------------------
 
 
-class TicketPriority(Enum):
-    LOW = auto()
-    NORMAL = auto()
-    HIGH = auto()
-    CRITICAL = auto()
+class TicketStatus(str, Enum):
+    """Статусы тикета — FSM с определёнными переходами."""
+
+    NEW = "new"
+    IN_PROGRESS = "in_progress"
+    WAITING_FOR_USER = "waiting_for_user"
+    RESOLVED = "resolved"
+    CLOSED = "closed"
 
 
-@dataclass
-class TicketEvent:
-    """Историческое событие по тикету (для аудита и тестов)."""
+class TicketPriority(str, Enum):
+    """Приоритеты тикета."""
 
-    at: datetime
-    actor_id: str
-    description: str
+    LOW = "low"
+    NORMAL = "normal"
+    HIGH = "high"
+    CRITICAL = "critical"
 
 
-@dataclass
-class Ticket:
+# ---------------------------------------------------------------------------
+# Таблица тикетов
+# ---------------------------------------------------------------------------
+
+
+class Ticket(SQLModel, table=True):
     """
-    Упрощённая доменная модель тикета для PASS24 Service Desk.
+    Доменная модель тикета PASS24 Service Desk.
 
-    Сделана без внешних зависимостей, чтобы использовать прямо в юнит‑тестах.
+    Хранит данные заявки, содержит бизнес-логику авто-приоритезации и FSM переходов.
     """
 
-    id: str
-    creator_id: str
-    object_id: Optional[str] = None  # ЖК / БЦ
-    access_point_id: Optional[str] = None  # дверь / домофон / шлагбаум
-    # Тип проблемы: авторизация, пропуска, шлагбаум и т.п.
-    category: str = "general"
-    # Кто пишет: житель, гость, УК, администратор
-    user_role: Optional[str] = None
-    # Когда примерно произошла проблема (свободный текст)
-    occurred_at: Optional[str] = None
-    # Как связаться: телефон или email
-    contact: Optional[str] = None
-    # Отметка "не могу войти / въехать прямо сейчас"
-    urgent: bool = False
-    title: str = ""
-    description: str = ""
-    status: TicketStatus = TicketStatus.NEW
-    priority: TicketPriority = TicketPriority.NORMAL
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
-    events: List[TicketEvent] = field(default_factory=list)
+    __tablename__ = "tickets"
 
-    def _add_event(self, actor_id: str, description: str) -> None:
-        self.events.append(
-            TicketEvent(
-                at=datetime.utcnow(),
-                actor_id=actor_id,
-                description=description,
-            )
-        )
-        self.updated_at = datetime.utcnow()
+    id: str = Field(
+        default_factory=lambda: str(uuid.uuid4()),
+        primary_key=True,
+    )
+    creator_id: str = Field(index=True)
+    title: str = Field(default="", max_length=200)
+    description: str = Field(default="", max_length=4000)
+    category: str = Field(default="general", max_length=64)
+    status: TicketStatus = Field(default=TicketStatus.NEW)
+    priority: TicketPriority = Field(default=TicketPriority.NORMAL)
+    object_id: Optional[str] = Field(default=None)
+    access_point_id: Optional[str] = Field(default=None)
+    user_role: Optional[str] = Field(default=None, max_length=64)
+    occurred_at: Optional[str] = Field(default=None, max_length=128)
+    contact: Optional[str] = Field(default=None, max_length=128)
+    urgent: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # Связи (дочерние модели определены ниже)
+    events: List["TicketEvent"] = Relationship(back_populates="ticket")
+    comments: List["TicketComment"] = Relationship(back_populates="ticket")
+
+    # ------------------------------------------------------------------
+    # Бизнес-логика
+    # ------------------------------------------------------------------
 
     def assign_priority_based_on_context(self) -> None:
         """
-        Простейшая логика авто‑приоритезации тикета.
+        Простейшая логика авто-приоритезации тикета.
 
-        Её удобно покрывать юнит‑тестами, не поднимая весь backend.
+        Анализирует текст заголовка и описания по ключевым словам.
         """
         text = f"{self.title} {self.description}".lower()
 
@@ -87,16 +91,18 @@ class Ticket:
         else:
             self.priority = TicketPriority.NORMAL
 
-    def transition(self, actor_id: str, new_status: TicketStatus) -> None:
+    def transition(self, actor_id: str, new_status: TicketStatus) -> "TicketEvent":
         """
-        Управление статусами с простыми бизнес‑правилами.
+        Управление статусами с бизнес-правилами (FSM).
 
         Правила:
-        - NEW → IN_PROGRESS / RESOLVED
-        - IN_PROGRESS → WAITING_FOR_USER / RESOLVED
-        - WAITING_FOR_USER → IN_PROGRESS / RESOLVED
-        - RESOLVED → CLOSED / IN_PROGRESS
-        - CLOSED — терминальное состояние (дальше переход запрещён)
+        - NEW -> IN_PROGRESS / RESOLVED
+        - IN_PROGRESS -> WAITING_FOR_USER / RESOLVED
+        - WAITING_FOR_USER -> IN_PROGRESS / RESOLVED
+        - RESOLVED -> CLOSED / IN_PROGRESS
+        - CLOSED — терминальное состояние (переход запрещён)
+
+        Возвращает созданный TicketEvent для последующего сохранения в БД.
         """
         if self.status == TicketStatus.CLOSED:
             raise ValueError("Нельзя менять статус закрытого тикета")
@@ -110,8 +116,63 @@ class Ticket:
 
         current_allowed = allowed.get(self.status, set())
         if new_status not in current_allowed:
-            raise ValueError(f"Недопустимый переход статуса: {self.status.name} → {new_status.name}")
+            raise ValueError(
+                f"Недопустимый переход статуса: {self.status.value} -> {new_status.value}"
+            )
 
         self.status = new_status
-        self._add_event(actor_id=actor_id, description=f"Статус изменён на {new_status.name}")
+        self.updated_at = datetime.utcnow()
 
+        event = TicketEvent(
+            ticket_id=self.id,
+            actor_id=actor_id,
+            description=f"Статус изменён на {new_status.value}",
+        )
+        return event
+
+
+# ---------------------------------------------------------------------------
+# Таблица событий тикета (аудит)
+# ---------------------------------------------------------------------------
+
+
+class TicketEvent(SQLModel, table=True):
+    """Историческое событие по тикету (для аудита)."""
+
+    __tablename__ = "ticket_events"
+
+    id: str = Field(
+        default_factory=lambda: str(uuid.uuid4()),
+        primary_key=True,
+    )
+    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    actor_id: Optional[str] = Field(default=None)
+    description: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # Связь обратно к тикету
+    ticket: Optional["Ticket"] = Relationship(back_populates="events")
+
+
+# ---------------------------------------------------------------------------
+# Таблица комментариев
+# ---------------------------------------------------------------------------
+
+
+class TicketComment(SQLModel, table=True):
+    """Комментарий к тикету."""
+
+    __tablename__ = "ticket_comments"
+
+    id: str = Field(
+        default_factory=lambda: str(uuid.uuid4()),
+        primary_key=True,
+    )
+    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    author_id: str
+    author_name: str = Field(default="")
+    text: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # Связь обратно к тикету
+    ticket: Optional["Ticket"] = Relationship(back_populates="comments")
