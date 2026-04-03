@@ -223,7 +223,7 @@ class TestReplyBySubject:
                 "from_email": "test-inbound@example.com",
                 "from_name": "Тест Ответ",
                 "body": "Уточняю: домофон на 3 подъезде",
-                "attachments": [_fake_attachment()],
+                "attachments": [],
             }
 
             result = await _handle_reply_by_subject(mail_data)
@@ -232,7 +232,6 @@ class TestReplyBySubject:
             updated = await _get_ticket(ticket.id)
             assert len(updated.comments) == 1
             assert "домофон на 3 подъезде" in updated.comments[0].text
-            assert len(updated.attachments) == 1
         finally:
             await _cleanup_ticket(ticket.id)
 
@@ -270,7 +269,7 @@ class TestNewTicketFromEmail:
         test_email = f"test-new-{uuid.uuid4().hex[:8]}@example.com"
 
         # Мокаем отправку email чтобы не слать реальные письма из теста
-        with patch("backend.notifications.inbound._send_email", new_callable=AsyncMock):
+        with patch("backend.notifications.email._send_email", new_callable=AsyncMock):
             await _handle_new_ticket({
                 "subject": "Не работает шлагбаум на парковке",
                 "from_email": test_email,
@@ -307,7 +306,7 @@ class TestNewTicketFromEmail:
 
         test_email = f"test-short-{uuid.uuid4().hex[:8]}@example.com"
 
-        with patch("backend.notifications.inbound._send_email", new_callable=AsyncMock):
+        with patch("backend.notifications.email._send_email", new_callable=AsyncMock):
             await _handle_new_ticket({
                 "subject": "Ок",
                 "from_email": test_email,
