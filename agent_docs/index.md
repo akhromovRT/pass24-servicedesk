@@ -8,6 +8,7 @@
 - `agent_docs/development-history.md` — журнал итераций; смотреть последнюю запись. Архив: `agent_docs/development-history-archive.md`.
 
 ## Правила и гайды
+- `agent_docs/guides/support-operations.md` — **регламент работы менеджера поддержки** (обработка заявок, email, база знаний).
 - `agent_docs/guides/dod.md` — критерии завершённости (DoD): тесты, документация, линтинг.
 - `agent_docs/guides/environment-setup.md` — настройка окружения (.env, .cursorignore, .vscode).
 - `agent_docs/guides/logging.md` — логирование: Markdown-логи в `logs/run-%timestamp%/`.
