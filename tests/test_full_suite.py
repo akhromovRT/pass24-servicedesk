@@ -22,11 +22,14 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+import pytest_asyncio
+from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 pytestmark = pytest.mark.asyncio
+
+BASE_URL = "http://localhost:8000"
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -53,18 +56,16 @@ def _isolate_db():
     db_mod.async_session_factory = original
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client():
-    """HTTP-клиент для API-тестов."""
-    from backend.main import app
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
+    """HTTP-клиент, подключающийся к запущенному серверу."""
+    async with AsyncClient(base_url=BASE_URL) as c:
         yield c
 
 
 # Уникальные email для каждого теста
 def _email(prefix: str = "test") -> str:
-    return f"{prefix}-{uuid.uuid4().hex[:8]}@test.local"
+    return f"{prefix}-{uuid.uuid4().hex[:8]}@example.com"
 
 
 async def _register(client: AsyncClient, email: str, password: str = "pass123456",
@@ -189,7 +190,7 @@ class TestAuth:
         assert r.status_code == 401
 
     async def test_login_nonexistent(self, client):
-        r = await client.post("/auth/login", json={"email": "ghost@test.local", "password": "pass123456"})
+        r = await client.post("/auth/login", json={"email": "ghost@example.com", "password": "pass123456"})
         assert r.status_code == 401
 
     async def test_me(self, client):
@@ -713,7 +714,7 @@ class TestBusinessLogic:
 
     def test_category_passes(self):
         from backend.tickets.models import Ticket
-        t = Ticket(title="Проблема с пропуском", description="QR код не сканируется")
+        t = Ticket(title="Гостевой пропуск не работает", description="Пропуск не сканируется на турникете")
         t.auto_detect_category()
         assert t.category == "passes"
 
