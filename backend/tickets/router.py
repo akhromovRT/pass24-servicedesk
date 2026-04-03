@@ -119,12 +119,12 @@ async def create_ticket(
 async def list_tickets(
     page: int = Query(default=1, ge=1, description="Номер страницы"),
     per_page: int = Query(default=20, ge=1, le=100, description="Записей на странице"),
-    ticket_status: Optional[TicketStatus] = Query(
-        default=None, alias="status", description="Фильтр по статусу"
+    ticket_status: Optional[str] = Query(
+        default=None, alias="status", description="Фильтр по статусу (через запятую: new,in_progress)"
     ),
-    category: Optional[str] = Query(default=None, description="Фильтр по категории"),
-    product: Optional[str] = Query(default=None, description="Фильтр по продукту"),
-    ticket_type: Optional[str] = Query(default=None, alias="type", description="Фильтр по типу обращения"),
+    category: Optional[str] = Query(default=None, description="Фильтр по категории (через запятую)"),
+    product: Optional[str] = Query(default=None, description="Фильтр по продукту (через запятую)"),
+    ticket_type: Optional[str] = Query(default=None, alias="type", description="Фильтр по типу (через запятую)"),
     creator_id: Optional[str] = Query(default=None, description="Фильтр по создателю"),
     my: Optional[bool] = Query(default=None, description="Только мои тикеты"),
     session: AsyncSession = Depends(get_session),
@@ -146,19 +146,39 @@ async def list_tickets(
         query = query.where(Ticket.creator_id == str(current_user.id))
         count_query = count_query.where(Ticket.creator_id == str(current_user.id))
 
-    # Фильтры
-    if ticket_status is not None:
-        query = query.where(Ticket.status == ticket_status)
-        count_query = count_query.where(Ticket.status == ticket_status)
-    if category is not None:
-        query = query.where(Ticket.category == category)
-        count_query = count_query.where(Ticket.category == category)
-    if product is not None:
-        query = query.where(Ticket.product == product)
-        count_query = count_query.where(Ticket.product == product)
-    if ticket_type is not None:
-        query = query.where(Ticket.ticket_type == ticket_type)
-        count_query = count_query.where(Ticket.ticket_type == ticket_type)
+    # Фильтры (поддержка нескольких значений через запятую)
+    if ticket_status:
+        vals = [v.strip() for v in ticket_status.split(",") if v.strip()]
+        if len(vals) == 1:
+            query = query.where(Ticket.status == vals[0])
+            count_query = count_query.where(Ticket.status == vals[0])
+        elif vals:
+            query = query.where(Ticket.status.in_(vals))
+            count_query = count_query.where(Ticket.status.in_(vals))
+    if category:
+        vals = [v.strip() for v in category.split(",") if v.strip()]
+        if len(vals) == 1:
+            query = query.where(Ticket.category == vals[0])
+            count_query = count_query.where(Ticket.category == vals[0])
+        elif vals:
+            query = query.where(Ticket.category.in_(vals))
+            count_query = count_query.where(Ticket.category.in_(vals))
+    if product:
+        vals = [v.strip() for v in product.split(",") if v.strip()]
+        if len(vals) == 1:
+            query = query.where(Ticket.product == vals[0])
+            count_query = count_query.where(Ticket.product == vals[0])
+        elif vals:
+            query = query.where(Ticket.product.in_(vals))
+            count_query = count_query.where(Ticket.product.in_(vals))
+    if ticket_type:
+        vals = [v.strip() for v in ticket_type.split(",") if v.strip()]
+        if len(vals) == 1:
+            query = query.where(Ticket.ticket_type == vals[0])
+            count_query = count_query.where(Ticket.ticket_type == vals[0])
+        elif vals:
+            query = query.where(Ticket.ticket_type.in_(vals))
+            count_query = count_query.where(Ticket.ticket_type.in_(vals))
     if creator_id is not None:
         query = query.where(Ticket.creator_id == creator_id)
         count_query = count_query.where(Ticket.creator_id == creator_id)

@@ -10,9 +10,10 @@ import type {
 } from '../types'
 
 export interface TicketFilters {
-  status?: TicketStatus | ''
-  category?: string
-  object_id?: string
+  status?: string[]
+  category?: string[]
+  product?: string[]
+  type?: string[]
   creator_id?: string
   my?: boolean
 }
@@ -34,9 +35,12 @@ export const useTicketsStore = defineStore('tickets', () => {
       const params = new URLSearchParams()
       params.set('page', String(page.value))
       params.set('per_page', '20')
-      if (filters.value.status) params.set('status', filters.value.status)
-      if (filters.value.category) params.set('category', filters.value.category)
-      if (filters.value.object_id) params.set('object_id', filters.value.object_id)
+
+      // Массивы → через запятую
+      if (filters.value.status?.length) params.set('status', filters.value.status.join(','))
+      if (filters.value.category?.length) params.set('category', filters.value.category.join(','))
+      if (filters.value.product?.length) params.set('product', filters.value.product.join(','))
+      if (filters.value.type?.length) params.set('type', filters.value.type.join(','))
       if (filters.value.creator_id) params.set('creator_id', filters.value.creator_id)
       if (filters.value.my) params.set('my', 'true')
 
@@ -62,8 +66,7 @@ export const useTicketsStore = defineStore('tickets', () => {
   async function createTicket(data: TicketCreate): Promise<Ticket> {
     loading.value = true
     try {
-      const ticket = await api.post<Ticket>('/tickets/', data)
-      return ticket
+      return await api.post<Ticket>('/tickets/', data)
     } finally {
       loading.value = false
     }

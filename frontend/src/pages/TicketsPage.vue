@@ -4,25 +4,25 @@ import { useRouter } from 'vue-router'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
-import Select from 'primevue/select'
+import MultiSelect from 'primevue/multiselect'
 import Toolbar from 'primevue/toolbar'
 import Paginator from 'primevue/paginator'
+import Tag from 'primevue/tag'
 import { useToast } from 'primevue/usetoast'
 import TicketStatusBadge from '../components/TicketStatusBadge.vue'
 import TicketPriorityBadge from '../components/TicketPriorityBadge.vue'
 import { useTicketsStore } from '../stores/tickets'
-import type { Ticket, TicketStatus } from '../types'
+import type { Ticket } from '../types'
 
 const router = useRouter()
 const toast = useToast()
 const store = useTicketsStore()
 
-const statusFilter = ref<TicketStatus | ''>('')
-const categoryFilter = ref('')
+const statusFilter = ref<string[]>([])
+const categoryFilter = ref<string[]>([])
 const myOnly = ref(false)
 
 const statusOptions = [
-  { label: 'Все статусы', value: '' },
   { label: 'Новый', value: 'new' },
   { label: 'В работе', value: 'in_progress' },
   { label: 'Ожидает ответа', value: 'waiting_for_user' },
@@ -31,21 +31,39 @@ const statusOptions = [
 ]
 
 const categoryOptions = [
-  { label: 'Все категории', value: '' },
-  { label: 'Доступ', value: 'access' },
-  { label: 'Пропуска', value: 'pass' },
-  { label: 'Шлагбаум', value: 'gate' },
-  { label: 'Уведомления', value: 'notifications' },
-  { label: 'Общее', value: 'general' },
+  { label: 'Регистрация и вход', value: 'registration' },
+  { label: 'Пропуска и доступ', value: 'passes' },
+  { label: 'Распознавание номеров', value: 'recognition' },
+  { label: 'Работа приложения', value: 'app_issues' },
+  { label: 'Объекты', value: 'objects' },
+  { label: 'Доверенные лица', value: 'trusted_persons' },
+  { label: 'Оборудование', value: 'equipment_issues' },
+  { label: 'Консультация', value: 'consultation' },
+  { label: 'Предложение', value: 'feature_request' },
   { label: 'Другое', value: 'other' },
 ]
 
 const categoryLabels: Record<string, string> = {
-  access: 'Доступ',
-  pass: 'Пропуска',
-  gate: 'Шлагбаум',
-  notifications: 'Уведомления',
-  general: 'Общее',
+  registration: 'Регистрация',
+  passes: 'Пропуска',
+  recognition: 'Распознавание',
+  app_issues: 'Приложение',
+  objects: 'Объекты',
+  trusted_persons: 'Доверенные лица',
+  equipment_issues: 'Оборудование',
+  consultation: 'Консультация',
+  feature_request: 'Предложение',
+  other: 'Другое',
+}
+
+const productLabels: Record<string, string> = {
+  pass24_online: 'PASS24.online',
+  mobile_app: 'Мобильное приложение',
+  pass24_key: 'PASS24.Key',
+  pass24_control: 'PASS24.control',
+  pass24_auto: 'PASS24.auto',
+  equipment: 'Оборудование',
+  integration: 'Интеграция',
   other: 'Другое',
 }
 
@@ -59,15 +77,11 @@ function formatDate(dateStr: string): string {
   }).format(new Date(dateStr))
 }
 
-function getCategoryLabel(category: string): string {
-  return categoryLabels[category] || category
-}
-
 async function loadTickets(page?: number) {
   try {
     await store.fetchTickets(page, {
-      status: statusFilter.value || undefined,
-      category: categoryFilter.value || undefined,
+      status: statusFilter.value.length ? statusFilter.value : undefined,
+      category: categoryFilter.value.length ? categoryFilter.value : undefined,
       my: myOnly.value || undefined,
     })
   } catch (e: any) {
@@ -92,13 +106,7 @@ function onRowClick(event: { data: Ticket }) {
   router.push(`/tickets/${event.data.id}`)
 }
 
-function goToCreate() {
-  router.push('/tickets/create')
-}
-
-onMounted(() => {
-  loadTickets(1)
-})
+onMounted(() => loadTickets(1))
 </script>
 
 <template>
@@ -106,21 +114,25 @@ onMounted(() => {
     <Toolbar class="tickets-toolbar">
       <template #start>
         <div class="toolbar-filters">
-          <Select
+          <MultiSelect
             v-model="statusFilter"
             :options="statusOptions"
             option-label="label"
             option-value="value"
-            placeholder="Все статусы"
+            placeholder="Статус"
+            :max-selected-labels="2"
+            selected-items-label="{0} статусов"
             class="filter-select"
             @change="onFilterChange"
           />
-          <Select
+          <MultiSelect
             v-model="categoryFilter"
             :options="categoryOptions"
             option-label="label"
             option-value="value"
-            placeholder="Все категории"
+            placeholder="Категория"
+            :max-selected-labels="2"
+            selected-items-label="{0} категорий"
             class="filter-select"
             @change="onFilterChange"
           />
@@ -138,10 +150,40 @@ onMounted(() => {
         <Button
           label="Создать заявку"
           icon="pi pi-plus"
-          @click="goToCreate"
+          @click="router.push('/tickets/create')"
         />
       </template>
     </Toolbar>
+
+    <!-- Active filters chips -->
+    <div v-if="statusFilter.length || categoryFilter.length" class="active-filters">
+      <Tag
+        v-for="s in statusFilter"
+        :key="'s-' + s"
+        :value="statusOptions.find(o => o.value === s)?.label || s"
+        severity="info"
+        rounded
+        class="filter-chip"
+        @click="statusFilter = statusFilter.filter(v => v !== s); onFilterChange()"
+      />
+      <Tag
+        v-for="c in categoryFilter"
+        :key="'c-' + c"
+        :value="categoryLabels[c] || c"
+        severity="secondary"
+        rounded
+        class="filter-chip"
+        @click="categoryFilter = categoryFilter.filter(v => v !== c); onFilterChange()"
+      />
+      <Button
+        label="Сбросить фильтры"
+        icon="pi pi-times"
+        text
+        size="small"
+        severity="secondary"
+        @click="statusFilter = []; categoryFilter = []; onFilterChange()"
+      />
+    </div>
 
     <DataTable
       :value="store.tickets"
@@ -155,15 +197,24 @@ onMounted(() => {
         <div class="empty-message">Заявки не найдены</div>
       </template>
 
-      <Column field="title" header="Тема" style="min-width: 250px">
+      <Column field="title" header="Тема" style="min-width: 220px">
         <template #body="{ data }">
-          <span class="ticket-title">{{ data.title }}</span>
+          <div class="ticket-cell-title">
+            <span class="ticket-title">{{ data.title }}</span>
+            <span v-if="data.urgent" class="urgent-dot" title="Срочная">!</span>
+          </div>
+        </template>
+      </Column>
+
+      <Column field="product" header="Продукт" style="width: 140px">
+        <template #body="{ data }">
+          <span class="ticket-meta-text">{{ productLabels[data.product] || data.product || '—' }}</span>
         </template>
       </Column>
 
       <Column field="category" header="Категория" style="width: 140px">
         <template #body="{ data }">
-          {{ getCategoryLabel(data.category) }}
+          <span class="ticket-meta-text">{{ categoryLabels[data.category] || data.category || '—' }}</span>
         </template>
       </Column>
 
@@ -173,13 +224,13 @@ onMounted(() => {
         </template>
       </Column>
 
-      <Column field="priority" header="Приоритет" style="width: 140px">
+      <Column field="priority" header="Приоритет" style="width: 130px">
         <template #body="{ data }">
           <TicketPriorityBadge :priority="data.priority" />
         </template>
       </Column>
 
-      <Column field="created_at" header="Создана" style="width: 170px">
+      <Column field="created_at" header="Создана" style="width: 160px">
         <template #body="{ data }">
           <span class="ticket-date">{{ formatDate(data.created_at) }}</span>
         </template>
@@ -200,7 +251,7 @@ onMounted(() => {
 .tickets-page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 .tickets-toolbar {
@@ -209,15 +260,38 @@ onMounted(() => {
 
 .toolbar-filters {
   display: flex;
-  gap: 12px;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .filter-select {
   min-width: 180px;
 }
 
+.active-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.filter-chip {
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.filter-chip:hover {
+  opacity: 0.7;
+}
+
 .tickets-table {
   cursor: pointer;
+}
+
+.ticket-cell-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .ticket-title {
@@ -225,8 +299,27 @@ onMounted(() => {
   color: #1e293b;
 }
 
+.urgent-dot {
+  background: #ef4444;
+  color: white;
+  font-weight: 700;
+  font-size: 11px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ticket-meta-text {
+  font-size: 13px;
+  color: #64748b;
+}
+
 .ticket-date {
-  font-size: 0.875rem;
+  font-size: 13px;
   color: #64748b;
 }
 
@@ -234,5 +327,16 @@ onMounted(() => {
   text-align: center;
   padding: 2rem;
   color: #94a3b8;
+}
+
+@media (max-width: 768px) {
+  .toolbar-filters {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .filter-select {
+    min-width: 100%;
+  }
 }
 </style>
