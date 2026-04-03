@@ -19,7 +19,7 @@ ARTICLES = [
     # ─── Мобильное приложение ─────────────────────────────────────
     {
         "title": "Создание пропуска для пешехода в мобильном приложении",
-        "category": "pass",
+        "article_type": "guide", "category": "pass",
         "content": """# Пропуск для пешехода
 
 ## Пошаговая инструкция
@@ -48,7 +48,7 @@ ARTICLES = [
     },
     {
         "title": "Создание пропуска на автомобиль в мобильном приложении",
-        "category": "pass",
+        "article_type": "guide", "category": "pass",
         "content": """# Пропуск на автомобиль
 
 ## Пошаговая инструкция
@@ -81,7 +81,7 @@ ARTICLES = [
     },
     {
         "title": "Приглашение — гость заполняет данные самостоятельно",
-        "category": "pass",
+        "article_type": "guide", "category": "pass",
         "content": """# Приглашение (гость заполняет сам)
 
 ## Когда использовать
@@ -116,7 +116,7 @@ ARTICLES = [
     },
     {
         "title": "Управление пропусками — раздел «Мои пропуска»",
-        "category": "pass",
+        "article_type": "guide", "category": "pass",
         "content": """# Мои пропуска
 
 ## Где найти
@@ -151,7 +151,7 @@ ARTICLES = [
     },
     {
         "title": "Запросы в мобильном приложении — доверенность, адрес, обращение в УК",
-        "category": "general",
+        "article_type": "guide", "category": "general",
         "content": """# Запросы в приложении PASS24
 
 ## Виды запросов
@@ -189,7 +189,7 @@ ARTICLES = [
     },
     {
         "title": "FAQ по мобильному приложению PASS24",
-        "category": "app",
+        "article_type": "guide", "category": "app",
         "content": """# FAQ по мобильному приложению
 
 ## Меня заблокировали — что делать?
@@ -237,7 +237,7 @@ ARTICLES = [
     # ─── Веб-интерфейс администратора ─────────────────────────────
     {
         "title": "Модуль «Пропуска» — создание и управление в веб-интерфейсе",
-        "category": "pass",
+        "article_type": "guide", "category": "pass",
         "content": """# Модуль «Пропуска» (Веб-интерфейс)
 
 ## Создание пропуска
@@ -283,7 +283,7 @@ ARTICLES = [
     },
     {
         "title": "Модуль «Пользователи» — управление жителями и сотрудниками",
-        "category": "general",
+        "article_type": "guide", "category": "general",
         "content": """# Модуль «Пользователи» (Веб-интерфейс)
 
 ## Добавление пользователя
@@ -318,7 +318,7 @@ ARTICLES = [
     },
     {
         "title": "Модуль «Запросы» — одобрение заявок от жителей",
-        "category": "general",
+        "article_type": "guide", "category": "general",
         "content": """# Модуль «Запросы» (Веб-интерфейс)
 
 ## Типы запросов
@@ -351,7 +351,7 @@ ARTICLES = [
     },
     {
         "title": "Модуль «Адреса» — управление адресами объекта",
-        "category": "general",
+        "article_type": "guide", "category": "general",
         "content": """# Модуль «Адреса» (Веб-интерфейс)
 
 ## Добавление адреса
@@ -380,7 +380,7 @@ ARTICLES = [
     },
     {
         "title": "Модуль «Объекты» — настройки ЖК/БЦ",
-        "category": "general",
+        "article_type": "guide", "category": "general",
         "content": """# Модуль «Объекты» (Веб-интерфейс)
 
 ## Основные настройки
@@ -417,7 +417,7 @@ ARTICLES = [
     },
     {
         "title": "Массовая рассылка пешеходных пропусков",
-        "category": "pass",
+        "article_type": "guide", "category": "pass",
         "content": """# Массовая рассылка пропусков
 
 ## Когда использовать
@@ -456,7 +456,7 @@ ARTICLES = [
     # ─── BLE ключи ────────────────────────────────────────────────
     {
         "title": "Установка приложения PASS24.Key для BLE-ключей",
-        "category": "app",
+        "article_type": "guide", "category": "app",
         "content": """# Установка PASS24.Key
 
 ## Что это
@@ -483,7 +483,7 @@ PASS24.Key — приложение для открытия дверей и шл
     },
     {
         "title": "Активация BLE-ключа по QR-коду",
-        "category": "access",
+        "article_type": "guide", "category": "access",
         "content": """# Активация BLE-ключа
 
 ## Получение QR-кода
@@ -516,7 +516,7 @@ PASS24.Key — приложение для открытия дверей и шл
     },
     {
         "title": "Настройка Bluetooth и разрешений для PASS24.Key",
-        "category": "app",
+        "article_type": "guide", "category": "app",
         "content": """# Настройка Bluetooth и разрешений
 
 ## Android
@@ -555,7 +555,7 @@ PASS24.Key — приложение для открытия дверей и шл
     # ─── QR-коды ──────────────────────────────────────────────────
     {
         "title": "Как работает QR-пропуск в PASS24",
-        "category": "pass",
+        "article_type": "guide", "category": "pass",
         "content": """# Как работает QR-пропуск
 
 ## Полный цикл
@@ -588,7 +588,7 @@ PASS24.Key — приложение для открытия дверей и шл
     },
     {
         "title": "Создание приглашения с QR-кодом — пошаговая инструкция",
-        "category": "pass",
+        "article_type": "guide", "category": "pass",
         "content": """# Создание приглашения с QR-кодом
 
 ## В мобильном приложении
@@ -628,7 +628,7 @@ PASS24.Key — приложение для открытия дверей и шл
     # ─── Telegram-бот ─────────────────────────────────────────────
     {
         "title": "Заказ пропуска через Telegram-бот PASS24",
-        "category": "general",
+        "article_type": "guide", "category": "general",
         "content": """# Telegram-бот @PASS24ROBOT
 
 ## Что это

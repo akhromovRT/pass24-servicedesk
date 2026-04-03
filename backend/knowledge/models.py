@@ -7,6 +7,13 @@ from enum import Enum
 from sqlmodel import Column, Field, Index, SQLModel, String
 
 
+class ArticleType(str, Enum):
+    """Тип статьи: FAQ (база знаний) или guide (инструкция)."""
+
+    FAQ = "faq"
+    GUIDE = "guide"
+
+
 class ArticleCategory(str, Enum):
     """Категории статей базы знаний."""
 
@@ -32,6 +39,10 @@ class Article(SQLModel, table=True):
     category: ArticleCategory = Field(
         default=ArticleCategory.GENERAL,
         sa_column=Column(String, index=True),
+    )
+    article_type: ArticleType = Field(
+        default=ArticleType.FAQ,
+        sa_column=Column(String, index=True, default="faq"),
     )
     content: str = Field(description="Содержимое статьи в формате Markdown")
     is_published: bool = Field(default=True, index=True)

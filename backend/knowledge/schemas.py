@@ -6,7 +6,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from .models import ArticleCategory
+from .models import ArticleCategory, ArticleType
 
 
 class ArticleCreate(BaseModel):
@@ -15,6 +15,7 @@ class ArticleCreate(BaseModel):
     title: str = Field(..., max_length=512, description="Заголовок статьи")
     category: ArticleCategory = Field(..., description="Категория статьи")
     content: str = Field(..., description="Содержимое статьи (Markdown)")
+    article_type: ArticleType = Field(default=ArticleType.FAQ, description="Тип: faq или guide")
     is_published: bool = Field(default=True, description="Опубликована ли статья")
 
 
@@ -34,6 +35,7 @@ class ArticleRead(BaseModel):
     title: str
     slug: str
     category: ArticleCategory
+    article_type: ArticleType
     content: str
     is_published: bool
     views_count: int

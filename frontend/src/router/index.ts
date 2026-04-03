@@ -46,6 +46,11 @@ const router = createRouter({
       component: () => import('../pages/InstructionsPage.vue'),
     },
     {
+      path: '/instructions/:slug',
+      name: 'guide',
+      component: () => import('../pages/GuidePage.vue'),
+    },
+    {
       path: '/knowledge',
       name: 'knowledge',
       component: () => import('../pages/KnowledgePage.vue'),

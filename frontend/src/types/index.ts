@@ -91,11 +91,14 @@ export interface PaginatedResponse<T> {
   per_page: number
 }
 
+export type ArticleType = 'faq' | 'guide'
+
 export interface Article {
   id: string
   title: string
   slug: string
   category: ArticleCategory
+  article_type: ArticleType
   content: string
   is_published: boolean
   views_count: number
@@ -110,6 +113,7 @@ export type ArticleCategory = 'access' | 'pass' | 'gate' | 'app' | 'notification
 export interface ArticleCreate {
   title: string
   category: ArticleCategory
+  article_type?: ArticleType
   content: string
   is_published?: boolean
 }

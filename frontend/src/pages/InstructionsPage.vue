@@ -125,7 +125,7 @@ const filteredSections = computed(() => {
 })
 
 function openGuide(slug: string) {
-  router.push(`/knowledge/${slug}`)
+  router.push(`/instructions/${slug}`)
 }
 </script>
 

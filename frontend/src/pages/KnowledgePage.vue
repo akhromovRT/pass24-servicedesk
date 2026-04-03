@@ -42,9 +42,9 @@ const canCreate = () =>
 async function loadArticles(page = 1) {
   try {
     if (searchInput.value.trim()) {
-      await knowledge.searchArticles(searchInput.value.trim(), page)
+      await knowledge.searchArticles(searchInput.value.trim(), page, 'faq')
     } else {
-      await knowledge.fetchArticles(page, selectedCategory.value || undefined)
+      await knowledge.fetchArticles(page, selectedCategory.value || undefined, 'faq')
     }
   } catch (e: any) {
     toast.add({

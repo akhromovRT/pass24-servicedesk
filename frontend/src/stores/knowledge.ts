@@ -11,13 +11,12 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   const loading = ref(false)
   const searchQuery = ref('')
 
-  async function fetchArticles(p = 1, category?: string) {
+  async function fetchArticles(p = 1, category?: string, type?: string) {
     loading.value = true
     try {
       let path = `/knowledge/?page=${p}&per_page=20`
-      if (category) {
-        path += `&category=${category}`
-      }
+      if (category) path += `&category=${category}`
+      if (type) path += `&type=${type}`
       const data = await api.get<PaginatedResponse<Article>>(path)
       articles.value = data.items
       total.value = data.total
@@ -27,12 +26,12 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     }
   }
 
-  async function searchArticles(query: string, p = 1) {
+  async function searchArticles(query: string, p = 1, type?: string) {
     loading.value = true
     try {
-      const data = await api.get<PaginatedResponse<Article>>(
-        `/knowledge/search?query=${encodeURIComponent(query)}&page=${p}`,
-      )
+      let path = `/knowledge/search?query=${encodeURIComponent(query)}&page=${p}`
+      if (type) path += `&type=${type}`
+      const data = await api.get<PaginatedResponse<Article>>(path)
       articles.value = data.items
       total.value = data.total
       page.value = data.page

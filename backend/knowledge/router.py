@@ -15,7 +15,7 @@ from backend.auth.dependencies import get_current_user, require_role
 from backend.auth.models import User, UserRole
 from backend.database import get_session
 
-from .models import Article, ArticleCategory
+from .models import Article, ArticleCategory, ArticleType
 from .schemas import ArticleCreate, ArticleListResponse, ArticleRead, ArticleUpdate
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
@@ -71,6 +71,7 @@ async def _build_article_read(article: Article, session: AsyncSession) -> Articl
         title=article.title,
         slug=article.slug,
         category=article.category,
+        article_type=article.article_type,
         content=article.content,
         is_published=article.is_published,
         views_count=article.views_count,
@@ -86,13 +87,17 @@ async def list_articles(
     page: int = Query(default=1, ge=1, description="Номер страницы"),
     per_page: int = Query(default=20, ge=1, le=100, description="Статей на страницу"),
     category: Optional[ArticleCategory] = Query(default=None, description="Фильтр по категории"),
+    article_type: Optional[ArticleType] = Query(default=None, alias="type", description="Тип: faq или guide"),
     session: AsyncSession = Depends(get_session),
 ) -> ArticleListResponse:
-    """Список опубликованных статей с пагинацией и фильтрацией по категории."""
+    """Список опубликованных статей с пагинацией и фильтрацией."""
     # Базовый запрос — только опубликованные
     query = select(Article).where(Article.is_published == True)  # noqa: E712
     count_query = select(func.count()).select_from(Article).where(Article.is_published == True)  # noqa: E712
 
+    if article_type is not None:
+        query = query.where(Article.article_type == article_type)
+        count_query = count_query.where(Article.article_type == article_type)
     if category is not None:
         query = query.where(Article.category == category)
         count_query = count_query.where(Article.category == category)
@@ -122,6 +127,7 @@ async def list_articles(
 async def search_articles(
     query: str = Query(..., min_length=1, description="Поисковый запрос"),
     category: Optional[ArticleCategory] = Query(default=None, description="Фильтр по категории"),
+    article_type: Optional[ArticleType] = Query(default=None, alias="type", description="Тип: faq или guide"),
     page: int = Query(default=1, ge=1, description="Номер страницы"),
     per_page: int = Query(default=20, ge=1, le=100, description="Статей на страницу"),
     session: AsyncSession = Depends(get_session),
@@ -143,6 +149,9 @@ async def search_articles(
     stmt = select(Article).where(base_filter)
     count_stmt = select(func.count()).select_from(Article).where(base_filter)
 
+    if article_type is not None:
+        stmt = stmt.where(Article.article_type == article_type)
+        count_stmt = count_stmt.where(Article.article_type == article_type)
     if category is not None:
         stmt = stmt.where(Article.category == category)
         count_stmt = count_stmt.where(Article.category == category)
@@ -160,6 +169,9 @@ async def search_articles(
         )
         stmt = select(Article).where(ilike_filter)
         count_stmt = select(func.count()).select_from(Article).where(ilike_filter)
+        if article_type is not None:
+            stmt = stmt.where(Article.article_type == article_type)
+            count_stmt = count_stmt.where(Article.article_type == article_type)
         if category is not None:
             stmt = stmt.where(Article.category == category)
             count_stmt = count_stmt.where(Article.category == category)
@@ -227,6 +239,7 @@ async def create_article(
         title=payload.title,
         slug=slug,
         category=payload.category,
+        article_type=payload.article_type,
         content=payload.content,
         is_published=payload.is_published,
         author_id=current_user.id,
