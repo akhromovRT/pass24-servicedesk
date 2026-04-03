@@ -2,23 +2,20 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+import bcrypt
 from jose import jwt
-from passlib.context import CryptContext
 
 from backend.config import settings
-
-# Контекст хеширования паролей (bcrypt)
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def hash_password(password: str) -> str:
     """Хеширует пароль с помощью bcrypt."""
-    return _pwd_context.hash(password)
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     """Проверяет совпадение открытого пароля с хешем."""
-    return _pwd_context.verify(plain, hashed)
+    return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
 def create_access_token(data: dict) -> str:
