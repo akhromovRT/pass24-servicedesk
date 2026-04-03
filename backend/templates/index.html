@@ -2,191 +2,755 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <title>PASS24 Service Desk</title>
+    <title>PASS24 Поддержка</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"
-    />
     <style>
+      * {
+        box-sizing: border-box;
+      }
+
       body {
-        max-width: 1100px;
+        margin: 0;
+        min-height: 100vh;
+        font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        background: radial-gradient(circle at 0 0, #1f2937, #020617 55%);
+        color: #f9fafb;
+      }
+
+      a {
+        color: #f97373;
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      .shell {
+        max-width: 1120px;
         margin: 0 auto;
-        padding: 1.5rem;
+        padding: 16px 20px 40px;
       }
-      .layout {
+
+      .top-nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 4px 16px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+      }
+
+      .brand-logo {
+        width: 24px;
+        height: 24px;
+        border-radius: 4px;
+        background: linear-gradient(135deg, #ef4444, #7f1d1d);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .brand-text {
+        font-weight: 500;
+      }
+
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        font-size: 13px;
+        color: #e5e7eb;
+      }
+
+      .nav-links span {
+        opacity: 0.85;
+      }
+
+      .hero {
+        margin-top: 24px;
+        border-radius: 20px;
+        padding: 28px 28px 32px;
+        background: radial-gradient(circle at 10% 0, #991b1b, transparent 55%),
+          radial-gradient(circle at 90% 0, #b91c1c, transparent 55%),
+          linear-gradient(135deg, #020617, #020617);
+        box-shadow:
+          0 18px 40px rgba(15, 23, 42, 0.8),
+          0 0 0 1px rgba(148, 27, 27, 0.7);
+      }
+
+      @media (max-width: 800px) {
+        .hero {
+          padding: 22px 18px 26px;
+        }
+      }
+
+      .hero-title {
+        font-size: clamp(24px, 3vw, 30px);
+        font-weight: 600;
+        margin: 0 0 8px;
+      }
+
+      .hero-subtitle {
+        margin: 0 0 20px;
+        font-size: 14px;
+        color: #e5e7eb;
+        max-width: 520px;
+      }
+
+      .hero-search {
+        max-width: 520px;
+        margin-bottom: 20px;
+      }
+
+      .hero-search input {
+        width: 100%;
+        border-radius: 999px;
+        border: 1px solid rgba(248, 250, 252, 0.18);
+        padding: 10px 14px;
+        font-size: 14px;
+        font-family: inherit;
+        background: rgba(15, 23, 42, 0.9);
+        color: #f9fafb;
+        outline: none;
+      }
+
+      .hero-search input::placeholder {
+        color: rgba(156, 163, 175, 0.9);
+      }
+
+      .hero-search input:focus {
+        border-color: #f97373;
+        box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.75);
+      }
+
+      .hero-grid {
+        margin-top: 12px;
         display: grid;
-        grid-template-columns: minmax(0, 2fr) minmax(0, 1.3fr);
-        gap: 1.5rem;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
       }
+
       @media (max-width: 900px) {
-        .layout {
+        .hero-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      .hero-tile {
+        border-radius: 14px;
+        padding: 10px 10px 12px;
+        background: rgba(15, 23, 42, 0.95);
+        border: 1px solid rgba(248, 113, 113, 0.25);
+        color: #f9fafb;
+        font-size: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .hero-tile span {
+        font-size: 11px;
+        color: #e5e7eb;
+        opacity: 0.9;
+      }
+
+      .hero-tile-title {
+        font-weight: 500;
+        font-size: 13px;
+      }
+
+      .hero-tile-icon {
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        background: rgba(248, 113, 113, 0.15);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 4px;
+      }
+
+      .content {
+        margin-top: 28px;
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+        gap: 20px;
+      }
+
+      @media (max-width: 900px) {
+        .content {
           grid-template-columns: 1fr;
         }
       }
-      .ticket-card {
-        border-radius: 0.75rem;
-        border: 1px solid rgba(148, 163, 184, 0.4);
-        padding: 1rem 1.25rem;
-        background: linear-gradient(
-          135deg,
-          rgba(248, 250, 252, 0.9),
-          rgba(241, 245, 249, 0.9)
-        );
-        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.06);
+
+      .section-heading {
+        font-size: 18px;
+        font-weight: 600;
+        margin: 0 0 8px;
       }
-      .badge {
+
+      .section-subtitle {
+        font-size: 13px;
+        color: #e5e7eb;
+        opacity: 0.9;
+        margin: 0 0 10px;
+      }
+
+      .form-card {
+        background: #020617;
+        border-radius: 16px;
+        padding: 16px 16px 18px;
+        box-shadow:
+          0 10px 26px rgba(15, 23, 42, 0.9),
+          0 0 0 1px rgba(248, 113, 113, 0.45);
+      }
+
+      .form-header-title {
+        font-size: 16px;
+        font-weight: 600;
+        margin: 0 0 4px;
+      }
+
+      .form-header-subtitle {
+        margin: 0 0 12px;
+        font-size: 13px;
+        color: #e5e7eb;
+        opacity: 0.9;
+      }
+
+      .form-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+
+      .form-row-inline {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      @media (max-width: 700px) {
+        .form-row-inline {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        font-size: 12px;
+      }
+
+      .field label {
+        font-weight: 500;
+      }
+
+      input[type="text"],
+      textarea,
+      select {
+        width: 100%;
+        border-radius: 10px;
+        border: 1px solid rgba(55, 65, 81, 0.9);
+        padding: 7px 9px;
+        font-size: 13px;
+        font-family: inherit;
+        background: #020617;
+        color: #f9fafb;
+        outline: none;
+      }
+
+      input[type="text"]::placeholder,
+      textarea::placeholder {
+        color: rgba(156, 163, 175, 0.9);
+      }
+
+      input[type="text"]:focus,
+      textarea:focus,
+      select:focus {
+        border-color: #f97373;
+        box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.7);
+      }
+
+      textarea {
+        resize: vertical;
+        min-height: 70px;
+      }
+
+      .submit-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 10px;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .helper-text {
+        font-size: 11px;
+        color: #e5e7eb;
+        opacity: 0.9;
+      }
+
+      button[type="submit"] {
+        border: none;
+        border-radius: 999px;
+        padding: 7px 16px;
+        font-size: 13px;
+        font-weight: 500;
+        font-family: inherit;
+        cursor: pointer;
+        background: #f97373;
+        color: #111827;
+        box-shadow: 0 8px 16px rgba(248, 113, 113, 0.45);
         display: inline-flex;
         align-items: center;
-        padding: 0.1rem 0.6rem;
-        border-radius: 999px;
-        font-size: 0.7rem;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
+        gap: 6px;
+        transition:
+          transform 80ms ease-out,
+          box-shadow 80ms ease-out,
+          background 80ms ease-out;
+        white-space: nowrap;
       }
-      .badge-status {
-        background: rgba(59, 130, 246, 0.08);
-        color: #1d4ed8;
+
+      button[type="submit"]:hover {
+        background: #fb6a69;
+        box-shadow: 0 10px 20px rgba(248, 113, 113, 0.6);
+        transform: translateY(-1px);
       }
-      .badge-priority-low {
-        background: rgba(34, 197, 94, 0.08);
-        color: #16a34a;
+
+      button[type="submit"]:active {
+        background: #ea5455;
+        box-shadow: 0 6px 14px rgba(220, 38, 38, 0.7);
+        transform: translateY(0);
       }
-      .badge-priority-normal {
-        background: rgba(148, 163, 184, 0.15);
-        color: #4b5563;
+
+      .panel {
+        background: #020617;
+        border-radius: 16px;
+        padding: 14px 14px 16px;
+        box-shadow:
+          0 10px 26px rgba(15, 23, 42, 0.9),
+          0 0 0 1px rgba(31, 41, 55, 0.9);
       }
-      .badge-priority-high {
-        background: rgba(249, 115, 22, 0.12);
-        color: #ea580c;
+
+      .panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 8px;
       }
-      .badge-priority-critical {
-        background: rgba(239, 68, 68, 0.12);
-        color: #b91c1c;
+
+      .panel-title {
+        font-size: 14px;
+        font-weight: 600;
       }
-      .muted {
-        color: #6b7280;
-        font-size: 0.85rem;
+
+      .panel-meta {
+        font-size: 12px;
+        color: #9ca3af;
       }
+
       .tickets-list {
         display: flex;
         flex-direction: column;
-        gap: 0.9rem;
+        gap: 8px;
+        max-height: 360px;
+        overflow-y: auto;
+        padding-right: 4px;
       }
-      .page-header h1 {
-        margin-bottom: 0.1rem;
+
+      .tickets-list::-webkit-scrollbar {
+        width: 4px;
       }
-      .page-header p {
-        margin-top: 0;
+
+      .tickets-list::-webkit-scrollbar-thumb {
+        background: rgba(148, 163, 184, 0.9);
+        border-radius: 999px;
+      }
+
+      .ticket-card {
+        border-radius: 12px;
+        padding: 8px 10px;
+        background: #020617;
+        border: 1px solid rgba(55, 65, 81, 0.9);
+      }
+
+      .ticket-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        align-items: flex-start;
+        margin-bottom: 2px;
+      }
+
+      .ticket-title {
+        font-size: 13px;
+        font-weight: 500;
+        margin-bottom: 2px;
+      }
+
+      .ticket-meta {
+        font-size: 11px;
+        color: #9ca3af;
+      }
+
+      .badge-row {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 3px;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 7px;
+        border-radius: 999px;
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .badge-status {
+        background: #020617;
+        color: #e5e7eb;
+        border: 1px solid rgba(55, 65, 81, 0.9);
+      }
+
+      .badge-priority-low {
+        background: rgba(22, 163, 74, 0.15);
+        color: #bbf7d0;
+        border: 1px solid rgba(74, 222, 128, 0.7);
+      }
+
+      .badge-priority-normal {
+        background: rgba(148, 163, 184, 0.25);
+        color: #e5e7eb;
+        border: 1px solid rgba(148, 163, 184, 0.8);
+      }
+
+      .badge-priority-high {
+        background: rgba(251, 146, 60, 0.2);
+        color: #fed7aa;
+        border: 1px solid rgba(251, 146, 60, 0.8);
+      }
+
+      .badge-priority-critical {
+        background: rgba(239, 68, 68, 0.25);
+        color: #fecaca;
+        border: 1px solid rgba(248, 113, 113, 0.9);
+      }
+
+      .ticket-body {
+        margin: 2px 0 4px;
+        font-size: 12px;
+        color: #e5e7eb;
+        line-height: 1.4;
+        white-space: pre-line;
+      }
+
+      .ticket-footer {
+        font-size: 11px;
+        color: #9ca3af;
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 4px 8px;
+      }
+
+      .empty-state {
+        padding: 10px 10px 12px;
+        border-radius: 10px;
+        border: 1px dashed rgba(55, 65, 81, 0.9);
+        font-size: 12px;
+        color: #e5e7eb;
+        background: #020617;
       }
     </style>
   </head>
   <body>
-    <header class="page-header">
-      <h1>PASS24 Service Desk</h1>
-      <p class="muted">
-        Создавайте обращения и отслеживайте статус по объектам PASS24.
-      </p>
-    </header>
+    <div class="shell">
+      <header class="top-nav">
+        <div class="brand">
+          <div class="brand-logo">P</div>
+          <div class="brand-text">PASS24 Поддержка</div>
+        </div>
+        <div class="nav-links">
+          <span>Сервис-деск</span>
+          <span>FAQ</span>
+        </div>
+      </header>
 
-    <main class="layout">
-      <section>
-        <h2>Последние тикеты</h2>
-        {% if tickets %}
-        <div class="tickets-list">
-          {% for ticket in tickets %}
-          <article class="ticket-card">
-            <header style="display: flex; justify-content: space-between; gap: 0.75rem;">
-              <div>
-                <strong>{{ ticket.title }}</strong>
-                <div class="muted">
-                  ID: {{ ticket.id }} · Автор: {{ ticket.creator_id }}
+      <section class="hero">
+        <h1 class="hero-title">Здравствуйте! Добро пожаловать в поддержку PASS24.</h1>
+        <p class="hero-subtitle">
+          Здесь вы можете оставить обращение по работе пропусков, шлагбаумов и
+          приложений PASS24.
+        </p>
+
+        <div class="hero-search">
+          <input
+            type="text"
+            placeholder="Кратко опишите проблему, например: Не открывается шлагбаум"
+          />
+        </div>
+
+        <div class="hero-grid">
+          <div class="hero-tile">
+            <div class="hero-tile-icon">🔑</div>
+            <div class="hero-tile-title">Вход и доступ</div>
+            <span>Не получается войти в приложение или на сайт.</span>
+          </div>
+          <div class="hero-tile">
+            <div class="hero-tile-icon">🚗</div>
+            <div class="hero-tile-title">Шлагбаумы и двери</div>
+            <span>Не открывается шлагбаум, дверь или домофон.</span>
+          </div>
+          <div class="hero-tile">
+            <div class="hero-tile-icon">🎫</div>
+            <div class="hero-tile-title">Пропуска</div>
+            <span>Создание, изменение и использование пропусков.</span>
+          </div>
+          <div class="hero-tile">
+            <div class="hero-tile-icon">📲</div>
+            <div class="hero-tile-title">Уведомления</div>
+            <span>Не приходят сообщения или push‑уведомления.</span>
+          </div>
+        </div>
+      </section>
+
+      <main class="content">
+        <section>
+          <h2 class="section-heading">Создать обращение</h2>
+          <p class="section-subtitle">
+            Заполните несколько полей — этого достаточно, чтобы мы быстро поняли
+            ситуацию и связались с вами.
+          </p>
+
+          <div class="form-card">
+            <h3 class="form-header-title">Шаг 1. Опишите проблему</h3>
+            <p class="form-header-subtitle">
+              Напишите, что именно не работает. Используйте простые слова.
+            </p>
+
+            <form method="post" action="/create">
+              <div class="form-grid">
+                <div class="field">
+                  <label for="title">Заголовок</label>
+                  <input
+                    id="title"
+                    type="text"
+                    name="title"
+                    required
+                    maxlength="200"
+                    placeholder="Например: Не открывается шлагбаум"
+                  />
+                </div>
+
+                <div class="field">
+                  <label for="description">Что произошло</label>
+                  <textarea
+                    id="description"
+                    name="description"
+                    rows="4"
+                    required
+                    maxlength="4000"
+                    placeholder="Например: Шлагбаум на въезде во двор не открывается с 9:30, приложение показывает, что ключ установлен."
+                  ></textarea>
+                </div>
+
+                <div class="field">
+                  <label for="category">Тип проблемы</label>
+                  <select id="category" name="category">
+                    <option value="access">Не могу войти / авторизоваться</option>
+                    <option value="gate">Шлагбаум / дверь / домофон</option>
+                    <option value="pass">Проблема с пропуском / приглашением</option>
+                    <option value="notifications">Уведомления / сообщения</option>
+                    <option value="other" selected>Другое</option>
+                  </select>
+                </div>
+
+                <h3 class="form-header-title">Шаг 2. Где была проблема</h3>
+
+                <div class="form-row-inline">
+                  <div class="field">
+                    <label for="object_id">Объект (ЖК / БЦ)</label>
+                    <input
+                      id="object_id"
+                      type="text"
+                      name="object_id"
+                      placeholder="Например: ЖК Солнечный, корпус 3"
+                    />
+                  </div>
+
+                  <div class="field">
+                    <label for="access_point_id">Точка доступа</label>
+                    <input
+                      id="access_point_id"
+                      type="text"
+                      name="access_point_id"
+                      placeholder="Например: Шлагбаум №2 у въезда"
+                    />
+                  </div>
+                </div>
+
+                <h3 class="form-header-title">Шаг 3. О вас</h3>
+
+                <div class="form-row-inline">
+                  <div class="field">
+                    <label for="creator_id">Ваше имя или ID</label>
+                    <input
+                      id="creator_id"
+                      type="text"
+                      name="creator_id"
+                      value="demo-user"
+                      placeholder="Например: Иван Петров"
+                    />
+                  </div>
+
+                  <div class="field">
+                    <label for="user_role">Кто вы</label>
+                    <input
+                      id="user_role"
+                      type="text"
+                      name="user_role"
+                      placeholder="Например: житель, гость, УК"
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row-inline">
+                  <div class="field">
+                    <label for="occurred_at">Когда примерно это было</label>
+                    <input
+                      id="occurred_at"
+                      type="text"
+                      name="occurred_at"
+                      placeholder="Например: сегодня около 18:30"
+                    />
+                  </div>
+
+                  <div class="field">
+                    <label for="contact">Как с вами связаться</label>
+                    <input
+                      id="contact"
+                      type="text"
+                      name="contact"
+                      placeholder="Телефон или email"
+                    />
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label for="urgent">
+                    <input
+                      id="urgent"
+                      type="checkbox"
+                      name="urgent"
+                      value="true"
+                      style="margin-right: 6px"
+                    />Мне нужно попасть сейчас (срочная ситуация)
+                  </label>
                 </div>
               </div>
-              <div style="text-align: right;">
-                <span class="badge badge-status">
-                  {{ ticket.status.name }}
-                </span>
-                {% set pr = ticket.priority.name.lower() %}
-                <span class="badge badge-priority-{{ pr }}">
-                  {{ ticket.priority.name }}
-                </span>
+
+              <div class="submit-row">
+                <div class="helper-text">
+                  После отправки ваше обращение появится в списке справа.
+                </div>
+                <button type="submit">
+                  <span>Отправить обращение</span>
+                </button>
               </div>
-            </header>
-            <p style="margin-top: 0.5rem; white-space: pre-line;">
-              {{ ticket.description }}
-            </p>
-            <footer class="muted">
-              Объект: {{ ticket.object_id or "—" }} · Точка доступа:
-              {{ ticket.access_point_id or "—" }}<br />
-              Создан:
-              {{ ticket.created_at.strftime("%Y-%m-%d %H:%M") }}
-            </footer>
-          </article>
-          {% endfor %}
-        </div>
-        {% else %}
-        <p class="muted">Пока нет тикетов. Создайте первый справа.</p>
-        {% endif %}
-      </section>
+            </form>
+          </div>
+        </section>
 
-      <section>
-        <h2>Новый тикет</h2>
-        <form method="post" action="/create">
-          <label>
-            Заголовок
-            <input
-              type="text"
-              name="title"
-              required
-              maxlength="200"
-              placeholder="Например: Не могу попасть в подъезд"
-            />
-          </label>
+        <section>
+          <h2 class="section-heading">Последние обращения</h2>
+          <p class="section-subtitle">
+            Здесь вы увидите отправленные обращения и их основные детали.
+          </p>
 
-          <label>
-            Описание
-            <textarea
-              name="description"
-              rows="4"
-              required
-              maxlength="4000"
-              placeholder="Кратко опишите проблему, время, подъезд/офис..."
-            ></textarea>
-          </label>
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title">Текущие тикеты</div>
+              <div class="panel-meta">
+                {% if tickets %}Всего: {{ tickets|length }}{% else %}Пока нет
+                созданных тикетов{% endif %}
+              </div>
+            </div>
 
-          <label>
-            Объект (ЖК / БЦ)
-            <input
-              type="text"
-              name="object_id"
-              placeholder="Например: ЖК Солнечный, корпус 3"
-            />
-          </label>
+            {% if tickets %}
+            <div class="tickets-list">
+              {% for ticket in tickets %}
+              <article class="ticket-card">
+                <header class="ticket-header">
+                  <div>
+                    <div class="ticket-title">{{ ticket.title }}</div>
+                    <div class="ticket-meta">
+                      ID: {{ ticket.id }} · От: {{ ticket.creator_id }}
+                    </div>
+                  </div>
+                  <div class="badge-row">
+                    <span class="badge badge-status">
+                      {{ ticket.status.name }}
+                    </span>
+                    {% set pr = ticket.priority.name.lower() %}
+                    <span class="badge badge-priority-{{ pr }}">
+                      {{ ticket.priority.name }}
+                    </span>
+                    {% if ticket.urgent %}
+                    <span class="badge badge-priority-critical">
+                      Срочно
+                    </span>
+                    {% endif %}
+                  </div>
+                </header>
 
-          <label>
-            Точка доступа
-            <input
-              type="text"
-              name="access_point_id"
-              placeholder="Например: Подъезд 3, домофон"
-            />
-          </label>
+                <p class="ticket-body">
+                  {{ ticket.description }}
+                </p>
 
-          <label>
-            Идентификатор пользователя (для тестов)
-            <input
-              type="text"
-              name="creator_id"
-              value="demo-user"
-              placeholder="PASS24 user id"
-            />
-          </label>
-
-          <button type="submit">Создать тикет</button>
-        </form>
-      </section>
-    </main>
+                <footer class="ticket-footer">
+                  <span>
+                    {% if ticket.category == 'access' %}Тип: доступ / вход
+                    {% elif ticket.category == 'gate' %}Тип: шлагбаум / дверь
+                    {% elif ticket.category == 'pass' %}Тип: пропуска
+                    {% elif ticket.category == 'notifications' %}Тип: уведомления
+                    {% else %}Тип: другое{% endif %}
+                    · Роль: {{ ticket.user_role or "не указана" }}
+                  </span>
+                  <span>
+                    Когда: {{ ticket.occurred_at or "не указано" }}
+                    · Контакт: {{ ticket.contact or "не указан" }}
+                  </span>
+                </footer>
+              </article>
+              {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state">
+              Заявок пока нет. Заполните форму слева, чтобы отправить первое
+              обращение.
+            </div>
+            {% endif %}
+          </div>
+        </section>
+      </main>
+    </div>
   </body>
 </html>
 

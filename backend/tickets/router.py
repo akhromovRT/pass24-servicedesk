@@ -24,6 +24,10 @@ def create_ticket(payload: TicketCreate) -> TicketRead:
         object_id=payload.object_id,
         access_point_id=payload.access_point_id,
         category=payload.category,
+        user_role=payload.user_role,
+        occurred_at=payload.occurred_at,
+        contact=payload.contact,
+        urgent=payload.urgent,
         title=payload.title,
         description=payload.description,
     )

@@ -1,0 +1,1602 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PASS24 Поддержка — Служба технической поддержки</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Inter',system-ui,sans-serif;background:#f1f5f9;color:#1e293b;-webkit-font-smoothing:antialiased}
+
+  /* ── Header ── */
+  .header{background:#0f172a;color:#f8fafc;padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
+  .header-brand{display:flex;align-items:center;gap:10px;cursor:pointer;text-decoration:none}
+  .header-logo{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#ef4444,#991b1b);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;color:#fff}
+  .header-title{font-size:15px;font-weight:600;letter-spacing:-.01em;color:#f8fafc}
+  .header-title span{color:#f87171}
+  .header-nav{display:flex;gap:20px;font-size:13px;color:#94a3b8}
+  .header-nav a{color:#94a3b8;text-decoration:none;transition:color .15s;cursor:pointer}
+  .header-nav a:hover{color:#f8fafc}
+  .header-nav a.active{color:#f8fafc;font-weight:500}
+
+  /* ── Hamburger ── */
+  .hamburger{display:none;background:none;border:none;cursor:pointer;padding:4px;color:#f8fafc}
+  .hamburger svg{width:24px;height:24px}
+  @media(max-width:640px){
+    .header-nav{display:none;position:absolute;top:56px;left:0;right:0;background:#0f172a;flex-direction:column;padding:12px 24px 16px;gap:0;border-top:1px solid #1e293b;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+    .header-nav.open{display:flex}
+    .header-nav a{padding:10px 0;border-bottom:1px solid #1e293b;font-size:14px}
+    .header-nav a:last-child{border-bottom:none}
+    .hamburger{display:block}
+  }
+
+  /* ── Shell ── */
+  .shell{max-width:960px;margin:0 auto;padding:32px 20px 60px}
+
+  /* ── Page sections ── */
+  .page{display:none}
+  .page.visible{display:block}
+
+  /* ── User bar ── */
+  .user-bar{display:flex;align-items:center;justify-content:space-between;background:#fff;border-radius:12px;padding:12px 16px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .user-info{display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer}
+  .user-avatar{width:32px;height:32px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:#475569}
+  .user-name{font-weight:500;color:#1e293b}
+  .user-role-text{color:#94a3b8;font-size:12px}
+  .user-logout{font-size:12px;color:#94a3b8;cursor:pointer;border:none;background:none;font-family:inherit;transition:color .15s}
+  .user-logout:hover{color:#ef4444}
+
+  /* ── Step titles ── */
+  .step-title{font-size:26px;font-weight:700;margin-bottom:6px}
+  .step-subtitle{font-size:15px;color:#64748b;margin-bottom:24px}
+
+  /* ── Categories ── */
+  .categories{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media(max-width:700px){.categories{grid-template-columns:1fr 1fr}}
+  @media(max-width:480px){.categories{grid-template-columns:1fr}}
+  .cat-card{background:#fff;border-radius:16px;padding:22px 18px;border:2px solid transparent;cursor:pointer;transition:border-color .15s,box-shadow .15s,transform .1s;display:flex;flex-direction:column;gap:8px}
+  .cat-card:hover{border-color:#fca5a5;box-shadow:0 4px 20px rgba(239,68,68,.1);transform:translateY(-2px)}
+  .cat-card.selected{border-color:#ef4444;box-shadow:0 4px 20px rgba(239,68,68,.15)}
+  .cat-icon{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px}
+  .cat-icon-access{background:#fef2f2;color:#ef4444}
+  .cat-icon-gate{background:#fff7ed;color:#f97316}
+  .cat-icon-pass{background:#f0fdf4;color:#22c55e}
+  .cat-icon-notif{background:#eff6ff;color:#3b82f6}
+  .cat-icon-admin{background:#fefce8;color:#ca8a04}
+  .cat-icon-other{background:#f5f3ff;color:#8b5cf6}
+  .cat-name{font-size:15px;font-weight:600}
+  .cat-desc{font-size:13px;color:#64748b;line-height:1.45}
+
+  /* ── Form ── */
+  .back-btn{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#64748b;cursor:pointer;border:none;background:none;font-family:inherit;margin-bottom:20px;padding:0;transition:color .15s}
+  .back-btn:hover{color:#1e293b}
+  .form-layout{display:grid;grid-template-columns:1.4fr 1fr;gap:20px;align-items:start}
+  @media(max-width:800px){.form-layout{grid-template-columns:1fr}}
+  .form-card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .form-section-title{font-size:14px;font-weight:600;color:#475569;text-transform:uppercase;letter-spacing:.04em;margin:20px 0 10px;padding-top:16px;border-top:1px solid #e2e8f0}
+  .form-section-title:first-child{margin-top:0;padding-top:0;border-top:none}
+  .form-grid{display:flex;flex-direction:column;gap:14px}
+  .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:600px){.form-row{grid-template-columns:1fr}}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-size:13px;font-weight:500;color:#334155}
+  .field label .req{color:#ef4444}
+  .field input,.field select,.field textarea{border:1px solid #d1d5db;border-radius:10px;padding:9px 12px;font-size:14px;font-family:inherit;color:#1e293b;background:#fff;outline:none;transition:border-color .15s,box-shadow .15s}
+  .field input:focus,.field select:focus,.field textarea:focus{border-color:#f87171;box-shadow:0 0 0 3px rgba(248,113,113,.15)}
+  .field input::placeholder,.field textarea::placeholder{color:#9ca3af}
+  .field textarea{resize:vertical;min-height:90px}
+  .field select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
+  .field-error input,.field-error select,.field-error textarea{border-color:#ef4444}
+  .field-error-msg{font-size:11px;color:#ef4444;margin-top:2px;display:none}
+  .field-error .field-error-msg{display:block}
+
+  /* ── Admin toggle ── */
+  .admin-toggle{display:flex;align-items:center;gap:10px;padding:12px 14px;background:#fefce8;border-radius:10px;border:1px solid #fde68a;cursor:pointer;transition:background .15s}
+  .admin-toggle:hover{background:#fef9c3}
+  .admin-toggle input[type=checkbox]{width:18px;height:18px;accent-color:#ca8a04}
+  .admin-toggle span{font-size:13px;font-weight:500;color:#854d0e}
+  .admin-fields{display:none;animation:fieldAppear .3s ease}
+  .admin-fields.visible{display:flex;flex-direction:column;gap:14px}
+
+  /* ── Urgent row ── */
+  .urgent-row{display:flex;align-items:center;gap:8px;padding:12px 14px;background:#fef2f2;border-radius:10px;border:1px solid #fecaca;cursor:pointer}
+  .urgent-row input[type=checkbox]{width:18px;height:18px;accent-color:#ef4444}
+  .urgent-row span{font-size:13px;font-weight:500;color:#991b1b}
+
+  /* ── Upload ── */
+  .upload-area{border:2px dashed #d1d5db;border-radius:12px;padding:20px;text-align:center;color:#64748b;font-size:13px;cursor:pointer;transition:border-color .15s,background .15s;position:relative}
+  .upload-area:hover,.upload-area.dragover{border-color:#f87171;background:#fef2f2}
+  .upload-area input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer}
+  .upload-icon{font-size:24px;margin-bottom:6px}
+  .upload-hint{font-size:11px;color:#94a3b8;margin-top:4px}
+  .upload-previews{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .upload-preview{position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0}
+  .upload-preview img{width:100%;height:100%;object-fit:cover}
+  .upload-preview-file{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#f8fafc;font-size:10px;color:#64748b;text-align:center;padding:4px;word-break:break-all}
+  .upload-preview .remove-file{position:absolute;top:-4px;right:-4px;width:18px;height:18px;border-radius:50%;background:#ef4444;color:#fff;border:none;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
+  .submit-row{display:flex;justify-content:space-between;align-items:center;margin-top:20px;gap:12px;flex-wrap:wrap}
+  .submit-hint{font-size:12px;color:#94a3b8}
+  .submit-btn{border:none;border-radius:999px;padding:11px 28px;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;background:#ef4444;color:#fff;box-shadow:0 4px 14px rgba(239,68,68,.3);transition:background .15s,box-shadow .15s,transform .1s}
+  .submit-btn:hover{background:#dc2626;box-shadow:0 6px 20px rgba(239,68,68,.4);transform:translateY(-1px)}
+  .submit-btn:disabled{background:#94a3b8;box-shadow:none;cursor:not-allowed;transform:none}
+
+  /* ── FAQ sidebar ── */
+  .faq-panel{background:#fff;border-radius:16px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .faq-title{font-size:14px;font-weight:600;color:#475569;margin-bottom:14px}
+  .faq-list{display:flex;flex-direction:column;gap:10px}
+  .faq-item{padding:12px 14px;border-radius:10px;border:1px solid #e2e8f0;cursor:pointer;transition:border-color .15s,background .15s}
+  .faq-item:hover{border-color:#fca5a5;background:#fef2f2}
+  .faq-item-title{font-size:13px;font-weight:600;color:#1e293b;margin-bottom:3px;display:flex;align-items:center;gap:6px}
+  .faq-item-title::after{content:'\2192';color:#ef4444;font-size:12px;opacity:0;transition:opacity .15s}
+  .faq-item:hover .faq-item-title::after{opacity:1}
+  .faq-item-text{font-size:12px;color:#64748b;line-height:1.4}
+  .faq-divider{border:none;border-top:1px solid #e2e8f0;margin:6px 0}
+  .faq-footer{font-size:12px;color:#94a3b8;margin-top:8px}
+  .faq-footer a{color:#ef4444;text-decoration:none;font-weight:500;cursor:pointer}
+
+  /* ── FAQ Modal ── */
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:200;align-items:center;justify-content:center;padding:20px}
+  .modal-overlay.visible{display:flex}
+  .modal{background:#fff;border-radius:20px;max-width:640px;width:100%;max-height:80vh;overflow-y:auto;box-shadow:0 24px 48px rgba(0,0,0,.15)}
+  .modal-header{padding:20px 24px 0;display:flex;justify-content:space-between;align-items:flex-start}
+  .modal-header h2{font-size:18px;font-weight:700;padding-right:16px}
+  .modal-close{width:32px;height:32px;border-radius:8px;border:none;background:#f1f5f9;color:#64748b;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s}
+  .modal-close:hover{background:#e2e8f0}
+  .modal-meta{padding:8px 24px 0;font-size:12px;color:#94a3b8;display:flex;gap:12px}
+  .modal-body{padding:16px 24px 24px;font-size:14px;line-height:1.7;color:#334155}
+  .modal-body h3{font-size:15px;font-weight:600;color:#1e293b;margin:18px 0 8px}
+  .modal-body h3:first-child{margin-top:0}
+  .modal-body p{margin-bottom:10px}
+  .modal-body ol,.modal-body ul{margin:0 0 12px 20px}
+  .modal-body li{margin-bottom:4px}
+  .modal-body .tip{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 14px;font-size:13px;color:#166534;margin:12px 0}
+  .modal-body .warn{background:#fef3c7;border:1px solid #fde68a;border-radius:10px;padding:10px 14px;font-size:13px;color:#92400e;margin:12px 0}
+  .modal-helpful{padding:0 24px 20px;display:flex;align-items:center;gap:12px;font-size:13px;color:#64748b}
+  .modal-helpful-btn{padding:5px 14px;border-radius:999px;border:1px solid #d1d5db;background:#fff;font-size:12px;font-family:inherit;cursor:pointer;transition:all .15s}
+  .modal-helpful-btn:hover{border-color:#ef4444;color:#ef4444}
+
+  /* ── Confirm dialog ── */
+  .confirm-overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:250;align-items:center;justify-content:center;padding:20px}
+  .confirm-overlay.visible{display:flex}
+  .confirm-box{background:#fff;border-radius:16px;padding:28px;max-width:380px;width:100%;text-align:center;box-shadow:0 24px 48px rgba(0,0,0,.15)}
+  .confirm-box h3{font-size:18px;font-weight:700;margin-bottom:8px}
+  .confirm-box p{font-size:14px;color:#64748b;margin-bottom:20px}
+  .confirm-btns{display:flex;gap:10px;justify-content:center}
+  .confirm-btns .btn-cancel{border:1px solid #d1d5db;background:#fff;border-radius:999px;padding:9px 24px;font-size:14px;font-weight:500;font-family:inherit;cursor:pointer;color:#475569;transition:all .15s}
+  .confirm-btns .btn-cancel:hover{background:#f1f5f9}
+  .confirm-btns .btn-danger{border:none;background:#ef4444;color:#fff;border-radius:999px;padding:9px 24px;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;transition:all .15s}
+  .confirm-btns .btn-danger:hover{background:#dc2626}
+
+  /* ── Success ── */
+  .success-icon{width:72px;height:72px;border-radius:50%;background:#f0fdf4;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:36px}
+
+  /* ── Recent tickets ── */
+  .recent{margin-top:40px}
+  .recent-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .recent-header h3{font-size:16px;font-weight:600}
+  .recent-list{display:flex;flex-direction:column;gap:8px}
+  .recent-card{background:#fff;border-radius:12px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 1px 3px rgba(0,0,0,.04);cursor:pointer;transition:box-shadow .15s,transform .1s}
+  .recent-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.08);transform:translateY(-1px)}
+  .recent-left{display:flex;flex-direction:column;gap:2px}
+  .recent-title{font-size:14px;font-weight:500}
+  .recent-meta{font-size:12px;color:#94a3b8}
+  .recent-right{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .badge{display:inline-flex;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:500;letter-spacing:.02em}
+  .badge-new{background:#eff6ff;color:#2563eb}
+  .badge-progress{background:#fef3c7;color:#d97706}
+  .badge-resolved{background:#f0fdf4;color:#16a34a}
+  .badge-closed{background:#f1f5f9;color:#64748b}
+  .badge-waiting{background:#fdf4ff;color:#a855f7}
+  .badge-critical{background:#fef2f2;color:#dc2626}
+  .badge-high{background:#fff7ed;color:#ea580c}
+  .badge-normal{background:#f1f5f9;color:#475569}
+  .badge-low{background:#f0fdf4;color:#16a34a}
+  .show-all-btn{border:none;border-radius:999px;padding:8px 20px;font-size:13px;font-weight:500;font-family:inherit;cursor:pointer;background:#f1f5f9;color:#475569;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+  .show-all-btn:hover{background:#e2e8f0;color:#1e293b}
+
+  /* ── Personal Account ── */
+  .account-layout{display:grid;grid-template-columns:260px 1fr;gap:20px;align-items:start}
+  @media(max-width:800px){.account-layout{grid-template-columns:1fr}}
+  .account-sidebar{background:#fff;border-radius:16px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .account-avatar-lg{width:56px;height:56px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:600;color:#475569;margin:0 auto 12px}
+  .account-name{text-align:center;font-size:16px;font-weight:600;margin-bottom:2px}
+  .account-role{text-align:center;font-size:12px;color:#94a3b8;margin-bottom:16px}
+  .account-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
+  .account-stat{background:#f8fafc;border-radius:10px;padding:10px;text-align:center}
+  .account-stat-num{font-size:20px;font-weight:700;color:#1e293b}
+  .account-stat-label{font-size:11px;color:#94a3b8;margin-top:2px}
+  .account-nav{display:flex;flex-direction:column;gap:4px}
+  .account-nav-item{padding:8px 12px;border-radius:8px;font-size:13px;cursor:pointer;transition:background .15s;color:#475569}
+  .account-nav-item:hover{background:#f1f5f9}
+  .account-nav-item.active{background:#fef2f2;color:#ef4444;font-weight:500}
+  .account-main{background:#fff;border-radius:16px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+
+  /* ── Search bar ── */
+  .search-bar{position:relative;margin-bottom:16px}
+  .search-bar input{width:100%;border:1px solid #e2e8f0;border-radius:10px;padding:9px 12px 9px 36px;font-size:13px;font-family:inherit;color:#1e293b;background:#fff;outline:none;transition:border-color .15s,box-shadow .15s}
+  .search-bar input:focus{border-color:#f87171;box-shadow:0 0 0 3px rgba(248,113,113,.15)}
+  .search-bar .search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:14px;color:#94a3b8;pointer-events:none}
+
+  /* ── Filters ── */
+  .account-filters{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+  .filter-btn{padding:6px 14px;border-radius:999px;border:1px solid #e2e8f0;background:#fff;font-size:12px;font-family:inherit;cursor:pointer;transition:all .15s;color:#64748b}
+  .filter-btn:hover{border-color:#fca5a5;color:#ef4444}
+  .filter-btn.active{background:#ef4444;color:#fff;border-color:#ef4444}
+  .filter-count{font-size:11px;color:#94a3b8;margin-left:4px}
+  .filter-btn.active .filter-count{color:rgba(255,255,255,.7)}
+  .ticket-detail-card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:10px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+  .ticket-detail-card:hover{border-color:#fca5a5;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+  .ticket-detail-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
+  .ticket-detail-title{font-size:14px;font-weight:600}
+  .ticket-detail-id{font-size:12px;color:#94a3b8;font-family:'SF Mono',ui-monospace,monospace}
+  .ticket-detail-desc{font-size:13px;color:#64748b;line-height:1.4;margin-bottom:8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .ticket-detail-footer{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:#94a3b8}
+  .ticket-detail-footer span:not(.badge){display:flex;align-items:center;gap:4px}
+
+  /* ── Ticket View ── */
+  .ticket-view{max-width:720px}
+  .ticket-view-header{margin-bottom:24px}
+  .ticket-view-id{font-size:13px;color:#94a3b8;font-family:'SF Mono',ui-monospace,monospace;margin-bottom:4px}
+  .ticket-view-title{font-size:22px;font-weight:700;margin-bottom:8px}
+  .ticket-view-badges{display:flex;gap:8px;flex-wrap:wrap}
+  .ticket-view-section{background:#fff;border-radius:16px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .ticket-view-section h3{font-size:14px;font-weight:600;color:#475569;text-transform:uppercase;letter-spacing:.04em;margin-bottom:12px}
+  .ticket-view-body{font-size:14px;line-height:1.7;color:#334155}
+  .ticket-view-meta{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:13px}
+  .ticket-view-meta-label{color:#94a3b8;font-size:12px}
+  .ticket-view-meta-value{color:#1e293b;font-weight:500;margin-bottom:8px}
+  .ticket-view-files{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .ticket-view-file{padding:6px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;color:#475569}
+  .ticket-timeline{display:flex;flex-direction:column;gap:16px}
+  .timeline-item{display:flex;gap:12px;font-size:13px}
+  .timeline-dot{width:8px;height:8px;border-radius:50%;background:#d1d5db;margin-top:6px;flex-shrink:0}
+  .timeline-dot.active{background:#ef4444}
+  .timeline-content{flex:1}
+  .timeline-time{color:#94a3b8;font-size:11px;margin-top:2px}
+  .comment-form{display:flex;gap:12px;margin-top:16px;padding-top:16px;border-top:1px solid #e2e8f0}
+  .comment-form textarea{flex:1;border:1px solid #d1d5db;border-radius:10px;padding:9px 12px;font-size:14px;font-family:inherit;color:#1e293b;background:#fff;outline:none;resize:vertical;min-height:60px;transition:border-color .15s,box-shadow .15s}
+  .comment-form textarea:focus{border-color:#f87171;box-shadow:0 0 0 3px rgba(248,113,113,.15)}
+  .comment-form button{align-self:flex-end}
+  .ticket-actions{display:flex;gap:10px;margin-top:16px}
+
+  /* ── Knowledge Base Page ── */
+  .kb-search-box{position:relative;margin-bottom:24px}
+  .kb-search-box input{width:100%;border:2px solid #e2e8f0;border-radius:14px;padding:14px 20px 14px 48px;font-size:15px;font-family:inherit;color:#1e293b;background:#fff;outline:none;transition:border-color .15s,box-shadow .15s}
+  .kb-search-box input:focus{border-color:#f87171;box-shadow:0 0 0 4px rgba(248,113,113,.1)}
+  .kb-search-box .search-icon{position:absolute;left:16px;top:50%;transform:translateY(-50%);font-size:18px;color:#94a3b8}
+  .kb-categories{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:32px}
+  @media(max-width:700px){.kb-categories{grid-template-columns:1fr 1fr}}
+  @media(max-width:480px){.kb-categories{grid-template-columns:1fr}}
+  .kb-cat-card{background:#fff;border-radius:16px;padding:20px;cursor:pointer;transition:box-shadow .15s,transform .1s;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .kb-cat-card:hover{box-shadow:0 4px 20px rgba(0,0,0,.08);transform:translateY(-2px)}
+  .kb-cat-header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .kb-cat-count{font-size:12px;color:#94a3b8}
+  .kb-cat-articles{display:flex;flex-direction:column;gap:6px}
+  .kb-cat-article{font-size:13px;color:#475569;cursor:pointer;padding:4px 0;transition:color .15s}
+  .kb-cat-article:hover{color:#ef4444}
+  .kb-results{display:flex;flex-direction:column;gap:10px}
+  .kb-result-card{background:#fff;border-radius:12px;padding:16px;cursor:pointer;transition:box-shadow .15s;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .kb-result-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.08)}
+  .kb-result-title{font-size:15px;font-weight:600;color:#1e293b;margin-bottom:4px}
+  .kb-result-text{font-size:13px;color:#64748b;line-height:1.4}
+  .kb-result-meta{font-size:11px;color:#94a3b8;margin-top:6px}
+
+  /* ── Profile Page ── */
+  .profile-form{max-width:480px}
+  .profile-form .field{margin-bottom:16px}
+
+  /* ── Settings Page ── */
+  .setting-row{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid #f1f5f9}
+  .setting-row:last-child{border-bottom:none}
+  .setting-label{font-size:14px;font-weight:500;color:#1e293b}
+  .setting-desc{font-size:12px;color:#94a3b8;margin-top:2px}
+  .toggle{position:relative;width:44px;height:24px;background:#d1d5db;border-radius:12px;cursor:pointer;transition:background .2s;flex-shrink:0}
+  .toggle.on{background:#ef4444}
+  .toggle::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+  .toggle.on::after{transform:translateX(20px)}
+
+  /* ── Object detail ── */
+  .object-card{padding:16px;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:12px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+  .object-card:hover{border-color:#fca5a5;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+  .object-name{font-size:15px;font-weight:600;margin-bottom:4px}
+  .object-addr{font-size:13px;color:#64748b;margin-bottom:8px}
+  .object-info{display:flex;gap:16px;font-size:12px;color:#94a3b8}
+  .object-detail{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin-top:12px}
+  .object-detail-title{font-size:14px;font-weight:600;margin-bottom:10px}
+  .object-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;font-size:13px}
+  .object-detail-label{color:#94a3b8;font-size:12px}
+  .object-detail-value{color:#1e293b;font-weight:500;margin-bottom:6px}
+
+  /* ── Toast notifications ── */
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(100px);background:#0f172a;color:#f8fafc;padding:12px 24px;border-radius:12px;font-size:14px;font-weight:500;z-index:300;transition:transform .3s ease;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+  .toast.visible{transform:translateX(-50%) translateY(0)}
+
+  /* ── (Login styles removed — auth via main site SSO) ── */
+
+  /* ── Animations ── */
+  .specific-field{animation:fieldAppear .3s ease}
+  @keyframes fieldAppear{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+
+  /* ── Empty state ── */
+  .empty-state{text-align:center;padding:40px 20px;color:#94a3b8}
+  .empty-state-icon{font-size:48px;margin-bottom:12px}
+  .empty-state-text{font-size:15px;margin-bottom:16px}
+
+  /* ── Show more ── */
+  .show-more-row{text-align:center;margin-top:16px}
+</style>
+</head>
+<body>
+
+<!-- ====== MAIN APP (auth handled by main site SSO) ====== -->
+<div id="mainApp">
+<header class="header">
+  <a class="header-brand" onclick="navigate('home')">
+    <div class="header-logo">P</div>
+    <div class="header-title">PASS24 <span>Поддержка</span></div>
+  </a>
+  <button class="hamburger" onclick="toggleMobileMenu()" aria-label="Меню">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+  </button>
+  <nav class="header-nav" id="headerNav">
+    <a id="navCreate" class="active" onclick="navigate('home');closeMobileMenu()">Создать обращение</a>
+    <a id="navAccount" onclick="navigate('account');closeMobileMenu()">Мои обращения</a>
+    <a id="navKb" onclick="navigate('kb');closeMobileMenu()">База знаний</a>
+  </nav>
+</header>
+
+<div class="shell">
+  <div class="user-bar">
+    <div class="user-info" onclick="navigate('account','profile')">
+      <div class="user-avatar" id="userAvatarSmall">АП</div>
+      <div>
+        <div class="user-name" id="userNameSmall">Пользователь</div>
+        <div class="user-role-text" id="userRoleSmall">Пользователь</div>
+      </div>
+    </div>
+    <button class="user-logout" onclick="window.location.href='https://pass24online.ru'">На главную</button>
+  </div>
+
+  <!-- ====== PAGE: HOME ====== -->
+  <div class="page visible" id="pageHome">
+    <div id="step1">
+      <h1 class="step-title">Что случилось?</h1>
+      <p class="step-subtitle">Выберите тему обращения, чтобы мы задали правильные вопросы</p>
+      <div class="categories" id="catGrid"></div>
+    </div>
+
+    <div id="step2" style="display:none">
+      <button class="back-btn" onclick="goBackToStep1()">&#8592; Назад к выбору темы</button>
+      <h1 class="step-title" id="step2Title">Опишите проблему</h1>
+      <p class="step-subtitle">Чем подробнее — тем быстрее мы решим вопрос</p>
+      <div class="form-layout">
+        <div class="form-card">
+          <form id="ticketForm" onsubmit="return submitTicket(event)">
+          <div class="form-grid">
+            <div class="form-section-title">Описание проблемы</div>
+            <div class="field" id="fieldTitle">
+              <label>Заголовок <span class="req">*</span></label>
+              <input type="text" id="inputTitle" placeholder="Например: Не открывается шлагбаум на въезде">
+              <div class="field-error-msg">Укажите заголовок обращения</div>
+            </div>
+            <div class="field" id="fieldDesc">
+              <label>Что произошло <span class="req">*</span></label>
+              <textarea id="inputDesc" placeholder="Опишите ситуацию: что вы делали, что произошло, что ожидали"></textarea>
+              <div class="field-error-msg">Опишите проблему</div>
+            </div>
+            <div id="specificFields"></div>
+
+            <div class="form-section-title">Контактные данные</div>
+            <div class="form-row">
+              <div class="field" id="fieldContact">
+                <label>Как с вами связаться <span class="req">*</span></label>
+                <input type="text" id="inputContact" placeholder="Телефон или email">
+                <div class="field-error-msg">Укажите способ связи</div>
+              </div>
+              <div class="field">
+                <label>Объект (ЖК / БЦ)</label>
+                <input type="text" id="inputObject" placeholder="Например: ЖК Солнечный, корпус 3">
+              </div>
+            </div>
+            <div class="admin-toggle" onclick="toggleAdmin()">
+              <input type="checkbox" id="isAdmin" onclick="event.stopPropagation()">
+              <span>Я администратор объекта</span>
+            </div>
+            <div class="admin-fields" id="adminFields">
+              <div class="form-row">
+                <div class="field">
+                  <label>Ваша должность</label>
+                  <input type="text" id="adminPosition" placeholder="Например: Старший инженер УК">
+                </div>
+                <div class="field">
+                  <label>Управляющая компания</label>
+                  <input type="text" id="adminCompany" placeholder="Например: УК Комфорт">
+                </div>
+              </div>
+            </div>
+            <div class="urgent-row" onclick="document.getElementById('urgent').click()">
+              <input type="checkbox" id="urgent" onclick="event.stopPropagation()">
+              <span>Не могу войти / въехать прямо сейчас (срочная ситуация)</span>
+            </div>
+            <div class="form-section-title">Вложения</div>
+            <div class="upload-area" id="uploadArea">
+              <input type="file" id="fileInput" multiple accept="image/*,video/*,.pdf,.doc,.docx" onchange="handleFiles(this.files)">
+              <div class="upload-icon">&#128206;</div>
+              <div>Перетащите файлы сюда или нажмите для выбора</div>
+              <div class="upload-hint">До 5 файлов. Фото, скриншоты, видео, документы (макс. 10 МБ каждый)</div>
+            </div>
+            <div class="upload-previews" id="uploadPreviews"></div>
+          </div>
+          <div class="submit-row">
+            <div class="submit-hint">Обращение будет отправлено в службу поддержки PASS24</div>
+            <button type="submit" class="submit-btn">Отправить обращение &#8594;</button>
+          </div>
+          </form>
+        </div>
+        <div class="faq-panel">
+          <div class="faq-title">Возможно, вам поможет</div>
+          <div class="faq-list" id="faqList"></div>
+          <hr class="faq-divider">
+          <div class="faq-footer">Не нашли ответ? Заполните форму слева. <a onclick="navigate('kb')">Вся база знаний &#8594;</a></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="successScreen" style="display:none;text-align:center;padding:60px 20px">
+      <div class="success-icon">&#10003;</div>
+      <h2 style="font-size:22px;font-weight:700;margin-bottom:8px">Обращение отправлено</h2>
+      <p style="color:#64748b;font-size:15px;margin-bottom:6px">Мы получили вашу заявку и скоро свяжемся с вами</p>
+      <div id="successTicketId" style="display:inline-block;padding:6px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-weight:600;font-size:16px;color:#1e293b;margin:12px 0 24px;font-family:'SF Mono',ui-monospace,monospace"></div>
+      <p style="font-size:13px;color:#94a3b8">Среднее время ответа — 2 часа в рабочее время</p>
+      <br>
+      <button class="submit-btn" style="background:#0f172a;box-shadow:0 4px 14px rgba(15,23,42,.2)" onclick="navigate('home')">Создать ещё одно обращение</button>
+      <button class="show-all-btn" style="margin-left:8px" onclick="navigate('account')">Мои обращения &#8594;</button>
+    </div>
+
+    <div class="recent" id="recentSection">
+      <div class="recent-header">
+        <h3>Ваши последние обращения</h3>
+        <button class="show-all-btn" onclick="navigate('account')">Все обращения &#8594;</button>
+      </div>
+      <div class="recent-list" id="recentList"></div>
+    </div>
+  </div>
+
+  <!-- ====== PAGE: ACCOUNT ====== -->
+  <div class="page" id="pageAccount">
+    <button class="back-btn" onclick="navigate('home')">&#8592; Назад к созданию обращения</button>
+    <h1 class="step-title" id="accountPageTitle">Мои обращения</h1>
+    <p class="step-subtitle" id="accountPageSubtitle">Все ваши заявки в службу поддержки PASS24</p>
+    <div class="account-layout">
+      <div class="account-sidebar">
+        <div class="account-avatar-lg" id="userAvatarLg">АП</div>
+        <div class="account-name" id="userNameLg">Пользователь</div>
+        <div class="account-role" id="userRoleLg">Пользователь</div>
+        <div class="account-stats" id="accountStats"></div>
+        <div class="account-nav" id="accountNav">
+          <div class="account-nav-item active" data-section="tickets" onclick="switchAccountSection('tickets',this)">Все обращения</div>
+          <div class="account-nav-item" data-section="profile" onclick="switchAccountSection('profile',this)">Профиль</div>
+          <div class="account-nav-item" data-section="settings" onclick="switchAccountSection('settings',this)">Настройки уведомлений</div>
+          <div class="account-nav-item" data-section="objects" onclick="switchAccountSection('objects',this)">Объекты</div>
+        </div>
+      </div>
+      <div class="account-main" id="accountMain"></div>
+    </div>
+  </div>
+
+  <!-- ====== PAGE: TICKET VIEW ====== -->
+  <div class="page" id="pageTicketView">
+    <button class="back-btn" onclick="navigate('account')">&#8592; Назад к обращениям</button>
+    <div class="ticket-view" id="ticketViewContent"></div>
+  </div>
+
+  <!-- ====== PAGE: KNOWLEDGE BASE ====== -->
+  <div class="page" id="pageKb">
+    <h1 class="step-title">База знаний</h1>
+    <p class="step-subtitle">Ответы на частые вопросы и инструкции по работе с PASS24</p>
+    <div class="kb-search-box">
+      <span class="search-icon">&#128269;</span>
+      <input type="text" id="kbSearch" placeholder="Поиск по базе знаний..." oninput="searchKb(this.value)">
+    </div>
+    <div id="kbContent"></div>
+  </div>
+</div>
+</div>
+
+<!-- ====== FAQ Article Modal ====== -->
+<div class="modal-overlay" id="faqModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modalTitle"></h2>
+      <button class="modal-close" onclick="closeModal()">&#10005;</button>
+    </div>
+    <div class="modal-meta" id="modalMeta"></div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-helpful">
+      <span>Статья помогла?</span>
+      <button class="modal-helpful-btn" onclick="markArticleHelpful(true)">&#128077; Да, спасибо</button>
+      <button class="modal-helpful-btn" onclick="markArticleHelpful(false)">&#128078; Нет, нужна помощь</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== Confirm Dialog ====== -->
+<div class="confirm-overlay" id="confirmDialog">
+  <div class="confirm-box">
+    <h3 id="confirmTitle">Подтверждение</h3>
+    <p id="confirmText">Вы уверены?</p>
+    <div class="confirm-btns">
+      <button class="btn-cancel" onclick="closeConfirm()">Отмена</button>
+      <button class="btn-danger" id="confirmAction">Подтвердить</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================================================================
+   PASS24 SERVICE DESK — Client-Side Application
+   All dynamic content uses safe DOM methods (textContent, createElement).
+   FAQ article bodies use trusted static HTML via <template> — never user input.
+   ================================================================ */
+
+/* ===== STORAGE ===== */
+
+var STORAGE_KEY = 'pass24_tickets';
+var USER_KEY = 'pass24_user';
+var SETTINGS_KEY = 'pass24_settings';
+var COUNTER_KEY = 'pass24_counter';
+
+function getUser() {
+  var u = localStorage.getItem(USER_KEY);
+  if (u) try { return JSON.parse(u); } catch(e) {}
+  /* Default user — in production, populated from SSO session */
+  return {name:'Андрей Петров', email:'andrey@pass24.online', phone:'+7 (999) 123-45-67', role:'Администратор УК', object:'ЖК Солнечный', initials:'АП'};
+}
+
+function saveUser(u) { localStorage.setItem(USER_KEY, JSON.stringify(u)); updateUserUI(); }
+
+function getSettings() {
+  var s = localStorage.getItem(SETTINGS_KEY);
+  if (s) try { return JSON.parse(s); } catch(e) {}
+  return {pushEnabled:true, emailEnabled:true, smsEnabled:false, newTicketNotif:true, statusChangeNotif:true, commentNotif:true};
+}
+
+function saveSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
+
+function getNextTicketId() {
+  var c = parseInt(localStorage.getItem(COUNTER_KEY) || '142', 10);
+  c++;
+  localStorage.setItem(COUNTER_KEY, String(c));
+  return 'TK-2026-' + String(c).padStart(5, '0');
+}
+
+function getAllTickets() {
+  var stored = localStorage.getItem(STORAGE_KEY);
+  if (stored) try { return JSON.parse(stored); } catch(e) {}
+  var seed = [
+    {id:'TK-2026-00142',title:'Не открывается шлагбаум на въезде',desc:'Шлагбаум на въезде во двор ЖК Солнечный (корпус 3) не открывается с 9:30 утра. Bluetooth включён, приложение показывает "Ключ установлен", но реакции нет.',date:'2026-03-17T09:30:00',cat:'gate',catLabel:'Шлагбаум/дверь',status:'new',statusLabel:'Новый',prio:'critical',prioLabel:'Критич.',contact:'+7 999 123-45-67',urgent:true,isAdmin:false,object:'',adminPosition:'',adminCompany:'',files:[],events:[{time:'2026-03-17T09:30:00',text:'Обращение создано',actor:'Андрей Петров'},{time:'2026-03-17T09:35:00',text:'Назначен приоритет: Критический',actor:'Система'}]},
+    {id:'TK-2026-00139',title:'Не работает переадресация домофона',desc:'Переадресация вызовов с домофона подъезда 2 на телефон не работает. Настройки проверил — всё включено.',date:'2026-03-15T14:20:00',cat:'gate',catLabel:'Шлагбаум/дверь',status:'progress',statusLabel:'В работе',prio:'high',prioLabel:'Высокий',contact:'+7 999 123-45-67',urgent:false,isAdmin:true,object:'ЖК Солнечный',adminPosition:'Администратор УК',adminCompany:'УК Комфорт',files:[],events:[{time:'2026-03-15T14:20:00',text:'Обращение создано',actor:'Андрей Петров'},{time:'2026-03-15T15:00:00',text:'Взят в работу агентом поддержки',actor:'Поддержка PASS24'},{time:'2026-03-15T15:05:00',text:'Проверяем настройки переадресации на стороне сервера',actor:'Поддержка PASS24'}]},
+    {id:'TK-2026-00135',title:'Не приходят push-уведомления',desc:'Перестали приходить push о звонках в домофон. iPhone 14, iOS 17.3, приложение последней версии.',date:'2026-03-12T11:00:00',cat:'notif',catLabel:'Уведомления',status:'resolved',statusLabel:'Решён',prio:'normal',prioLabel:'Обычный',contact:'andrey@pass24.online',urgent:false,isAdmin:false,object:'',adminPosition:'',adminCompany:'',files:[],events:[{time:'2026-03-12T11:00:00',text:'Обращение создано',actor:'Андрей Петров'},{time:'2026-03-12T13:30:00',text:'Взят в работу',actor:'Поддержка PASS24'},{time:'2026-03-13T10:00:00',text:'Проблема на стороне APNs решена. Перезагрузите приложение.',actor:'Поддержка PASS24'},{time:'2026-03-13T10:15:00',text:'Решено. Уведомления работают.',actor:'Андрей Петров'}]},
+    {id:'TK-2026-00128',title:'Не могу создать гостевой пропуск',desc:'При создании гостевого пропуска появляется ошибка "Невозможно создать пропуск". Пробовал несколько раз.',date:'2026-03-08T16:45:00',cat:'pass',catLabel:'Пропуска',status:'closed',statusLabel:'Закрыт',prio:'normal',prioLabel:'Обычный',contact:'+7 999 123-45-67',urgent:false,isAdmin:false,object:'',adminPosition:'',adminCompany:'',files:[],events:[{time:'2026-03-08T16:45:00',text:'Обращение создано',actor:'Андрей Петров'},{time:'2026-03-08T17:30:00',text:'Ошибка воспроизведена. Исправление выпущено.',actor:'Поддержка PASS24'},{time:'2026-03-09T09:00:00',text:'Закрыт. Проблема решена в версии 4.2.3.',actor:'Поддержка PASS24'}]},
+    {id:'TK-2026-00121',title:'Ошибка при входе: "Аккаунт заблокирован"',desc:'После 3 попыток ввода пароля аккаунт заблокировался. Восстановление через SMS не работает.',date:'2026-03-03T08:15:00',cat:'access',catLabel:'Вход/авторизация',status:'closed',statusLabel:'Закрыт',prio:'high',prioLabel:'Высокий',contact:'+7 999 123-45-67',urgent:true,isAdmin:false,object:'',adminPosition:'',adminCompany:'',files:[],events:[{time:'2026-03-03T08:15:00',text:'Обращение создано',actor:'Андрей Петров'},{time:'2026-03-03T08:30:00',text:'Аккаунт разблокирован. Пароль сброшен.',actor:'Поддержка PASS24'},{time:'2026-03-03T09:00:00',text:'Закрыт.',actor:'Поддержка PASS24'}]},
+    {id:'TK-2026-00115',title:'Настройка контроллера BAS-IP на объекте',desc:'Нужна помощь в настройке нового контроллера BAS-IP AV-07T на подъезде 5. Контроллер подключён к сети, IP 192.168.1.45.',date:'2026-02-28T10:00:00',cat:'admin',catLabel:'Администрирование',status:'waiting',statusLabel:'Ожидает ответа',prio:'normal',prioLabel:'Обычный',contact:'andrey@pass24.online',urgent:false,isAdmin:true,object:'ЖК Солнечный',adminPosition:'Инженер',adminCompany:'УК Комфорт',files:[],events:[{time:'2026-02-28T10:00:00',text:'Обращение создано',actor:'Андрей Петров'},{time:'2026-02-28T14:00:00',text:'Отправлена инструкция по настройке. Ожидаем подтверждения.',actor:'Поддержка PASS24'}]},
+    {id:'TK-2026-00108',title:'Обновление прошивки шлагбаума CAME',desc:'Требуется обновить прошивку шлагбаума CAME GARD4 на паркинге. Текущая версия 2.1.3, доступна 2.3.0.',date:'2026-02-22T09:00:00',cat:'admin',catLabel:'Администрирование',status:'resolved',statusLabel:'Решён',prio:'low',prioLabel:'Низкий',contact:'andrey@pass24.online',urgent:false,isAdmin:true,object:'ЖК Солнечный',adminPosition:'Администратор',adminCompany:'УК Комфорт',files:[],events:[{time:'2026-02-22T09:00:00',text:'Обращение создано',actor:'Андрей Петров'},{time:'2026-02-23T11:00:00',text:'Прошивка обновлена удалённо до версии 2.3.0.',actor:'Поддержка PASS24'},{time:'2026-02-23T11:30:00',text:'Решено.',actor:'Андрей Петров'}]}
+  ];
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
+  return seed;
+}
+
+function saveTickets(tickets) { localStorage.setItem(STORAGE_KEY, JSON.stringify(tickets)); }
+
+/* ===== FAQ DATA (trusted static content — never user input) ===== */
+
+var catDefs = [
+  {key:'access', icon:128273, cls:'access', name:'Вход и авторизация', desc:'Не получается войти в приложение, на сайт или в личный кабинет'},
+  {key:'gate', icon:128663, cls:'gate', name:'Шлагбаум, дверь, домофон', desc:'Не открывается шлагбаум, подъездная дверь или домофон'},
+  {key:'pass', icon:127915, cls:'pass', name:'Пропуска', desc:'Создание, изменение или проблемы с пропусками и приглашениями'},
+  {key:'notif', icon:128242, cls:'notif', name:'Уведомления', desc:'Не приходят push-уведомления, SMS или сообщения в приложении'},
+  {key:'admin', icon:9881, cls:'admin', name:'Администрирование', desc:'Настройка оборудования, управление объектами, интеграции и права доступа'},
+  {key:'other', icon:128172, cls:'other', name:'Другое', desc:'Вопрос или проблема, которая не подходит под другие категории'}
+];
+
+var faqData = {
+  access: [
+    {id:'a1',title:'Как восстановить пароль',short:'Откройте приложение, нажмите "Забыли пароль?" и следуйте инструкциям.',cat:'Вход',updated:'12 мар 2026',body:'<h3>Восстановление пароля через приложение</h3><ol><li>Откройте приложение PASS24 на вашем устройстве</li><li>На экране входа нажмите <b>"Забыли пароль?"</b></li><li>Введите email или номер телефона, привязанный к аккаунту</li><li>Вам придёт SMS-код или ссылка на email</li><li>Введите код и задайте новый пароль</li></ol><div class="tip">Совет: пароль должен содержать минимум 8 символов, включая цифры и буквы.</div><h3>Восстановление через сайт</h3><p>Перейдите на <b>pass24online.ru/reset</b> и выполните те же шаги. Ссылка для сброса действительна 30 минут.</p><h3>Не приходит письмо?</h3><p>Проверьте папку "Спам". Если письма нет — убедитесь, что используете тот же email, с которым регистрировались. Обратитесь в поддержку, если проблема сохраняется.</p>'},
+    {id:'a2',title:'Не приходит SMS с кодом',short:'Проверьте номер телефона и запросите код повторно через 60 секунд.',cat:'Вход',updated:'10 мар 2026',body:'<h3>Частые причины</h3><ul><li><b>Неверный номер</b> — проверьте, что указан тот же номер, на который регистрировался аккаунт</li><li><b>Перегрузка оператора</b> — SMS может задерживаться до 5 минут в часы пик</li><li><b>Блокировка SMS-рассылок</b> — некоторые операторы блокируют сервисные SMS. Позвоните оператору для проверки</li></ul><h3>Что делать</h3><ol><li>Подождите 2-3 минуты</li><li>Нажмите "Отправить повторно" (доступно через 60 сек)</li><li>Попробуйте выбрать отправку кода на email вместо SMS</li></ol><div class="warn">Важно: не запрашивайте код более 5 раз подряд — аккаунт может быть временно заблокирован на 15 минут.</div>'},
+    {id:'a3',title:'Приложение зависает на экране входа',short:'Обновите приложение до последней версии и очистите кэш.',cat:'Вход',updated:'8 мар 2026',body:'<h3>Шаги для решения</h3><ol><li><b>Обновите приложение</b> — откройте App Store или Google Play, найдите PASS24, нажмите "Обновить"</li><li><b>Перезагрузите телефон</b> — это решает большинство проблем с зависанием</li><li><b>Очистите кэш</b>:<ul><li>Android: Настройки → Приложения → PASS24 → Хранилище → Очистить кэш</li><li>iOS: удалите и переустановите приложение</li></ul></li></ol><h3>Минимальные требования</h3><p>iOS 15+ или Android 10+. Если устройство старше — попробуйте веб-версию на pass24online.ru.</p>'}
+  ],
+  gate: [
+    {id:'g1',title:'Шлагбаум не реагирует на приложение',short:'Проверьте Bluetooth и геолокацию. Подойдите ближе (до 10 м).',cat:'Оборудование',updated:'14 мар 2026',body:'<h3>Проверьте настройки телефона</h3><ol><li><b>Bluetooth</b> — должен быть включён</li><li><b>Геолокация</b> — разрешите PASS24 доступ к геолокации</li><li><b>Интернет</b> — нужно мобильное соединение или Wi-Fi</li></ol><h3>На месте</h3><ul><li>Подойдите ближе к шлагбауму (3-10 метров)</li><li>Убедитесь, что открываете именно этот шлагбаум</li><li>Попробуйте открыть через QR-код</li></ul><div class="warn">Если шлагбаум не работает ни у кого — возможна техническая неисправность. Создайте срочный тикет.</div>'},
+    {id:'g2',title:'Дверь подъезда не открывается',short:'Проверьте активность пропуска в разделе "Мои пропуска".',cat:'Оборудование',updated:'11 мар 2026',body:'<h3>Быстрая диагностика</h3><ol><li>Откройте PASS24 → <b>"Мои пропуска"</b></li><li>Проверьте, что пропуск в статусе <b>"Активен"</b></li><li>Если статус "Истёк" — обратитесь в вашу УК</li></ol><h3>Альтернативные способы</h3><ul><li><b>QR-код</b> — приложите к считывателю</li><li><b>Домофон</b> — позвоните в квартиру</li><li><b>Физический ключ</b></li></ul><div class="tip">Если дверь не открывается только у вас — проблема в пропуске. Если у всех — в оборудовании.</div>'},
+    {id:'g3',title:'Домофон не звонит при вызове',short:'Проверьте настройки переадресации в приложении PASS24.',cat:'Оборудование',updated:'9 мар 2026',body:'<h3>Настройка переадресации</h3><ol><li>Откройте PASS24 → <b>"Домофон"</b> → <b>"Настройки"</b></li><li>Проверьте, что переадресация <b>включена</b></li><li>Убедитесь, что указан верный номер телефона</li></ol><h3>Push-уведомления о звонках</h3><p>Для получения звонков через приложение нужно:</p><ul><li>Разрешить push-уведомления</li><li>Не ограничивать фоновый режим</li><li>Android: добавить в исключения оптимизации батареи</li></ul>'}
+  ],
+  pass: [
+    {id:'p1',title:'Как создать гостевой пропуск',short:'Раздел "Пропуска" → "Создать" → "Гостевой". Укажите имя и период.',cat:'Пропуска',updated:'15 мар 2026',body:'<h3>Пошаговая инструкция</h3><ol><li>Откройте приложение PASS24</li><li>Перейдите в раздел <b>"Пропуска"</b></li><li>Нажмите <b>"Создать пропуск"</b></li><li>Выберите тип: <b>"Гостевой"</b></li><li>Заполните данные гостя</li><li>Укажите период действия</li><li>Выберите точки доступа</li><li>Нажмите <b>"Создать"</b></li></ol><h3>Как гость получит пропуск?</h3><p>Гостю автоматически отправится SMS со ссылкой.</p><div class="tip">Для частых гостей удобнее создать постоянный пропуск с расписанием.</div>'},
+    {id:'p2',title:'Пропуск не отображается у гостя',short:'Гость должен открыть ссылку из SMS.',cat:'Пропуска',updated:'13 мар 2026',body:'<h3>Проверьте</h3><ul><li>Гость получил SMS со ссылкой</li><li>Гость открыл ссылку в браузере</li><li>Приложение установлено и обновлено</li></ul><h3>Частые проблемы</h3><ul><li><b>Ссылка истекла</b> — пересоздайте пропуск</li><li><b>Неверный номер</b> — создайте пропуск заново</li><li><b>Блокировка SMS</b> — отправьте ссылку через мессенджер</li></ul>'},
+    {id:'p3',title:'Как продлить постоянный пропуск',short:'Постоянные пропуска продлеваются автоматически.',cat:'Пропуска',updated:'7 мар 2026',body:'<h3>Автоматическое продление</h3><p>Постоянные пропуска продлеваются автоматически при активном договоре с УК.</p><h3>Если пропуск истёк</h3><ol><li>Проверьте статус в <b>"Мои пропуска"</b></li><li>Обратитесь в управляющую компанию</li></ol><div class="warn">Автомобильные пропуска привязаны к номеру машины. При смене авто обновите данные через УК.</div>'}
+  ],
+  notif: [
+    {id:'n1',title:'Как включить push-уведомления',short:'Настройки телефона → PASS24 → Уведомления → включите все типы.',cat:'Уведомления',updated:'14 мар 2026',body:'<h3>На iPhone (iOS)</h3><ol><li>Откройте <b>Настройки</b> телефона</li><li>Найдите <b>PASS24</b></li><li>Нажмите <b>"Уведомления"</b></li><li>Включите <b>"Допуск уведомлений"</b></li></ol><h3>На Android</h3><ol><li>Настройки → <b>Приложения</b> → <b>PASS24</b></li><li>Нажмите <b>"Уведомления"</b></li><li>Включите <b>"Показывать уведомления"</b></li></ol><div class="tip">На Android также отключите оптимизацию батареи для PASS24.</div>'},
+    {id:'n2',title:'Уведомления приходят с задержкой',short:'Проверьте режим энергосбережения.',cat:'Уведомления',updated:'10 мар 2026',body:'<h3>Основные причины</h3><ul><li><b>Режим энергосбережения</b></li><li><b>Оптимизация батареи</b> (Android)</li><li><b>Режим "Не беспокоить"</b></li><li><b>Нестабильный интернет</b></li></ul><h3>Решение</h3><ol><li>Отключите режим энергосбережения</li><li>Android: Настройки → Батарея → PASS24 → "Не оптимизировать"</li><li>Перезагрузите телефон</li></ol>'},
+    {id:'n3',title:'Не приходят SMS-коды',short:'SMS могут задерживаться до 5 минут.',cat:'Уведомления',updated:'8 мар 2026',body:'<h3>Что проверить</h3><ol><li>Номер телефона указан верно в профиле</li><li>Нет SMS в "Спам" или "Заблокированные"</li><li>Подождите 3-5 минут</li></ol><h3>Если SMS не приходит совсем</h3><p>Позвоните оператору и уточните, не заблокированы ли сервисные SMS-рассылки.</p>'}
+  ],
+  admin: [
+    {id:'ad1',title:'Как добавить новую точку доступа',short:'Панель управления → "Оборудование" → "Добавить".',cat:'Администрирование',updated:'16 мар 2026',body:'<h3>Добавление через панель управления</h3><ol><li>Войдите в <b>панель управления</b> PASS24</li><li>Перейдите в <b>"Оборудование"</b></li><li>Нажмите <b>"Добавить точку доступа"</b></li><li>Выберите тип оборудования</li><li>Укажите модель</li><li>Введите IP-адрес или серийный номер</li><li>Привяжите к объекту</li><li>Нажмите <b>"Подключить"</b></li></ol><div class="tip">Перед добавлением убедитесь, что контроллер подключён к сети объекта.</div>'},
+    {id:'ad2',title:'Как назначить права администратора',short:'Раздел "Пользователи" → выберите сотрудника → "Изменить роль".',cat:'Администрирование',updated:'14 мар 2026',body:'<h3>Роли в системе</h3><ul><li><b>Житель</b> — пропуска, открытие дверей</li><li><b>Администратор объекта</b> — управление на своём объекте</li><li><b>Супер-администратор</b> — полный доступ</li></ul><h3>Как назначить</h3><ol><li>Откройте <b>"Пользователи"</b></li><li>Найдите сотрудника</li><li>Нажмите <b>"Изменить роль"</b></li><li>Выберите роль и объекты</li></ol><div class="warn">Администратор видит персональные данные жителей. Назначайте роль ответственным сотрудникам.</div>'},
+    {id:'ad3',title:'Как настроить расписание доступа',short:'Объекты → точка доступа → "Расписание".',cat:'Администрирование',updated:'11 мар 2026',body:'<h3>Настройка расписания</h3><ol><li>Перейдите в <b>"Объекты"</b></li><li>Откройте точку доступа</li><li>Вкладка <b>"Расписание"</b></li><li>Добавьте временные интервалы</li></ol><div class="tip">Для каждой точки можно задать своё расписание.</div>'}
+  ],
+  other: [
+    {id:'o1',title:'Как связаться с управляющей компанией',short:'В приложении PASS24 → "Мой дом" → "Контакты".',cat:'Общее',updated:'15 мар 2026',body:'<h3>Контакты УК</h3><ol><li>Откройте PASS24</li><li>Перейдите в <b>"Мой дом"</b></li><li>Нажмите <b>"Контакты"</b></li></ol><p>Вы также можете позвонить напрямую, нажав на номер телефона.</p>'},
+    {id:'o2',title:'Как удалить аккаунт',short:'Отправьте запрос на support@pass24.online.',cat:'Общее',updated:'5 мар 2026',body:'<h3>Удаление аккаунта</h3><ol><li>Отправьте письмо на <b>support@pass24.online</b></li><li>Укажите номер телефона</li><li>Тема: "Запрос на удаление аккаунта"</li></ol><p>Обработка до 30 дней.</p><div class="warn">Удаление необратимо. Все пропуска и история будут удалены.</div>'}
+  ]
+};
+
+var categoryTitles = {access:'Проблема со входом или авторизацией',gate:'Проблема с шлагбаумом, дверью или домофоном',pass:'Проблема с пропусками',notif:'Проблема с уведомлениями',admin:'Администрирование системы',other:'Другой вопрос'};
+
+/* ===== HELPERS ===== */
+
+function el(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function clearEl(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+
+function formatDate(dateStr) {
+  var d = new Date(dateStr);
+  var months = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+  return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+}
+
+function formatDateTime(dateStr) {
+  var d = new Date(dateStr);
+  var months = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+  return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear() + ', ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+
+function pluralize(n, one, few, many) {
+  var abs = Math.abs(n) % 100;
+  var n1 = abs % 10;
+  if (abs > 10 && abs < 20) return many;
+  if (n1 > 1 && n1 < 5) return few;
+  if (n1 === 1) return one;
+  return many;
+}
+
+function showToast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('visible');
+  setTimeout(function() { t.classList.remove('visible'); }, 3000);
+}
+
+/* ===== CONFIRM DIALOG ===== */
+
+var confirmCallback = null;
+
+function showConfirm(title, text, actionLabel, callback) {
+  document.getElementById('confirmTitle').textContent = title;
+  document.getElementById('confirmText').textContent = text;
+  var btn = document.getElementById('confirmAction');
+  btn.textContent = actionLabel;
+  confirmCallback = callback;
+  btn.onclick = function() { closeConfirm(); if (confirmCallback) confirmCallback(); };
+  document.getElementById('confirmDialog').classList.add('visible');
+}
+
+function closeConfirm() {
+  document.getElementById('confirmDialog').classList.remove('visible');
+  confirmCallback = null;
+}
+
+document.getElementById('confirmDialog').addEventListener('click', function(e) {
+  if (e.target === this) closeConfirm();
+});
+
+/* ===== AUTH (handled by main site SSO — user is always authenticated) ===== */
+
+function validateEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function updateUserUI() {
+  var u = getUser();
+  var roleText = u.role + (u.object ? ' \u00B7 ' + u.object : '');
+  document.getElementById('userAvatarSmall').textContent = u.initials || '?';
+  document.getElementById('userNameSmall').textContent = u.name || 'Пользователь';
+  document.getElementById('userRoleSmall').textContent = roleText;
+  document.getElementById('userAvatarLg').textContent = u.initials || '?';
+  document.getElementById('userNameLg').textContent = u.name || 'Пользователь';
+  document.getElementById('userRoleLg').textContent = roleText;
+}
+
+/* ===== MOBILE MENU ===== */
+
+function toggleMobileMenu() {
+  document.getElementById('headerNav').classList.toggle('open');
+}
+
+function closeMobileMenu() {
+  document.getElementById('headerNav').classList.remove('open');
+}
+
+/* ===== ADMIN TOGGLE ===== */
+
+function toggleAdmin() {
+  var cb = document.getElementById('isAdmin');
+  cb.checked = !cb.checked;
+  document.getElementById('adminFields').classList.toggle('visible', cb.checked);
+}
+
+/* ===== CATEGORY CARDS ===== */
+
+var selectedCategory = null;
+
+function buildCategoryCards() {
+  var grid = document.getElementById('catGrid');
+  clearEl(grid);
+  catDefs.forEach(function(c) {
+    var card = el('div','cat-card');
+    card.setAttribute('data-cat', c.key);
+    var icon = el('div','cat-icon cat-icon-' + c.cls);
+    icon.textContent = String.fromCodePoint(c.icon);
+    card.appendChild(icon);
+    card.appendChild(el('div','cat-name', c.name));
+    card.appendChild(el('div','cat-desc', c.desc));
+    card.addEventListener('click', function() { selectCategory(c.key, card); });
+    grid.appendChild(card);
+  });
+}
+
+function selectCategory(cat, card) {
+  selectedCategory = cat;
+  document.querySelectorAll('.cat-card').forEach(function(c){c.classList.remove('selected');});
+  card.classList.add('selected');
+  setTimeout(function() {
+    document.getElementById('step1').style.display = 'none';
+    document.getElementById('step2').style.display = 'block';
+    document.getElementById('step2Title').textContent = categoryTitles[cat];
+    buildSpecificFields(cat);
+    buildFaq(cat);
+    var u = getUser();
+    if (u.phone) document.getElementById('inputContact').value = u.phone;
+    if (u.object) document.getElementById('inputObject').value = u.object;
+    document.getElementById('isAdmin').checked = false;
+    document.getElementById('adminFields').classList.remove('visible');
+    window.scrollTo({top:0, behavior:'smooth'});
+  }, 200);
+}
+
+function goBackToStep1() {
+  document.getElementById('step1').style.display = '';
+  document.getElementById('step2').style.display = 'none';
+  document.querySelectorAll('.cat-card').forEach(function(c){c.classList.remove('selected');});
+  resetForm();
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+/* ===== SPECIFIC FIELDS ===== */
+
+function buildSpecificFields(cat) {
+  var container = document.getElementById('specificFields');
+  clearEl(container);
+
+  function secTitle(t) { container.appendChild(el('div','form-section-title specific-field',t)); }
+  function mkField(lbl, ph, type, opts) {
+    var f = el('div','field specific-field');
+    f.appendChild(el('label','',lbl));
+    if (type === 'select' && opts) {
+      var s = document.createElement('select');
+      opts.forEach(function(o) { var op = document.createElement('option'); op.textContent = o; s.appendChild(op); });
+      f.appendChild(s);
+    } else {
+      var inp = document.createElement('input'); inp.type='text'; inp.placeholder = ph||''; f.appendChild(inp);
+    }
+    return f;
+  }
+  function row(fields) { var r = el('div','form-row specific-field'); fields.forEach(function(f){r.appendChild(f);}); container.appendChild(r); }
+
+  if (cat==='access') { secTitle('Детали авторизации'); row([mkField('Устройство','','select',['iPhone (iOS)','Android','Веб-браузер']), mkField('Логин / email аккаунта','email или номер телефона')]); }
+  else if (cat==='gate') { secTitle('Где произошла проблема'); row([mkField('Объект (ЖК / БЦ)','Например: ЖК Солнечный, корпус 3'), mkField('Точка доступа','Например: Шлагбаум №2 у въезда')]); container.appendChild(mkField('Когда примерно это произошло','Например: сегодня около 18:30')); }
+  else if (cat==='pass') { secTitle('Детали пропуска'); row([mkField('Объект (ЖК / БЦ)','Например: ЖК Солнечный'), mkField('Тип пропуска','','select',['Гостевой','Постоянный','Курьерский','Автомобильный'])]); container.appendChild(mkField('На кого оформлен пропуск','ФИО или номер телефона')); }
+  else if (cat==='notif') { secTitle('Детали устройства'); row([mkField('Устройство','','select',['iPhone (iOS)','Android']), mkField('Версия приложения','Например: 4.2.1')]); container.appendChild(mkField('Какие уведомления не приходят','','select',['Push-уведомления','SMS','Уведомления в приложении','Все типы'])); }
+  else if (cat==='admin') { secTitle('Детали объекта'); row([mkField('Объект (ЖК / БЦ)','Например: ЖК Солнечный'), mkField('Тип обращения','','select',['Настройка оборудования','Права доступа','Интеграция / API','Управление объектом','Биллинг / лицензия','Другое'])]); row([mkField('Оборудование / модуль','Например: контроллер BAS-IP, шлагбаум CAME'), mkField('ID объекта в системе','Если известен')]); container.appendChild(mkField('Ожидаемый результат','Опишите, что должно работать после решения')); }
+}
+
+/* ===== FAQ SIDEBAR ===== */
+
+function buildFaq(cat) {
+  var list = document.getElementById('faqList');
+  clearEl(list);
+  (faqData[cat] || []).forEach(function(f) {
+    var item = el('div','faq-item');
+    item.appendChild(el('div','faq-item-title', f.title));
+    item.appendChild(el('div','faq-item-text', f.short));
+    item.addEventListener('click', function() { openFaqArticle(f); });
+    list.appendChild(item);
+  });
+}
+
+/* ===== FAQ MODAL ===== */
+
+var currentArticle = null;
+
+function openFaqArticle(article) {
+  currentArticle = article;
+  document.getElementById('modalTitle').textContent = article.title;
+  var meta = document.getElementById('modalMeta');
+  clearEl(meta);
+  meta.appendChild(el('span','', article.cat));
+  meta.appendChild(el('span','', 'Обновлено: ' + article.updated));
+  /* Body uses trusted static HTML from hardcoded FAQ database only — never user input */
+  var body = document.getElementById('modalBody');
+  clearEl(body);
+  var temp = document.createElement('template');
+  temp.innerHTML = article.body; /* SAFE: trusted static content from faqData object above */
+  body.appendChild(temp.content.cloneNode(true));
+  document.getElementById('faqModal').classList.add('visible');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+  document.getElementById('faqModal').classList.remove('visible');
+  document.body.style.overflow = '';
+}
+
+function markArticleHelpful(yes) {
+  var savedArticle = currentArticle;
+  if (yes) {
+    showToast('Спасибо за обратную связь!');
+    closeModal();
+  } else {
+    closeModal();
+    if (savedArticle) {
+      var cat = null;
+      for (var key in faqData) {
+        if (faqData[key].some(function(a){ return a.id === savedArticle.id; })) { cat = key; break; }
+      }
+      if (cat) {
+        navigate('home');
+        setTimeout(function() {
+          var cards = document.querySelectorAll('.cat-card');
+          cards.forEach(function(card) {
+            if (card.getAttribute('data-cat') === cat) selectCategory(cat, card);
+          });
+        }, 100);
+      }
+    }
+    showToast('Заполните форму — мы поможем!');
+  }
+  currentArticle = null;
+}
+
+document.getElementById('faqModal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') { closeModal(); closeConfirm(); }
+});
+
+/* ===== FILE UPLOAD ===== */
+
+var uploadedFiles = [];
+
+var uploadArea = document.getElementById('uploadArea');
+if (uploadArea) {
+  uploadArea.addEventListener('dragover', function(e) { e.preventDefault(); this.classList.add('dragover'); });
+  uploadArea.addEventListener('dragleave', function() { this.classList.remove('dragover'); });
+  uploadArea.addEventListener('drop', function(e) {
+    e.preventDefault();
+    this.classList.remove('dragover');
+    handleFiles(e.dataTransfer.files);
+  });
+}
+
+function handleFiles(files) {
+  var maxFiles = 5;
+  var maxSize = 10 * 1024 * 1024;
+  for (var i = 0; i < files.length; i++) {
+    if (uploadedFiles.length >= maxFiles) { showToast('Максимум ' + maxFiles + ' файлов'); break; }
+    if (files[i].size > maxSize) { showToast('Файл слишком большой (макс. 10 МБ)'); continue; }
+    uploadedFiles.push(files[i]);
+  }
+  renderPreviews();
+  document.getElementById('fileInput').value = '';
+}
+
+function renderPreviews() {
+  var container = document.getElementById('uploadPreviews');
+  clearEl(container);
+  uploadedFiles.forEach(function(file, idx) {
+    var preview = el('div','upload-preview');
+    if (file.type.startsWith('image/')) {
+      var img = document.createElement('img');
+      img.src = URL.createObjectURL(file);
+      preview.appendChild(img);
+    } else {
+      preview.appendChild(el('div','upload-preview-file', file.name));
+    }
+    var removeBtn = el('button','remove-file', '\u00D7');
+    removeBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      uploadedFiles.splice(idx, 1);
+      renderPreviews();
+    });
+    preview.appendChild(removeBtn);
+    container.appendChild(preview);
+  });
+}
+
+/* ===== FORM VALIDATION & SUBMIT ===== */
+
+function validateForm() {
+  var valid = true;
+  var title = document.getElementById('inputTitle').value.trim();
+  var desc = document.getElementById('inputDesc').value.trim();
+  var contact = document.getElementById('inputContact').value.trim();
+
+  document.getElementById('fieldTitle').classList.remove('field-error');
+  document.getElementById('fieldDesc').classList.remove('field-error');
+  document.getElementById('fieldContact').classList.remove('field-error');
+
+  if (!title) { document.getElementById('fieldTitle').classList.add('field-error'); valid = false; }
+  if (!desc) { document.getElementById('fieldDesc').classList.add('field-error'); valid = false; }
+  if (!contact) { document.getElementById('fieldContact').classList.add('field-error'); valid = false; }
+
+  return valid;
+}
+
+function submitTicket(e) {
+  e.preventDefault();
+  if (!validateForm()) { showToast('Заполните обязательные поля'); return false; }
+
+  var title = document.getElementById('inputTitle').value.trim();
+  var desc = document.getElementById('inputDesc').value.trim();
+  var contact = document.getElementById('inputContact').value.trim();
+  var objectName = document.getElementById('inputObject').value.trim();
+  var urgent = document.getElementById('urgent').checked;
+  var isAdmin = document.getElementById('isAdmin').checked;
+  var adminPosition = isAdmin ? document.getElementById('adminPosition').value.trim() : '';
+  var adminCompany = isAdmin ? document.getElementById('adminCompany').value.trim() : '';
+
+  var catLabel = catDefs.find(function(c){ return c.key === selectedCategory; });
+  var ticketId = getNextTicketId();
+  var now = new Date().toISOString();
+
+  var prio = 'normal'; var prioLabel = 'Обычный';
+  var text = (title + ' ' + desc).toLowerCase();
+  if (urgent || ['не могу попасть','не пускает','дверь не открылась'].some(function(kw){ return text.indexOf(kw)!==-1; })) { prio = 'critical'; prioLabel = 'Критич.'; }
+  else if (['шлагбаум','парковка'].some(function(kw){ return text.indexOf(kw)!==-1; })) { prio = 'high'; prioLabel = 'Высокий'; }
+  else if (text.indexOf('уведомлен')!==-1 || text.indexOf('пуш')!==-1) { prio = 'low'; prioLabel = 'Низкий'; }
+
+  var fileNames = uploadedFiles.map(function(f){ return f.name; });
+
+  var ticket = {
+    id: ticketId, title: title, desc: desc, date: now,
+    cat: selectedCategory, catLabel: catLabel ? catLabel.name : 'Другое',
+    status: 'new', statusLabel: 'Новый', prio: prio, prioLabel: prioLabel,
+    contact: contact, object: objectName, urgent: urgent,
+    isAdmin: isAdmin, adminPosition: adminPosition, adminCompany: adminCompany,
+    files: fileNames,
+    events: [
+      {time: now, text: 'Обращение создано', actor: getUser().name || name},
+      {time: now, text: 'Назначен приоритет: ' + prioLabel, actor: 'Система'}
+    ]
+  };
+
+  if (isAdmin) {
+    ticket.events.push({time: now, text: 'Обращение от администратора объекта', actor: 'Система'});
+  }
+
+  var tickets = getAllTickets();
+  tickets.unshift(ticket);
+  saveTickets(tickets);
+
+  document.getElementById('successTicketId').textContent = ticketId;
+  document.getElementById('step2').style.display = 'none';
+  document.getElementById('successScreen').style.display = '';
+  document.getElementById('recentSection').style.display = 'none';
+  resetForm();
+  window.scrollTo({top:0, behavior:'smooth'});
+  return false;
+}
+
+function resetForm() {
+  document.getElementById('ticketForm').reset();
+  document.getElementById('fieldTitle').classList.remove('field-error');
+  document.getElementById('fieldDesc').classList.remove('field-error');
+  document.getElementById('fieldContact').classList.remove('field-error');
+  document.getElementById('isAdmin').checked = false;
+  document.getElementById('adminFields').classList.remove('visible');
+  uploadedFiles = [];
+  renderPreviews();
+}
+
+/* ===== RECENT TICKETS ===== */
+
+function buildRecentTickets() {
+  var list = document.getElementById('recentList');
+  clearEl(list);
+  var tickets = getAllTickets().slice(0, 3);
+  if (tickets.length === 0) {
+    var empty = el('div','empty-state');
+    empty.appendChild(el('div','empty-state-icon', '\uD83D\uDCCB'));
+    empty.appendChild(el('div','empty-state-text', 'У вас пока нет обращений'));
+    list.appendChild(empty);
+    return;
+  }
+  tickets.forEach(function(t) {
+    var card = el('div','recent-card');
+    var left = el('div','recent-left');
+    left.appendChild(el('div','recent-title', t.title));
+    left.appendChild(el('div','recent-meta', t.id + ' \u00B7 ' + formatDate(t.date) + ' \u00B7 ' + t.catLabel));
+    var right = el('div','recent-right');
+    right.appendChild(el('span','badge badge-' + t.status, t.statusLabel));
+    right.appendChild(el('span','badge badge-' + t.prio, t.prioLabel));
+    card.appendChild(left);
+    card.appendChild(right);
+    card.addEventListener('click', function() { openTicketView(t.id); });
+    list.appendChild(card);
+  });
+}
+
+/* ===== ACCOUNT PAGE ===== */
+
+var currentAccountSection = 'tickets';
+var ticketSearchQuery = '';
+var ticketsPerPage = 5;
+var ticketsShown = 5;
+var currentTicketFilter = null;
+
+function buildAccountPage(section) {
+  section = section || currentAccountSection;
+  currentAccountSection = section;
+
+  document.querySelectorAll('#accountNav .account-nav-item').forEach(function(item) {
+    item.classList.remove('active');
+    if (item.getAttribute('data-section') === section) item.classList.add('active');
+  });
+
+  var tickets = getAllTickets();
+  var statsEl = document.getElementById('accountStats');
+  clearEl(statsEl);
+  var open = tickets.filter(function(t){ return t.status==='new'||t.status==='progress'||t.status==='waiting'; }).length;
+  var closed = tickets.filter(function(t){ return t.status==='resolved'||t.status==='closed'; }).length;
+  [{n:tickets.length, l:'Всего'},{n:open, l:'Открытых'},{n:closed, l:'Закрытых'},{n:'~2ч', l:'Ср. ответ'}].forEach(function(s){
+    var d = el('div','account-stat');
+    d.appendChild(el('div','account-stat-num', String(s.n)));
+    d.appendChild(el('div','account-stat-label', s.l));
+    statsEl.appendChild(d);
+  });
+
+  var main = document.getElementById('accountMain');
+  clearEl(main);
+
+  if (section === 'tickets') { ticketsShown = ticketsPerPage; ticketSearchQuery = ''; currentTicketFilter = null; renderAccountTicketsSection(main, tickets, open, closed); }
+  else if (section === 'profile') renderProfileSection(main);
+  else if (section === 'settings') renderSettingsSection(main);
+  else if (section === 'objects') renderObjectsSection(main);
+}
+
+function switchAccountSection(section, navItem) {
+  currentAccountSection = section;
+  document.querySelectorAll('#accountNav .account-nav-item').forEach(function(i){i.classList.remove('active');});
+  navItem.classList.add('active');
+  buildAccountPage(section);
+  var titles = {tickets:'Мои обращения',profile:'Профиль',settings:'Настройки уведомлений',objects:'Объекты'};
+  var subtitles = {tickets:'Все ваши заявки в службу поддержки PASS24',profile:'Информация о вашем аккаунте',settings:'Управление способами получения уведомлений',objects:'Ваши объекты в системе PASS24'};
+  document.getElementById('accountPageTitle').textContent = titles[section] || 'Мои обращения';
+  document.getElementById('accountPageSubtitle').textContent = subtitles[section] || '';
+}
+
+/* ── Tickets section ── */
+
+function renderAccountTicketsSection(main, tickets, open, closed) {
+  var searchBar = el('div','search-bar');
+  searchBar.appendChild(el('span','search-icon', '\uD83D\uDD0D'));
+  var searchInput = document.createElement('input');
+  searchInput.type = 'text';
+  searchInput.placeholder = 'Поиск по обращениям...';
+  searchInput.value = ticketSearchQuery;
+  searchInput.addEventListener('input', function() {
+    ticketSearchQuery = this.value;
+    ticketsShown = ticketsPerPage;
+    var filtered = filterTickets(tickets, currentTicketFilter, ticketSearchQuery);
+    renderTicketsList(ticketList, filtered);
+  });
+  searchBar.appendChild(searchInput);
+  main.appendChild(searchBar);
+
+  var filters = el('div','account-filters');
+  var filterDefs = [
+    {label:'Все', filter:null, count:tickets.length},
+    {label:'Открытые', filter:['new','progress','waiting'], count:open},
+    {label:'Решённые', filter:['resolved','closed'], count:closed}
+  ];
+  filterDefs.forEach(function(fd, i) {
+    var btn = el('button','filter-btn' + (i===0?' active':''), fd.label);
+    btn.appendChild(el('span','filter-count', String(fd.count)));
+    btn.addEventListener('click', function() {
+      filters.querySelectorAll('.filter-btn').forEach(function(b){b.classList.remove('active');});
+      btn.classList.add('active');
+      currentTicketFilter = fd.filter;
+      ticketsShown = ticketsPerPage;
+      var filtered = filterTickets(tickets, fd.filter, ticketSearchQuery);
+      renderTicketsList(ticketList, filtered);
+    });
+    filters.appendChild(btn);
+  });
+  main.appendChild(filters);
+  var ticketList = el('div','');
+  main.appendChild(ticketList);
+  var filtered = filterTickets(tickets, null, ticketSearchQuery);
+  renderTicketsList(ticketList, filtered);
+}
+
+function filterTickets(tickets, statusFilter, query) {
+  var filtered = statusFilter ? tickets.filter(function(t){ return statusFilter.indexOf(t.status) !== -1; }) : tickets;
+  if (query && query.trim()) {
+    var q = query.trim().toLowerCase();
+    filtered = filtered.filter(function(t) {
+      return t.title.toLowerCase().indexOf(q) !== -1 ||
+             t.desc.toLowerCase().indexOf(q) !== -1 ||
+             t.id.toLowerCase().indexOf(q) !== -1 ||
+             t.catLabel.toLowerCase().indexOf(q) !== -1;
+    });
+  }
+  return filtered;
+}
+
+function renderTicketsList(container, filtered) {
+  clearEl(container);
+  if (filtered.length === 0) {
+    var empty = el('div','empty-state');
+    empty.appendChild(el('div','empty-state-icon', '\uD83D\uDD0D'));
+    empty.appendChild(el('div','empty-state-text', ticketSearchQuery ? 'По запросу ничего не найдено' : 'Обращений с таким статусом нет'));
+    container.appendChild(empty);
+    return;
+  }
+  var toShow = filtered.slice(0, ticketsShown);
+  toShow.forEach(function(t) {
+    var card = el('div','ticket-detail-card');
+    var header = el('div','ticket-detail-header');
+    header.appendChild(el('div','ticket-detail-title', t.title));
+    var badges = el('div','recent-right');
+    badges.appendChild(el('span','badge badge-' + t.status, t.statusLabel));
+    badges.appendChild(el('span','badge badge-' + t.prio, t.prioLabel));
+    if (t.isAdmin) badges.appendChild(el('span','badge badge-waiting', 'Админ'));
+    header.appendChild(badges);
+    card.appendChild(header);
+    card.appendChild(el('div','ticket-detail-desc', t.desc));
+    var footer = el('div','ticket-detail-footer');
+    footer.appendChild(el('span','ticket-detail-id', t.id));
+    footer.appendChild(el('span','', formatDate(t.date)));
+    footer.appendChild(el('span','', t.catLabel));
+    card.appendChild(footer);
+    card.addEventListener('click', function() { openTicketView(t.id); });
+    container.appendChild(card);
+  });
+
+  if (filtered.length > ticketsShown) {
+    var showMoreRow = el('div','show-more-row');
+    var remaining = filtered.length - ticketsShown;
+    var btn = el('button','show-all-btn', 'Показать ещё (' + remaining + ')');
+    btn.addEventListener('click', function() {
+      ticketsShown += ticketsPerPage;
+      renderTicketsList(container, filtered);
+    });
+    showMoreRow.appendChild(btn);
+    container.appendChild(showMoreRow);
+  }
+}
+
+/* ── Profile section ── */
+
+function renderProfileSection(main) {
+  var u = getUser();
+  var form = el('div','profile-form');
+
+  function addField(label, id, value, type, disabled, placeholder) {
+    var f = el('div','field');
+    f.appendChild(el('label','', label));
+    var inp = document.createElement('input');
+    inp.type = type || 'text';
+    inp.id = id;
+    inp.value = value || '';
+    inp.placeholder = placeholder || '';
+    if (disabled) { inp.disabled = true; inp.style.cssText = 'background:#f8fafc;color:#94a3b8'; }
+    f.appendChild(inp);
+    form.appendChild(f);
+  }
+
+  addField('Имя', 'profileName', u.name, 'text', false, 'Ваше полное имя');
+  addField('Email', 'profileEmail', u.email, 'email', false, 'user@example.com');
+  addField('Телефон', 'profilePhone', u.phone, 'tel', false, '+7 (999) 123-45-67');
+  addField('Роль', 'profileRole', u.role, 'text', true);
+  addField('Объект', 'profileObject', u.object, 'text', false, 'Например: ЖК Солнечный');
+
+  var btn = el('button','submit-btn', 'Сохранить изменения');
+  btn.style.marginTop = '8px';
+  btn.addEventListener('click', saveProfile);
+  form.appendChild(btn);
+  main.appendChild(form);
+}
+
+function saveProfile() {
+  var u = getUser();
+  var name = document.getElementById('profileName').value.trim();
+  var email = document.getElementById('profileEmail').value.trim();
+  var phone = document.getElementById('profilePhone').value.trim();
+  var object = document.getElementById('profileObject').value.trim();
+
+  if (!name) { showToast('Имя не может быть пустым'); return; }
+  if (email && !validateEmail(email)) { showToast('Введите корректный email'); return; }
+
+  u.name = name;
+  u.email = email || u.email;
+  u.phone = phone || u.phone;
+  u.object = object;
+  u.initials = u.name.split(' ').map(function(w){ return w[0]; }).join('').substring(0,2).toUpperCase();
+  saveUser(u);
+  showToast('Профиль сохранён');
+  buildAccountPage('profile');
+}
+
+/* ── Settings section ── */
+
+function renderSettingsSection(main) {
+  var s = getSettings();
+  var settings = [
+    {key:'pushEnabled', label:'Push-уведомления', desc:'Уведомления в приложении и браузере'},
+    {key:'emailEnabled', label:'Email-уведомления', desc:'Дублирование уведомлений на почту'},
+    {key:'smsEnabled', label:'SMS-уведомления', desc:'SMS о критических изменениях'},
+    {key:'newTicketNotif', label:'Новые обращения', desc:'Уведомлять о создании обращений на ваших объектах'},
+    {key:'statusChangeNotif', label:'Изменения статуса', desc:'Уведомлять при смене статуса ваших обращений'},
+    {key:'commentNotif', label:'Комментарии', desc:'Уведомлять о новых комментариях'}
+  ];
+
+  var container = el('div','');
+  settings.forEach(function(st) {
+    var row = el('div','setting-row');
+    var left = el('div','');
+    left.appendChild(el('div','setting-label', st.label));
+    left.appendChild(el('div','setting-desc', st.desc));
+    row.appendChild(left);
+    var toggle = el('div','toggle' + (s[st.key] ? ' on' : ''));
+    toggle.addEventListener('click', function() {
+      s[st.key] = !s[st.key];
+      saveSettings(s);
+      this.classList.toggle('on');
+      showToast(st.label + ': ' + (s[st.key] ? 'включено' : 'выключено'));
+    });
+    row.appendChild(toggle);
+    container.appendChild(row);
+  });
+  main.appendChild(container);
+}
+
+/* ── Objects section ── */
+
+function renderObjectsSection(main) {
+  var objects = [
+    {name:'ЖК Солнечный', address:'г. Москва, ул. Солнечная, 15', role:'Администратор', points:12, residents:248, controllers:['BAS-IP AV-07T (подъезд 1)','BAS-IP AV-07T (подъезд 2)','CAME GARD4 (паркинг)'], phone:'+7 (495) 123-45-67', email:'uk-comfort@pass24.online'},
+    {name:'ЖК Солнечный, корпус 2', address:'г. Москва, ул. Солнечная, 17', role:'Администратор', points:8, residents:156, controllers:['BAS-IP AV-07T (подъезд 1)','CAME GARD4 (шлагбаум)'], phone:'+7 (495) 123-45-68', email:'uk-comfort@pass24.online'}
+  ];
+
+  objects.forEach(function(obj) {
+    var card = el('div','object-card');
+    card.appendChild(el('div','object-name', obj.name));
+    card.appendChild(el('div','object-addr', obj.address));
+
+    var info = el('div','object-info');
+    function infoItem(label, value) {
+      var span = el('span','');
+      span.textContent = label + ': ';
+      var b = el('b','', String(value)); b.style.color = '#1e293b';
+      span.appendChild(b);
+      return span;
+    }
+    info.appendChild(infoItem('Роль', obj.role));
+    info.appendChild(infoItem('Точек доступа', obj.points));
+    info.appendChild(infoItem('Жителей', obj.residents));
+    card.appendChild(info);
+
+    var detail = el('div','object-detail');
+    detail.style.display = 'none';
+    detail.appendChild(el('div','object-detail-title', 'Подробная информация'));
+
+    var grid = el('div','object-detail-grid');
+    grid.appendChild(el('div','object-detail-label', 'Телефон УК'));
+    grid.appendChild(el('div','object-detail-value', obj.phone));
+    grid.appendChild(el('div','object-detail-label', 'Email'));
+    grid.appendChild(el('div','object-detail-value', obj.email));
+    grid.appendChild(el('div','object-detail-label', 'Оборудование'));
+    var equipList = el('div','object-detail-value');
+    obj.controllers.forEach(function(c) {
+      equipList.appendChild(el('div','', '\u2022 ' + c));
+    });
+    grid.appendChild(equipList);
+    detail.appendChild(grid);
+    card.appendChild(detail);
+
+    card.addEventListener('click', function() {
+      var isOpen = detail.style.display !== 'none';
+      main.querySelectorAll('.object-detail').forEach(function(d){ d.style.display = 'none'; });
+      main.querySelectorAll('.object-card').forEach(function(c){ c.style.borderColor = ''; });
+      if (!isOpen) {
+        detail.style.display = '';
+        card.style.borderColor = '#fca5a5';
+      }
+    });
+
+    main.appendChild(card);
+  });
+}
+
+/* ===== TICKET VIEW ===== */
+
+function openTicketView(ticketId) {
+  var tickets = getAllTickets();
+  var ticket = tickets.find(function(t){ return t.id === ticketId; });
+  if (!ticket) return;
+
+  navigate('ticketview');
+
+  var container = document.getElementById('ticketViewContent');
+  clearEl(container);
+
+  var header = el('div','ticket-view-header');
+  header.appendChild(el('div','ticket-view-id', ticket.id));
+  header.appendChild(el('h1','ticket-view-title', ticket.title));
+  var badges = el('div','ticket-view-badges');
+  badges.appendChild(el('span','badge badge-' + ticket.status, ticket.statusLabel));
+  badges.appendChild(el('span','badge badge-' + ticket.prio, ticket.prioLabel));
+  badges.appendChild(el('span','badge badge-normal', ticket.catLabel));
+  if (ticket.urgent) badges.appendChild(el('span','badge badge-critical', 'Срочное'));
+  if (ticket.isAdmin) badges.appendChild(el('span','badge badge-waiting', 'От администратора'));
+  header.appendChild(badges);
+  container.appendChild(header);
+
+  var descSection = el('div','ticket-view-section');
+  descSection.appendChild(el('h3','', 'Описание'));
+  descSection.appendChild(el('div','ticket-view-body', ticket.desc));
+  if (ticket.files && ticket.files.length > 0) {
+    var filesDiv = el('div','ticket-view-files');
+    ticket.files.forEach(function(f) { filesDiv.appendChild(el('div','ticket-view-file', '\uD83D\uDCCE ' + f)); });
+    descSection.appendChild(filesDiv);
+  }
+  container.appendChild(descSection);
+
+  var metaSection = el('div','ticket-view-section');
+  metaSection.appendChild(el('h3','', 'Информация'));
+  var meta = el('div','ticket-view-meta');
+  function addMeta(label, value) {
+    if (!value) return;
+    meta.appendChild(el('div','ticket-view-meta-label', label));
+    meta.appendChild(el('div','ticket-view-meta-value', value));
+  }
+  addMeta('Дата создания', formatDateTime(ticket.date));
+  addMeta('Категория', ticket.catLabel);
+  addMeta('Контакт', ticket.contact);
+  addMeta('Приоритет', ticket.prioLabel);
+  addMeta('Объект', ticket.object);
+  if (ticket.isAdmin) {
+    addMeta('Должность', ticket.adminPosition);
+    addMeta('Управляющая компания', ticket.adminCompany);
+  }
+  metaSection.appendChild(meta);
+  container.appendChild(metaSection);
+
+  var timelineSection = el('div','ticket-view-section');
+  timelineSection.appendChild(el('h3','', 'История'));
+  var timeline = el('div','ticket-timeline');
+  (ticket.events || []).forEach(function(ev, i) {
+    var item = el('div','timeline-item');
+    item.appendChild(el('div','timeline-dot' + (i === 0 ? ' active' : '')));
+    var content = el('div','timeline-content');
+    content.appendChild(el('div','', ev.text));
+    content.appendChild(el('div','timeline-time', formatDateTime(ev.time) + ' \u2022 ' + ev.actor));
+    item.appendChild(content);
+    timeline.appendChild(item);
+  });
+
+  var commentForm = el('div','comment-form');
+  var textarea = document.createElement('textarea');
+  textarea.placeholder = 'Добавить комментарий...';
+  textarea.id = 'commentText';
+  commentForm.appendChild(textarea);
+  var sendBtn = el('button','submit-btn', 'Отправить');
+  sendBtn.style.cssText = 'font-size:13px;padding:8px 20px';
+  sendBtn.addEventListener('click', function() { addComment(ticketId); });
+  commentForm.appendChild(sendBtn);
+  timeline.appendChild(commentForm);
+  timelineSection.appendChild(timeline);
+  container.appendChild(timelineSection);
+
+  var canClose = ticket.status !== 'closed' && ticket.status !== 'resolved';
+  if (canClose) {
+    var actions = el('div','ticket-actions');
+    var closeBtn = el('button','show-all-btn', 'Закрыть обращение');
+    closeBtn.style.cssText = 'background:#fef2f2;color:#ef4444;border:1px solid #fecaca';
+    closeBtn.addEventListener('click', function() {
+      showConfirm('Закрыть обращение', 'Вы уверены, что хотите закрыть обращение ' + ticket.id + '?', 'Закрыть', function() {
+        closeTicket(ticketId);
+      });
+    });
+    actions.appendChild(closeBtn);
+    container.appendChild(actions);
+  }
+}
+
+function addComment(ticketId) {
+  var textEl = document.getElementById('commentText');
+  var text = textEl.value.trim();
+  if (!text) { showToast('Введите комментарий'); return; }
+  var tickets = getAllTickets();
+  var ticket = tickets.find(function(t){ return t.id === ticketId; });
+  if (!ticket) return;
+  ticket.events.push({ time: new Date().toISOString(), text: text, actor: getUser().name || 'Пользователь' });
+  saveTickets(tickets);
+  openTicketView(ticketId);
+  showToast('Комментарий добавлен');
+}
+
+function closeTicket(ticketId) {
+  var tickets = getAllTickets();
+  var ticket = tickets.find(function(t){ return t.id === ticketId; });
+  if (!ticket) return;
+  ticket.status = 'closed';
+  ticket.statusLabel = 'Закрыт';
+  ticket.events.push({ time: new Date().toISOString(), text: 'Обращение закрыто пользователем', actor: getUser().name || 'Пользователь' });
+  saveTickets(tickets);
+  openTicketView(ticketId);
+  showToast('Обращение закрыто');
+}
+
+/* ===== KNOWLEDGE BASE PAGE ===== */
+
+function buildKbPage() {
+  var container = document.getElementById('kbContent');
+  clearEl(container);
+  renderKbCategories(container);
+}
+
+function renderKbCategories(container) {
+  var grid = el('div','kb-categories');
+  catDefs.forEach(function(c) {
+    var articles = faqData[c.key] || [];
+    if (articles.length === 0) return;
+    var card = el('div','kb-cat-card');
+    var header = el('div','kb-cat-header');
+    var icon = el('div','cat-icon cat-icon-' + c.cls);
+    icon.textContent = String.fromCodePoint(c.icon);
+    header.appendChild(icon);
+    var titleDiv = el('div','');
+    titleDiv.appendChild(el('div','cat-name', c.name));
+    titleDiv.appendChild(el('div','kb-cat-count', articles.length + ' ' + pluralize(articles.length, 'статья','статьи','статей')));
+    header.appendChild(titleDiv);
+    card.appendChild(header);
+
+    var articlesList = el('div','kb-cat-articles');
+    articles.forEach(function(a) {
+      var link = el('div','kb-cat-article', '\u2192 ' + a.title);
+      link.addEventListener('click', function(e) { e.stopPropagation(); openFaqArticle(a); });
+      articlesList.appendChild(link);
+    });
+    card.appendChild(articlesList);
+    grid.appendChild(card);
+  });
+  container.appendChild(grid);
+}
+
+function searchKb(query) {
+  var container = document.getElementById('kbContent');
+  clearEl(container);
+  query = query.trim().toLowerCase();
+
+  if (!query) { renderKbCategories(container); return; }
+
+  var results = [];
+  for (var cat in faqData) {
+    faqData[cat].forEach(function(a) {
+      var score = 0;
+      if (a.title.toLowerCase().indexOf(query) !== -1) score += 10;
+      if (a.short.toLowerCase().indexOf(query) !== -1) score += 5;
+      if (a.body.toLowerCase().indexOf(query) !== -1) score += 1;
+      if (score > 0) results.push({article:a, score:score, catKey:cat});
+    });
+  }
+  results.sort(function(a,b){ return b.score - a.score; });
+
+  if (results.length === 0) {
+    var empty = el('div','empty-state');
+    empty.appendChild(el('div','empty-state-icon', '\uD83D\uDD0D'));
+    empty.appendChild(el('div','empty-state-text', 'По запросу ничего не найдено'));
+    var createBtn = el('button','submit-btn', 'Создать обращение');
+    createBtn.style.cssText = 'font-size:13px;padding:9px 20px';
+    createBtn.addEventListener('click', function() { navigate('home'); });
+    var resetBtn = el('button','show-all-btn', 'Показать все статьи');
+    resetBtn.style.marginLeft = '8px';
+    resetBtn.addEventListener('click', function() { document.getElementById('kbSearch').value = ''; searchKb(''); });
+    empty.appendChild(createBtn);
+    empty.appendChild(resetBtn);
+    container.appendChild(empty);
+    return;
+  }
+
+  var resultsDiv = el('div','kb-results');
+  var countText = el('div','', 'Найдено: ' + results.length + ' ' + pluralize(results.length,'результат','результата','результатов'));
+  countText.style.cssText = 'font-size:13px;color:#94a3b8;margin-bottom:8px';
+  resultsDiv.appendChild(countText);
+
+  results.forEach(function(r) {
+    var card = el('div','kb-result-card');
+    card.appendChild(el('div','kb-result-title', r.article.title));
+    card.appendChild(el('div','kb-result-text', r.article.short));
+    var catDef = catDefs.find(function(c){ return c.key === r.catKey; });
+    card.appendChild(el('div','kb-result-meta', (catDef ? catDef.name : '') + ' \u2022 Обновлено: ' + r.article.updated));
+    card.addEventListener('click', function() { openFaqArticle(r.article); });
+    resultsDiv.appendChild(card);
+  });
+  container.appendChild(resultsDiv);
+}
+
+/* ===== NAVIGATION ===== */
+
+var currentPage = 'home';
+
+function navigate(page, subsection) {
+  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('visible');});
+  document.querySelectorAll('.header-nav a').forEach(function(a){a.classList.remove('active');});
+
+  if (page === 'home') {
+    document.getElementById('pageHome').classList.add('visible');
+    document.getElementById('navCreate').classList.add('active');
+    document.getElementById('step1').style.display = '';
+    document.getElementById('step2').style.display = 'none';
+    document.getElementById('successScreen').style.display = 'none';
+    document.getElementById('recentSection').style.display = '';
+    document.querySelectorAll('.cat-card').forEach(function(c){c.classList.remove('selected');});
+    buildRecentTickets();
+  } else if (page === 'account') {
+    document.getElementById('pageAccount').classList.add('visible');
+    document.getElementById('navAccount').classList.add('active');
+    if (subsection) currentAccountSection = subsection;
+    buildAccountPage(currentAccountSection);
+    var titles = {tickets:'Мои обращения',profile:'Профиль',settings:'Настройки уведомлений',objects:'Объекты'};
+    var subtitles = {tickets:'Все ваши заявки в службу поддержки PASS24',profile:'Информация о вашем аккаунте',settings:'Управление способами получения уведомлений',objects:'Ваши объекты в системе PASS24'};
+    document.getElementById('accountPageTitle').textContent = titles[currentAccountSection] || 'Мои обращения';
+    document.getElementById('accountPageSubtitle').textContent = subtitles[currentAccountSection] || '';
+  } else if (page === 'kb') {
+    document.getElementById('pageKb').classList.add('visible');
+    document.getElementById('navKb').classList.add('active');
+    document.getElementById('kbSearch').value = '';
+    buildKbPage();
+  } else if (page === 'ticketview') {
+    document.getElementById('pageTicketView').classList.add('visible');
+    document.getElementById('navAccount').classList.add('active');
+  }
+
+  currentPage = page;
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+/* ===== INIT ===== */
+
+function initApp() {
+  buildCategoryCards();
+  buildRecentTickets();
+  updateUserUI();
+}
+
+/* User is always authenticated via main site SSO */
+initApp();
+</script>
+</body>
+</html>
