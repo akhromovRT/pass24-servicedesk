@@ -18,27 +18,41 @@ export interface Token {
 
 export type TicketStatus = 'new' | 'in_progress' | 'waiting_for_user' | 'resolved' | 'closed'
 export type TicketPriority = 'low' | 'normal' | 'high' | 'critical'
+export type TicketProduct = 'pass24_online' | 'mobile_app' | 'pass24_key' | 'pass24_control' | 'pass24_auto' | 'equipment' | 'integration' | 'other'
+export type TicketCategory = 'registration' | 'passes' | 'recognition' | 'app_issues' | 'objects' | 'trusted_persons' | 'equipment_issues' | 'consultation' | 'feature_request' | 'other'
+export type TicketType = 'incident' | 'problem' | 'question' | 'request' | 'feature_request'
+export type TicketSource = 'web' | 'email' | 'telegram' | 'api' | 'phone'
 
 export interface Ticket {
   id: string
   creator_id: string
+  assignee_id: string | null
   title: string
   description: string
-  category: string
-  object_id: string | null
-  access_point_id: string | null
-  user_role: string | null
-  occurred_at: string | null
-  contact: string | null
-  urgent: boolean
+  product: string | null
+  category: string | null
+  ticket_type: string | null
+  source: string | null
   status: TicketStatus
   priority: TicketPriority
+  object_name: string | null
+  object_address: string | null
+  access_point: string | null
+  contact_name: string | null
+  contact_email: string | null
+  contact_phone: string | null
+  company: string | null
+  device_type: string | null
+  app_version: string | null
+  error_message: string | null
+  urgent: boolean
   created_at: string
   updated_at: string
   first_response_at: string | null
   resolved_at: string | null
   sla_response_hours: number | null
   sla_resolve_hours: number | null
+  sla_breached: boolean
   events: TicketEvent[]
   comments: TicketComment[]
   attachments: Attachment[]
@@ -75,12 +89,19 @@ export interface Attachment {
 export interface TicketCreate {
   title: string
   description: string
-  category?: string
-  object_id?: string
-  access_point_id?: string
-  user_role?: string
-  occurred_at?: string
-  contact?: string
+  product?: TicketProduct
+  category?: TicketCategory
+  ticket_type?: TicketType
+  source?: TicketSource
+  object_name?: string
+  object_address?: string
+  access_point?: string
+  contact_name?: string
+  contact_phone?: string
+  company?: string
+  device_type?: string
+  app_version?: string
+  error_message?: string
   urgent?: boolean
 }
 

@@ -65,14 +65,23 @@ async def create_ticket(
         creator_id=str(current_user.id),
         title=payload.title,
         description=payload.description,
-        category=payload.category,
-        object_id=payload.object_id,
-        access_point_id=payload.access_point_id,
-        user_role=payload.user_role,
-        occurred_at=payload.occurred_at,
-        contact=payload.contact,
+        product=payload.product or "pass24_online",
+        category=payload.category or "other",
+        ticket_type=payload.ticket_type or "problem",
+        source=payload.source or "web",
+        object_name=payload.object_name,
+        object_address=payload.object_address,
+        access_point=payload.access_point,
+        contact_name=payload.contact_name or current_user.full_name,
+        contact_email=current_user.email,
+        contact_phone=payload.contact_phone,
+        company=payload.company,
+        device_type=payload.device_type,
+        app_version=payload.app_version,
+        error_message=payload.error_message,
         urgent=payload.urgent,
     )
+    ticket.auto_detect_category()
     ticket.assign_priority_based_on_context()
 
     # Событие создания
@@ -114,7 +123,8 @@ async def list_tickets(
         default=None, alias="status", description="Фильтр по статусу"
     ),
     category: Optional[str] = Query(default=None, description="Фильтр по категории"),
-    object_id: Optional[str] = Query(default=None, description="Фильтр по объекту (ЖК/БЦ)"),
+    product: Optional[str] = Query(default=None, description="Фильтр по продукту"),
+    ticket_type: Optional[str] = Query(default=None, alias="type", description="Фильтр по типу обращения"),
     creator_id: Optional[str] = Query(default=None, description="Фильтр по создателю"),
     my: Optional[bool] = Query(default=None, description="Только мои тикеты"),
     session: AsyncSession = Depends(get_session),
@@ -143,9 +153,12 @@ async def list_tickets(
     if category is not None:
         query = query.where(Ticket.category == category)
         count_query = count_query.where(Ticket.category == category)
-    if object_id is not None:
-        query = query.where(Ticket.object_id == object_id)
-        count_query = count_query.where(Ticket.object_id == object_id)
+    if product is not None:
+        query = query.where(Ticket.product == product)
+        count_query = count_query.where(Ticket.product == product)
+    if ticket_type is not None:
+        query = query.where(Ticket.ticket_type == ticket_type)
+        count_query = count_query.where(Ticket.ticket_type == ticket_type)
     if creator_id is not None:
         query = query.where(Ticket.creator_id == creator_id)
         count_query = count_query.where(Ticket.creator_id == creator_id)

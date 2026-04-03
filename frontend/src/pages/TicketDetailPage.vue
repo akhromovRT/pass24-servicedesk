@@ -266,9 +266,12 @@ onMounted(() => {
         <template #title>Описание</template>
         <template #content>
           <p class="ticket-description">{{ ticket.description }}</p>
-          <p v-if="ticket.contact" class="ticket-contact">
-            <i class="pi pi-phone"></i> {{ ticket.contact }}
-          </p>
+          <div v-if="ticket.contact_phone || ticket.contact_email || ticket.object_name" class="ticket-meta-details">
+            <p v-if="ticket.contact_phone"><i class="pi pi-phone"></i> {{ ticket.contact_phone }}</p>
+            <p v-if="ticket.contact_email"><i class="pi pi-envelope"></i> {{ ticket.contact_email }}</p>
+            <p v-if="ticket.object_name"><i class="pi pi-building"></i> {{ ticket.object_name }} <span v-if="ticket.access_point">/ {{ ticket.access_point }}</span></p>
+            <p v-if="ticket.product"><i class="pi pi-box"></i> {{ ticket.product }}</p>
+          </div>
 
           <!-- SLA -->
           <div v-if="isStaff" class="sla-info">
