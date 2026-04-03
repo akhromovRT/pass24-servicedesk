@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import Card from 'primevue/card'
 import InputText from 'primevue/inputtext'
 import Textarea from 'primevue/textarea'
@@ -18,6 +18,7 @@ import type {
 } from '../types'
 
 const router = useRouter()
+const route = useRoute()
 const toast = useToast()
 const store = useTicketsStore()
 
@@ -198,6 +199,19 @@ function goBackToStep1() {
   step.value = 1
   submitted.value = false
 }
+
+// Предзаполнение из query params (от AI-помощника)
+onMounted(() => {
+  const q = route.query
+  if (q.title || q.description) {
+    title.value = (q.title as string) || ''
+    description.value = (q.description as string) || ''
+    if (q.product) product.value = q.product as any
+    if (q.category) category.value = q.category as any
+    if (q.ticket_type) ticketType.value = q.ticket_type as any
+    step.value = 2  // Сразу на шаг 2
+  }
+})
 
 async function onSubmit() {
   submitted.value = true

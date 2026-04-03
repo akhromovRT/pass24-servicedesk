@@ -10,12 +10,22 @@ interface Message {
   content: string
   sources?: string[]
   suggestTicket?: boolean
+  ticketData?: TicketData | null
+}
+
+interface TicketData {
+  title: string
+  description: string
+  product: string
+  category: string
+  ticket_type?: string
 }
 
 interface ChatResponse {
   reply: string
   sources: string[]
   suggest_ticket: boolean
+  ticket_data: TicketData | null
 }
 
 const router = useRouter()
@@ -60,6 +70,7 @@ async function send() {
       content: resp.reply,
       sources: resp.sources,
       suggestTicket: resp.suggest_ticket,
+      ticketData: resp.ticket_data,
     })
   } catch {
     messages.value.push({
@@ -88,9 +99,19 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
-function createTicket() {
+function createTicket(data?: TicketData | null) {
   isOpen.value = false
-  router.push('/tickets/create')
+  if (data) {
+    const params = new URLSearchParams()
+    if (data.title) params.set('title', data.title)
+    if (data.description) params.set('description', data.description)
+    if (data.product) params.set('product', data.product)
+    if (data.category) params.set('category', data.category)
+    if (data.ticket_type) params.set('ticket_type', data.ticket_type)
+    router.push(`/tickets/create?${params.toString()}`)
+  } else {
+    router.push('/tickets/create')
+  }
 }
 
 function formatSourceName(src: string): string {
@@ -144,7 +165,7 @@ function formatSourceName(src: string): string {
               icon="pi pi-plus"
               size="small"
               class="msg-ticket-btn"
-              @click="createTicket"
+              @click="createTicket(msg.ticketData)"
             />
           </div>
         </div>
