@@ -38,11 +38,17 @@ jobs:
 
       - name: Deploy to server
         uses: appleboy/ssh-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ env.IMAGE }}
+          GH_ACTOR: ${{ github.actor }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: root
           password: ${{ secrets.SERVER_PASSWORD }}
+          envs: GH_TOKEN,IMAGE,GH_ACTOR
           script: |
-            docker pull ${{ env.IMAGE }}:latest
+            echo $GH_TOKEN | docker login ghcr.io -u $GH_ACTOR --password-stdin
+            docker pull $IMAGE:latest
             docker compose -f /opt/sites/pass24-servicedesk/docker-compose.yml up -d --remove-orphans
             docker image prune -f
