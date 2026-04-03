@@ -180,8 +180,10 @@ def _fetch_unseen_emails() -> list[dict]:
             if from_email.lower() == settings.smtp_user.lower():
                 continue
 
-            # Пропускаем auto-reply
+            # Пропускаем auto-reply и bounce
             if any(h in (msg.get("Auto-Submitted", "") or "").lower() for h in ["auto-replied", "auto-generated"]):
+                continue
+            if "mailer-daemon" in from_email.lower() or "postmaster" in from_email.lower():
                 continue
 
             results.append({
@@ -262,7 +264,7 @@ async def _handle_reply(mail_data: dict, ticket_id_prefix: str) -> bool:
     async with async_session_factory() as session:
         # Найти тикет по начальным 8 символам id
         result = await session.execute(
-            select(Ticket).where(Ticket.id.startswith(ticket_id_prefix))
+            select(Ticket).where(Ticket.id.like(ticket_id_prefix + "%"))
         )
         ticket = result.scalar_one_or_none()
         if not ticket:
@@ -424,8 +426,11 @@ async def _handle_new_ticket(mail_data: dict) -> None:
             title=title[:200],
             description=body[:4000],
             category=category,
-            contact=from_email,
+            source="email",
+            contact_name=from_name,
+            contact_email=from_email,
         )
+        ticket.auto_detect_category()
         ticket.assign_priority_based_on_context()
 
         event = TicketEvent(

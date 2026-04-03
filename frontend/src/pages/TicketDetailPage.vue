@@ -27,6 +27,33 @@ const isInternalComment = ref(false)
 const submittingComment = ref(false)
 const uploadingFile = ref(false)
 
+const productLabels: Record<string, string> = {
+  pass24_online: 'PASS24.online',
+  mobile_app: 'Мобильное приложение',
+  pass24_key: 'PASS24.Key',
+  pass24_control: 'PASS24.control',
+  pass24_auto: 'PASS24.auto',
+  equipment: 'Оборудование',
+  integration: 'Интеграция',
+  other: 'Другое',
+}
+
+const typeLabels: Record<string, string> = {
+  incident: 'Инцидент',
+  problem: 'Проблема',
+  question: 'Вопрос',
+  request: 'Запрос',
+  feature_request: 'Предложение',
+}
+
+const sourceLabels: Record<string, string> = {
+  web: 'Веб-портал',
+  email: 'Email',
+  telegram: 'Telegram',
+  api: 'API',
+  phone: 'Телефон',
+}
+
 const isStaff = computed(() =>
   auth.user?.role === 'support_agent' || auth.user?.role === 'admin'
 )
@@ -266,11 +293,32 @@ onMounted(() => {
         <template #title>Описание</template>
         <template #content>
           <p class="ticket-description">{{ ticket.description }}</p>
-          <div v-if="ticket.contact_phone || ticket.contact_email || ticket.object_name" class="ticket-meta-details">
-            <p v-if="ticket.contact_phone"><i class="pi pi-phone"></i> {{ ticket.contact_phone }}</p>
-            <p v-if="ticket.contact_email"><i class="pi pi-envelope"></i> {{ ticket.contact_email }}</p>
-            <p v-if="ticket.object_name"><i class="pi pi-building"></i> {{ ticket.object_name }} <span v-if="ticket.access_point">/ {{ ticket.access_point }}</span></p>
-            <p v-if="ticket.product"><i class="pi pi-box"></i> {{ ticket.product }}</p>
+          <div class="ticket-meta-details">
+            <div class="meta-section" v-if="ticket.contact_email || ticket.contact_phone || ticket.contact_name || ticket.company">
+              <h4>Контакт</h4>
+              <p v-if="ticket.contact_name"><i class="pi pi-user"></i> {{ ticket.contact_name }}</p>
+              <p v-if="ticket.contact_email"><i class="pi pi-envelope"></i> {{ ticket.contact_email }}</p>
+              <p v-if="ticket.contact_phone"><i class="pi pi-phone"></i> {{ ticket.contact_phone }}</p>
+              <p v-if="ticket.company"><i class="pi pi-briefcase"></i> {{ ticket.company }}</p>
+            </div>
+            <div class="meta-section" v-if="ticket.object_name || ticket.access_point">
+              <h4>Объект</h4>
+              <p v-if="ticket.object_name"><i class="pi pi-building"></i> {{ ticket.object_name }}</p>
+              <p v-if="ticket.object_address"><i class="pi pi-map-marker"></i> {{ ticket.object_address }}</p>
+              <p v-if="ticket.access_point"><i class="pi pi-sign-in"></i> {{ ticket.access_point }}</p>
+            </div>
+            <div class="meta-section" v-if="ticket.product || ticket.ticket_type || ticket.source">
+              <h4>Классификация</h4>
+              <p v-if="ticket.product"><i class="pi pi-box"></i> {{ productLabels[ticket.product] || ticket.product }}</p>
+              <p v-if="ticket.ticket_type"><i class="pi pi-tag"></i> {{ typeLabels[ticket.ticket_type] || ticket.ticket_type }}</p>
+              <p v-if="ticket.source"><i class="pi pi-send"></i> Источник: {{ sourceLabels[ticket.source] || ticket.source }}</p>
+            </div>
+            <div class="meta-section" v-if="ticket.device_type || ticket.app_version || ticket.error_message">
+              <h4>Техническая информация</h4>
+              <p v-if="ticket.device_type"><i class="pi pi-mobile"></i> {{ ticket.device_type }}</p>
+              <p v-if="ticket.app_version"><i class="pi pi-code"></i> v{{ ticket.app_version }}</p>
+              <p v-if="ticket.error_message"><i class="pi pi-exclamation-circle"></i> {{ ticket.error_message }}</p>
+            </div>
           </div>
 
           <!-- SLA -->
