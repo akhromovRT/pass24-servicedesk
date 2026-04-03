@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -11,6 +11,11 @@ from sqlmodel import func, select
 from backend.auth.dependencies import get_current_user
 from backend.auth.models import User
 from backend.database import get_session
+from backend.notifications.email import (
+    notify_ticket_comment,
+    notify_ticket_created,
+    notify_ticket_status_changed,
+)
 
 from .models import Ticket, TicketComment, TicketEvent, TicketStatus
 from .schemas import (
@@ -28,6 +33,7 @@ router = APIRouter(prefix="/tickets", tags=["tickets"])
 @router.post("/", response_model=TicketRead, status_code=status.HTTP_201_CREATED)
 async def create_ticket(
     payload: TicketCreate,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> TicketRead:
@@ -57,6 +63,15 @@ async def create_ticket(
     session.add(event)
     await session.commit()
     await session.refresh(ticket)
+
+    # Email-уведомление
+    background_tasks.add_task(
+        notify_ticket_created,
+        creator_email=current_user.email,
+        ticket_id=ticket.id,
+        title=ticket.title,
+        priority=ticket.priority.value if hasattr(ticket.priority, 'value') else str(ticket.priority),
+    )
 
     # Загрузка связей для ответа
     result = await session.execute(
@@ -145,6 +160,7 @@ async def get_ticket(
 async def update_ticket_status(
     ticket_id: str,
     payload: TicketStatusUpdate,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> TicketRead:
@@ -160,6 +176,8 @@ async def update_ticket_status(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Тикет не найден",
         )
+
+    old_status = ticket.status.value if hasattr(ticket.status, 'value') else str(ticket.status)
 
     try:
         event = ticket.transition(
@@ -177,6 +195,21 @@ async def update_ticket_status(
     await session.commit()
     await session.refresh(ticket)
 
+    # Email-уведомление создателю тикета
+    creator = await session.execute(select(User).where(User.id == ticket.creator_id))
+    creator_user = creator.scalar_one_or_none()
+    if creator_user:
+        new_status_val = payload.new_status.value if hasattr(payload.new_status, 'value') else str(payload.new_status)
+        background_tasks.add_task(
+            notify_ticket_status_changed,
+            creator_email=creator_user.email,
+            ticket_id=ticket.id,
+            title=ticket.title,
+            old_status=old_status,
+            new_status=new_status_val,
+            actor_name=current_user.full_name or current_user.email,
+        )
+
     # Перезагрузка со связями
     result = await session.execute(
         select(Ticket)
@@ -191,11 +224,11 @@ async def update_ticket_status(
 async def add_comment(
     ticket_id: str,
     payload: CommentCreate,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> CommentRead:
     """Добавить комментарий к тикету. Автор определяется по JWT-токену."""
-    # Проверяем существование тикета
     result = await session.execute(select(Ticket).where(Ticket.id == ticket_id))
     ticket = result.scalar_one_or_none()
     if not ticket:
@@ -213,6 +246,19 @@ async def add_comment(
     session.add(comment)
     await session.commit()
     await session.refresh(comment)
+
+    # Email-уведомление создателю тикета (если комментирует не он сам)
+    if ticket.creator_id != str(current_user.id):
+        creator = await session.execute(select(User).where(User.id == ticket.creator_id))
+        creator_user = creator.scalar_one_or_none()
+        if creator_user:
+            background_tasks.add_task(
+                notify_ticket_comment,
+                creator_email=creator_user.email,
+                title=ticket.title,
+                comment_text=payload.text,
+                author_name=current_user.full_name or current_user.email,
+            )
 
     return CommentRead.model_validate(comment)
 
