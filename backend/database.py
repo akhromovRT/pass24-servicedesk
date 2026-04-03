@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -25,11 +26,20 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+def _run_alembic_upgrade() -> None:
+    """Синхронный запуск Alembic upgrade (вызывается из отдельного потока)."""
+    alembic_cfg = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
+    command.upgrade(alembic_cfg, "head")
+
+
 async def run_migrations() -> None:
-    """Запуск Alembic-миграций при старте приложения."""
+    """Запуск Alembic-миграций при старте приложения.
+
+    Выполняется в отдельном потоке, т.к. env.py использует asyncio.run()
+    внутри, что конфликтует с уже запущенным event loop FastAPI.
+    """
     try:
-        alembic_cfg = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
-        command.upgrade(alembic_cfg, "head")
+        await asyncio.to_thread(_run_alembic_upgrade)
         logger.info("Миграции БД применены успешно")
     except Exception as exc:
         logger.warning("Не удалось применить миграции БД: %s", exc)
