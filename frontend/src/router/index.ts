@@ -54,7 +54,7 @@ const router = createRouter({
       path: '/tickets/create',
       name: 'ticket-create',
       component: () => import('../pages/CreateTicketPage.vue'),
-      meta: { auth: true },
+      // Доступно без авторизации — гостевой тикет по email
     },
     {
       path: '/tickets/:id',

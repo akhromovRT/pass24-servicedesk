@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, onUnmounted, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Card from 'primevue/card'
 import Tag from 'primevue/tag'
@@ -223,8 +223,35 @@ function goBack() {
   router.push('/')
 }
 
+// Polling для обновления комментариев (каждые 15 сек)
+let pollInterval: ReturnType<typeof setInterval> | null = null
+
 onMounted(() => {
   loadTicket()
+
+  // Auto-refresh для агентов — показывать новые комментарии
+  pollInterval = setInterval(async () => {
+    if (!ticket.value) return
+    const prevCount = ticket.value.comments?.length || 0
+    try {
+      await store.fetchTicket(route.params.id as string)
+      const newCount = ticket.value?.comments?.length || 0
+      if (newCount > prevCount) {
+        toast.add({
+          severity: 'info',
+          summary: 'Новый комментарий',
+          detail: `Получен ответ от ${ticket.value?.comments[newCount - 1]?.author_name || 'пользователя'}`,
+          life: 5000,
+        })
+      }
+    } catch {
+      // Игнорируем ошибки polling
+    }
+  }, 15000)
+})
+
+onUnmounted(() => {
+  if (pollInterval) clearInterval(pollInterval)
 })
 </script>
 

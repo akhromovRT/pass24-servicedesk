@@ -10,6 +10,7 @@ import Button from 'primevue/button'
 import Divider from 'primevue/divider'
 import { useToast } from 'primevue/usetoast'
 import { useTicketsStore } from '../stores/tickets'
+import { api, isAuthenticated } from '../api/client'
 import type {
   TicketCreate,
   TicketProduct,
@@ -21,6 +22,14 @@ const router = useRouter()
 const route = useRoute()
 const toast = useToast()
 const store = useTicketsStore()
+const isGuest = computed(() => !isAuthenticated())
+
+// Guest fields
+const guestEmail = ref('')
+const guestName = ref('')
+const guestPhone = ref('')
+const ticketCreated = ref(false)
+const createdTicketId = ref('')
 
 // --- Step management ---
 const step = ref<1 | 2>(1)
@@ -218,6 +227,44 @@ async function onSubmit() {
 
   if (titleInvalid.value || descriptionInvalid.value) return
 
+  // Гостевой режим
+  if (isGuest.value) {
+    if (!guestEmail.value.trim()) return
+
+    try {
+      const resp = await api.post<{ ticket_id: string; title: string }>('/tickets/guest', {
+        email: guestEmail.value.trim(),
+        name: guestName.value.trim() || undefined,
+        title: title.value.trim(),
+        description: description.value.trim(),
+        product: product.value,
+        category: category.value,
+        ticket_type: ticketType.value,
+        object_name: objectName.value.trim() || undefined,
+        contact_phone: guestPhone.value.trim() || contactPhone.value.trim() || undefined,
+        urgent: urgent.value,
+      })
+
+      ticketCreated.value = true
+      createdTicketId.value = resp.ticket_id.slice(0, 8)
+      toast.add({
+        severity: 'success',
+        summary: 'Заявка создана',
+        detail: `Обновления придут на ${guestEmail.value}`,
+        life: 5000,
+      })
+    } catch (e: any) {
+      toast.add({
+        severity: 'error',
+        summary: 'Ошибка',
+        detail: e.message || 'Не удалось создать заявку',
+        life: 4000,
+      })
+    }
+    return
+  }
+
+  // Авторизованный пользователь
   const data: TicketCreate = {
     title: title.value.trim(),
     description: description.value.trim(),
@@ -237,7 +284,7 @@ async function onSubmit() {
     toast.add({
       severity: 'success',
       summary: 'Заявка создана',
-      detail: `Заявка "${ticket.title}" успешно создана`,
+      detail: `Заявка "${ticket.title}" создана`,
       life: 3000,
     })
     router.push(`/tickets/${ticket.id}`)
@@ -304,7 +351,60 @@ function goBack() {
       <Card class="create-card">
         <template #title>Новая заявка</template>
         <template #content>
-          <form class="ticket-form" @submit.prevent="onSubmit">
+          <!-- Успех (гостевой) -->
+          <div v-if="ticketCreated" class="ticket-success">
+            <div class="success-icon"><i class="pi pi-check-circle" /></div>
+            <h3>Заявка создана!</h3>
+            <p>Номер: <strong>{{ createdTicketId }}</strong></p>
+            <p>Все обновления придут на <strong>{{ guestEmail }}</strong></p>
+            <p class="success-hint">Вы можете отвечать на письма — ответы будут добавлены в заявку.</p>
+            <Divider />
+            <p class="success-register">Хотите отслеживать заявки на портале?</p>
+            <Button
+              label="Зарегистрироваться"
+              icon="pi pi-user-plus"
+              severity="secondary"
+              outlined
+              @click="router.push('/register')"
+            />
+            <Button
+              label="На главную"
+              text
+              severity="secondary"
+              @click="router.push('/')"
+              class="ml-2"
+            />
+          </div>
+
+          <form v-else class="ticket-form" @submit.prevent="onSubmit">
+            <!-- Guest email section -->
+            <div v-if="isGuest" class="guest-section">
+              <div class="form-section-title">Ваши данные</div>
+              <p class="guest-hint">Укажите email — мы сообщим о решении. Регистрация не требуется.</p>
+              <div class="field">
+                <label for="guest-email">Email <span class="required">*</span></label>
+                <InputText
+                  id="guest-email"
+                  v-model="guestEmail"
+                  placeholder="your@email.com"
+                  type="email"
+                  :invalid="submitted && !guestEmail.trim()"
+                  fluid
+                />
+              </div>
+              <div class="form-row">
+                <div class="field">
+                  <label for="guest-name">Имя</label>
+                  <InputText id="guest-name" v-model="guestName" placeholder="Как к вам обращаться" fluid />
+                </div>
+                <div class="field">
+                  <label for="guest-phone">Телефон</label>
+                  <InputText id="guest-phone" v-model="guestPhone" placeholder="+7..." fluid />
+                </div>
+              </div>
+              <Divider />
+            </div>
+
             <!-- Section: Main info -->
             <div class="form-section-title">Описание проблемы</div>
 
@@ -581,6 +681,44 @@ function goBack() {
 
 .create-card {
   width: 100%;
+}
+
+/* Success state */
+.ticket-success {
+  text-align: center;
+  padding: 24px 0;
+}
+.success-icon {
+  font-size: 48px;
+  color: #22c55e;
+  margin-bottom: 12px;
+}
+.ticket-success h3 {
+  margin: 0 0 8px;
+  color: #1e293b;
+}
+.ticket-success p {
+  color: #475569;
+  margin: 4px 0;
+}
+.success-hint {
+  font-size: 13px;
+  color: #64748b !important;
+  margin-top: 8px !important;
+}
+.success-register {
+  font-weight: 600;
+  color: #1e293b !important;
+  margin-bottom: 12px !important;
+}
+.ml-2 { margin-left: 8px; }
+
+/* Guest section */
+.guest-section { margin-bottom: 8px; }
+.guest-hint {
+  font-size: 13px;
+  color: #64748b;
+  margin: -4px 0 12px;
 }
 
 .ticket-form {
