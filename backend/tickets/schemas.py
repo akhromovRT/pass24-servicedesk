@@ -62,6 +62,7 @@ class CommentCreate(BaseModel):
     """Схема создания комментария. author_id берётся из JWT-токена."""
 
     text: str = Field(..., min_length=1, max_length=4000)
+    is_internal: bool = Field(default=False, description="Внутренний комментарий (виден только агентам)")
 
 
 class CommentRead(BaseModel):
@@ -72,6 +73,21 @@ class CommentRead(BaseModel):
     author_id: str
     author_name: str
     text: str
+    is_internal: bool = False
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AttachmentRead(BaseModel):
+    """Схема чтения вложения."""
+
+    id: str
+    ticket_id: str
+    uploader_id: str
+    filename: str
+    content_type: str
+    size: int
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -95,8 +111,13 @@ class TicketRead(BaseModel):
     priority: TicketPriority
     created_at: datetime
     updated_at: datetime
+    first_response_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
+    sla_response_hours: Optional[int] = None
+    sla_resolve_hours: Optional[int] = None
     events: List[EventRead] = []
     comments: List[CommentRead] = []
+    attachments: List[AttachmentRead] = []
 
     model_config = {"from_attributes": True}
 

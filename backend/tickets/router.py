@@ -1,12 +1,25 @@
 from __future__ import annotations
 
+import uuid
+from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import func, select
+
+UPLOAD_DIR = Path("/app/data/attachments")
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+ALLOWED_TYPES = {
+    "image/jpeg", "image/png", "image/gif", "image/webp",
+    "application/pdf",
+    "text/plain",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
 
 from backend.auth.dependencies import get_current_user
 from backend.auth.models import User
@@ -17,8 +30,9 @@ from backend.notifications.email import (
     notify_ticket_status_changed,
 )
 
-from .models import Ticket, TicketComment, TicketEvent, TicketStatus
+from .models import Attachment, Ticket, TicketComment, TicketEvent, TicketStatus
 from .schemas import (
+    AttachmentRead,
     CommentCreate,
     CommentRead,
     TicketCreate,
@@ -26,6 +40,15 @@ from .schemas import (
     TicketRead,
     TicketStatusUpdate,
 )
+
+
+# Общий набор selectinload для тикетов
+def _ticket_load_options():
+    return [
+        selectinload(Ticket.events),  # type: ignore[arg-type]
+        selectinload(Ticket.comments),  # type: ignore[arg-type]
+        selectinload(Ticket.attachments),  # type: ignore[arg-type]
+    ]
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -77,7 +100,7 @@ async def create_ticket(
     result = await session.execute(
         select(Ticket)
         .where(Ticket.id == ticket.id)
-        .options(selectinload(Ticket.events), selectinload(Ticket.comments))  # type: ignore[arg-type]
+        .options(*_ticket_load_options())
     )
     ticket = result.scalar_one()
     return TicketRead.model_validate(ticket)
@@ -133,7 +156,7 @@ async def list_tickets(
         query.order_by(Ticket.created_at.desc())  # type: ignore[union-attr]
         .offset(offset)
         .limit(per_page)
-        .options(selectinload(Ticket.events), selectinload(Ticket.comments))  # type: ignore[arg-type]
+        .options(*_ticket_load_options())
     )
 
     result = await session.execute(query)
@@ -153,11 +176,13 @@ async def get_ticket(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> TicketRead:
-    """Получить тикет по ID с событиями и комментариями."""
+    """Получить тикет по ID с событиями, комментариями и вложениями."""
+    from backend.auth.models import UserRole
+
     result = await session.execute(
         select(Ticket)
         .where(Ticket.id == ticket_id)
-        .options(selectinload(Ticket.events), selectinload(Ticket.comments))  # type: ignore[arg-type]
+        .options(*_ticket_load_options())
     )
     ticket = result.scalar_one_or_none()
     if not ticket:
@@ -165,7 +190,12 @@ async def get_ticket(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Тикет не найден",
         )
-    return TicketRead.model_validate(ticket)
+
+    ticket_data = TicketRead.model_validate(ticket)
+    # Скрыть внутренние комментарии от обычных пользователей
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        ticket_data.comments = [c for c in ticket_data.comments if not c.is_internal]
+    return ticket_data
 
 
 @router.post("/{ticket_id}/status", response_model=TicketRead)
@@ -180,7 +210,7 @@ async def update_ticket_status(
     result = await session.execute(
         select(Ticket)
         .where(Ticket.id == ticket_id)
-        .options(selectinload(Ticket.events), selectinload(Ticket.comments))  # type: ignore[arg-type]
+        .options(*_ticket_load_options())
     )
     ticket = result.scalar_one_or_none()
     if not ticket:
@@ -226,7 +256,7 @@ async def update_ticket_status(
     result = await session.execute(
         select(Ticket)
         .where(Ticket.id == ticket.id)
-        .options(selectinload(Ticket.events), selectinload(Ticket.comments))  # type: ignore[arg-type]
+        .options(*_ticket_load_options())
     )
     ticket = result.scalar_one()
     return TicketRead.model_validate(ticket)
@@ -249,18 +279,23 @@ async def add_comment(
             detail="Тикет не найден",
         )
 
+    # Внутренние комментарии — только для агентов и админов
+    from backend.auth.models import UserRole
+    is_internal = payload.is_internal and current_user.role in (UserRole.SUPPORT_AGENT, UserRole.ADMIN)
+
     comment = TicketComment(
         ticket_id=ticket_id,
         author_id=str(current_user.id),
         author_name=current_user.full_name or "",
         text=payload.text,
+        is_internal=is_internal,
     )
     session.add(comment)
     await session.commit()
     await session.refresh(comment)
 
-    # Email-уведомление создателю тикета (если комментирует не он сам)
-    if ticket.creator_id != str(current_user.id):
+    # Email-уведомление создателю тикета (если комментирует не он сам и не внутренний)
+    if not is_internal and ticket.creator_id != str(current_user.id):
         creator = await session.execute(select(User).where(User.id == ticket.creator_id))
         creator_user = creator.scalar_one_or_none()
         if creator_user:
@@ -273,6 +308,73 @@ async def add_comment(
             )
 
     return CommentRead.model_validate(comment)
+
+
+@router.post("/{ticket_id}/attachments", response_model=AttachmentRead, status_code=status.HTTP_201_CREATED)
+async def upload_attachment(
+    ticket_id: str,
+    file: UploadFile,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> AttachmentRead:
+    """Загрузить вложение к тикету. Макс. 10 МБ."""
+    result = await session.execute(select(Ticket).where(Ticket.id == ticket_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Тикет не найден")
+
+    if file.content_type not in ALLOWED_TYPES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Недопустимый тип файла")
+
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Файл слишком большой (макс. 10 МБ)")
+
+    # Сохранение на диск
+    file_id = str(uuid.uuid4())
+    ext = Path(file.filename or "file").suffix
+    storage_path = f"{ticket_id}/{file_id}{ext}"
+    full_path = UPLOAD_DIR / storage_path
+    full_path.parent.mkdir(parents=True, exist_ok=True)
+    full_path.write_bytes(content)
+
+    attachment = Attachment(
+        ticket_id=ticket_id,
+        uploader_id=str(current_user.id),
+        filename=file.filename or "file",
+        content_type=file.content_type or "application/octet-stream",
+        size=len(content),
+        storage_path=storage_path,
+    )
+    session.add(attachment)
+    await session.commit()
+    await session.refresh(attachment)
+    return AttachmentRead.model_validate(attachment)
+
+
+@router.get("/{ticket_id}/attachments/{attachment_id}")
+async def download_attachment(
+    ticket_id: str,
+    attachment_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Скачать вложение."""
+    result = await session.execute(
+        select(Attachment).where(Attachment.id == attachment_id, Attachment.ticket_id == ticket_id)
+    )
+    attachment = result.scalar_one_or_none()
+    if not attachment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Вложение не найдено")
+
+    file_path = UPLOAD_DIR / attachment.storage_path
+    if not file_path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Файл не найден на сервере")
+
+    return FileResponse(
+        path=str(file_path),
+        filename=attachment.filename,
+        media_type=attachment.content_type,
+    )
 
 
 @router.delete("/{ticket_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)

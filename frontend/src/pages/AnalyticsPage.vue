@@ -44,8 +44,21 @@ interface TimelinePoint {
   count: number
 }
 
+interface SlaMetric {
+  total: number
+  avg_hours: number
+  breached: number
+  compliance_pct: number
+}
+
+interface SlaStats {
+  response: SlaMetric
+  resolution: SlaMetric
+}
+
 const overview = ref<Overview | null>(null)
 const timeline = ref<TimelinePoint[]>([])
+const sla = ref<SlaStats | null>(null)
 const timelineDays = ref(30)
 
 const daysOptions = [
@@ -176,12 +189,14 @@ const timelineChartOption = computed(() => {
 async function loadData() {
   loading.value = true
   try {
-    const [ov, tl] = await Promise.all([
+    const [ov, tl, sl] = await Promise.all([
       api.get<Overview>('/stats/overview'),
       api.get<TimelinePoint[]>(`/stats/timeline?days=${timelineDays.value}`),
+      api.get<SlaStats>('/stats/sla'),
     ])
     overview.value = ov
     timeline.value = tl
+    sla.value = sl
   } catch (e: any) {
     toast.add({
       severity: 'error',
@@ -234,6 +249,38 @@ onMounted(() => loadData())
           <template #content>
             <div class="stat-value">{{ overview.closed }}</div>
             <div class="stat-label">Закрытых</div>
+          </template>
+        </Card>
+      </div>
+
+      <!-- SLA -->
+      <div v-if="sla" class="stats-cards">
+        <Card class="stat-card">
+          <template #content>
+            <div class="stat-value">{{ sla.response.avg_hours }}ч</div>
+            <div class="stat-label">Среднее время ответа</div>
+          </template>
+        </Card>
+        <Card class="stat-card">
+          <template #content>
+            <div class="stat-value" :class="sla.response.compliance_pct >= 90 ? 'stat-resolved' : 'stat-open'">
+              {{ sla.response.compliance_pct }}%
+            </div>
+            <div class="stat-label">SLA ответ ({{ sla.response.breached }} нарушений)</div>
+          </template>
+        </Card>
+        <Card class="stat-card">
+          <template #content>
+            <div class="stat-value">{{ sla.resolution.avg_hours }}ч</div>
+            <div class="stat-label">Среднее время решения</div>
+          </template>
+        </Card>
+        <Card class="stat-card">
+          <template #content>
+            <div class="stat-value" :class="sla.resolution.compliance_pct >= 90 ? 'stat-resolved' : 'stat-open'">
+              {{ sla.resolution.compliance_pct }}%
+            </div>
+            <div class="stat-label">SLA решение ({{ sla.resolution.breached }} нарушений)</div>
           </template>
         </Card>
       </div>

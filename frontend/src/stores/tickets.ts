@@ -77,9 +77,10 @@ export const useTicketsStore = defineStore('tickets', () => {
     return ticket
   }
 
-  async function addComment(id: string, text: string): Promise<TicketComment> {
+  async function addComment(id: string, text: string, is_internal = false): Promise<TicketComment> {
     const comment = await api.post<TicketComment>(`/tickets/${id}/comments`, {
       text,
+      is_internal,
     })
     if (currentTicket.value && currentTicket.value.id === id) {
       currentTicket.value.comments.push(comment)

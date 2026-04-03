@@ -6,20 +6,30 @@ import Tag from 'primevue/tag'
 import Timeline from 'primevue/timeline'
 import Button from 'primevue/button'
 import Textarea from 'primevue/textarea'
+import Checkbox from 'primevue/checkbox'
 import Divider from 'primevue/divider'
+import FileUpload from 'primevue/fileupload'
 import { useToast } from 'primevue/usetoast'
 import TicketStatusBadge from '../components/TicketStatusBadge.vue'
 import TicketPriorityBadge from '../components/TicketPriorityBadge.vue'
 import { useTicketsStore } from '../stores/tickets'
-import type { TicketStatus } from '../types'
+import { useAuthStore } from '../stores/auth'
+import type { TicketStatus, Attachment } from '../types'
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const store = useTicketsStore()
 
+const auth = useAuthStore()
 const commentText = ref('')
+const isInternalComment = ref(false)
 const submittingComment = ref(false)
+const uploadingFile = ref(false)
+
+const isStaff = computed(() =>
+  auth.user?.role === 'support_agent' || auth.user?.role === 'admin'
+)
 
 const categoryLabels: Record<string, string> = {
   access: 'Доступ',
@@ -126,8 +136,9 @@ async function submitComment() {
   if (!ticket.value || !commentText.value.trim()) return
   submittingComment.value = true
   try {
-    await store.addComment(ticket.value.id, commentText.value.trim())
+    await store.addComment(ticket.value.id, commentText.value.trim(), isInternalComment.value)
     commentText.value = ''
+    isInternalComment.value = false
     toast.add({
       severity: 'success',
       summary: 'Комментарий добавлен',
@@ -143,6 +154,42 @@ async function submitComment() {
   } finally {
     submittingComment.value = false
   }
+}
+
+async function onFileUpload(event: { files: File[] }) {
+  if (!ticket.value || !event.files.length) return
+  uploadingFile.value = true
+  try {
+    const file = event.files[0]
+    const formData = new FormData()
+    formData.append('file', file)
+    const token = localStorage.getItem('access_token')
+    const resp = await fetch(`/tickets/${ticket.value.id}/attachments`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    })
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: 'Ошибка загрузки' }))
+      throw new Error(err.detail)
+    }
+    await loadTicket()
+    toast.add({ severity: 'success', summary: 'Файл загружен', life: 2000 })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+  } finally {
+    uploadingFile.value = false
+  }
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} Б`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`
+  return `${(bytes / 1024 / 1024).toFixed(1)} МБ`
+}
+
+function getAttachmentUrl(att: Attachment): string {
+  return `/tickets/${att.ticket_id}/attachments/${att.id}`
 }
 
 function goBack() {
@@ -222,6 +269,59 @@ onMounted(() => {
           <p v-if="ticket.contact" class="ticket-contact">
             <i class="pi pi-phone"></i> {{ ticket.contact }}
           </p>
+
+          <!-- SLA -->
+          <div v-if="isStaff" class="sla-info">
+            <Divider />
+            <div class="sla-row">
+              <span class="sla-label">Первый ответ:</span>
+              <span v-if="ticket.first_response_at">{{ formatDate(ticket.first_response_at) }}</span>
+              <Tag v-else value="Ожидает" severity="warn" />
+              <span class="sla-target">(SLA: {{ ticket.sla_response_hours || 4 }}ч)</span>
+            </div>
+            <div class="sla-row">
+              <span class="sla-label">Решение:</span>
+              <span v-if="ticket.resolved_at">{{ formatDate(ticket.resolved_at) }}</span>
+              <Tag v-else value="В процессе" severity="info" />
+              <span class="sla-target">(SLA: {{ ticket.sla_resolve_hours || 24 }}ч)</span>
+            </div>
+          </div>
+        </template>
+      </Card>
+
+      <!-- Вложения -->
+      <Card class="section-card">
+        <template #title>
+          Вложения
+          <span v-if="ticket.attachments.length" class="comments-count">
+            ({{ ticket.attachments.length }})
+          </span>
+        </template>
+        <template #content>
+          <div v-if="ticket.attachments.length" class="attachments-list">
+            <a
+              v-for="att in ticket.attachments"
+              :key="att.id"
+              :href="getAttachmentUrl(att)"
+              target="_blank"
+              class="attachment-item"
+            >
+              <i :class="att.content_type.startsWith('image/') ? 'pi pi-image' : 'pi pi-file'" />
+              <span class="att-name">{{ att.filename }}</span>
+              <span class="att-size">{{ formatFileSize(att.size) }}</span>
+            </a>
+          </div>
+          <p v-else class="no-comments">Вложений нет</p>
+          <Divider />
+          <FileUpload
+            mode="basic"
+            :auto="true"
+            choose-label="Загрузить файл"
+            :disabled="uploadingFile"
+            accept="image/*,.pdf,.doc,.docx,.txt"
+            :max-file-size="10485760"
+            @select="onFileUpload"
+          />
         </template>
       </Card>
 
@@ -253,10 +353,11 @@ onMounted(() => {
             <div
               v-for="comment in ticket.comments"
               :key="comment.id"
-              class="comment-item"
+              :class="['comment-item', { 'comment-internal': comment.is_internal }]"
             >
               <div class="comment-header">
                 <span class="comment-author">{{ comment.author_name }}</span>
+                <Tag v-if="comment.is_internal" value="Внутренний" severity="warn" class="internal-tag" />
                 <span class="comment-date">{{ formatShortDate(comment.created_at) }}</span>
               </div>
               <p class="comment-text">{{ comment.text }}</p>
@@ -274,14 +375,19 @@ onMounted(() => {
               auto-resize
               fluid
             />
-            <Button
-              label="Отправить"
-              icon="pi pi-send"
-              :disabled="!commentText.trim()"
-              :loading="submittingComment"
-              class="comment-submit"
-              @click="submitComment"
-            />
+            <div class="comment-actions">
+              <div v-if="isStaff" class="internal-check">
+                <Checkbox v-model="isInternalComment" input-id="internal" :binary="true" />
+                <label for="internal">Внутренний (не виден клиенту)</label>
+              </div>
+              <Button
+                label="Отправить"
+                icon="pi pi-send"
+                :disabled="!commentText.trim()"
+                :loading="submittingComment"
+                @click="submitComment"
+              />
+            </div>
           </div>
         </template>
       </Card>
@@ -435,13 +541,91 @@ onMounted(() => {
   margin: 0;
 }
 
+.sla-info {
+  margin-top: 8px;
+}
+
+.sla-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  margin-bottom: 6px;
+}
+
+.sla-label {
+  font-weight: 500;
+  min-width: 110px;
+}
+
+.sla-target {
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+
+.attachments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  text-decoration: none;
+  color: #1e293b;
+  font-size: 0.875rem;
+  transition: background 0.15s;
+}
+
+.attachment-item:hover {
+  background: #f1f5f9;
+}
+
+.att-name {
+  flex: 1;
+}
+
+.att-size {
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+
+.comment-internal {
+  border-left: 3px solid #f59e0b !important;
+  background: #fffbeb !important;
+}
+
+.internal-tag {
+  font-size: 0.7rem;
+}
+
 .add-comment {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.comment-submit {
-  align-self: flex-end;
+.comment-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.internal-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+
+.internal-check label {
+  cursor: pointer;
+  color: #64748b;
 }
 </style>

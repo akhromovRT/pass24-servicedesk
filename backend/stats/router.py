@@ -81,3 +81,79 @@ async def get_timeline(
         {"date": row[0].isoformat()[:10], "count": row[1]}
         for row in result.all()
     ]
+
+
+@router.get("/sla")
+async def get_sla_stats(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """SLA-статистика: средние времена, процент нарушений."""
+    # Тикеты с first_response_at (время первого ответа)
+    response_result = await session.execute(
+        select(
+            sa_func.count().label("total"),
+            sa_func.avg(
+                extract("epoch", Ticket.first_response_at - Ticket.created_at) / 3600
+            ).label("avg_hours"),
+        )
+        .where(Ticket.first_response_at.is_not(None))
+    )
+    resp_row = response_result.one()
+    response_total = resp_row[0] or 0
+    avg_response_hours = round(float(resp_row[1] or 0), 1)
+
+    # Нарушения SLA по первому ответу
+    sla_response_breached = 0
+    if response_total > 0:
+        breach_result = await session.execute(
+            select(sa_func.count())
+            .where(
+                Ticket.first_response_at.is_not(None),
+                (extract("epoch", Ticket.first_response_at - Ticket.created_at) / 3600)
+                > Ticket.sla_response_hours,
+            )
+        )
+        sla_response_breached = breach_result.scalar_one()
+
+    # Тикеты с resolved_at (время решения)
+    resolve_result = await session.execute(
+        select(
+            sa_func.count().label("total"),
+            sa_func.avg(
+                extract("epoch", Ticket.resolved_at - Ticket.created_at) / 3600
+            ).label("avg_hours"),
+        )
+        .where(Ticket.resolved_at.is_not(None))
+    )
+    res_row = resolve_result.one()
+    resolve_total = res_row[0] or 0
+    avg_resolve_hours = round(float(res_row[1] or 0), 1)
+
+    # Нарушения SLA по решению
+    sla_resolve_breached = 0
+    if resolve_total > 0:
+        breach_result = await session.execute(
+            select(sa_func.count())
+            .where(
+                Ticket.resolved_at.is_not(None),
+                (extract("epoch", Ticket.resolved_at - Ticket.created_at) / 3600)
+                > Ticket.sla_resolve_hours,
+            )
+        )
+        sla_resolve_breached = breach_result.scalar_one()
+
+    return {
+        "response": {
+            "total": response_total,
+            "avg_hours": avg_response_hours,
+            "breached": sla_response_breached,
+            "compliance_pct": round((1 - sla_response_breached / max(response_total, 1)) * 100, 1),
+        },
+        "resolution": {
+            "total": resolve_total,
+            "avg_hours": avg_resolve_hours,
+            "breached": sla_resolve_breached,
+            "compliance_pct": round((1 - sla_resolve_breached / max(resolve_total, 1)) * 100, 1),
+        },
+    }

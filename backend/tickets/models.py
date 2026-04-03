@@ -66,9 +66,16 @@ class Ticket(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
+    # SLA
+    first_response_at: Optional[datetime] = Field(default=None)
+    resolved_at: Optional[datetime] = Field(default=None)
+    sla_response_hours: Optional[int] = Field(default=4)
+    sla_resolve_hours: Optional[int] = Field(default=24)
+
     # Связи (дочерние модели определены ниже)
     events: List["TicketEvent"] = Relationship(back_populates="ticket")
     comments: List["TicketComment"] = Relationship(back_populates="ticket")
+    attachments: List["Attachment"] = Relationship(back_populates="ticket")
 
     # ------------------------------------------------------------------
     # Бизнес-логика
@@ -123,6 +130,15 @@ class Ticket(SQLModel, table=True):
         self.status = new_status
         self.updated_at = datetime.utcnow()
 
+        # SLA-таймстампы
+        if new_status == TicketStatus.IN_PROGRESS and self.first_response_at is None:
+            self.first_response_at = datetime.utcnow()
+        if new_status == TicketStatus.RESOLVED:
+            self.resolved_at = datetime.utcnow()
+        elif new_status == TicketStatus.IN_PROGRESS and self.resolved_at is not None:
+            # Переоткрытие — сбросить resolved_at
+            self.resolved_at = None
+
         event = TicketEvent(
             ticket_id=self.id,
             actor_id=actor_id,
@@ -172,7 +188,34 @@ class TicketComment(SQLModel, table=True):
     author_id: str
     author_name: str = Field(default="")
     text: str
+    is_internal: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     # Связь обратно к тикету
     ticket: Optional["Ticket"] = Relationship(back_populates="comments")
+
+
+# ---------------------------------------------------------------------------
+# Таблица вложений
+# ---------------------------------------------------------------------------
+
+
+class Attachment(SQLModel, table=True):
+    """Вложение к тикету (файл)."""
+
+    __tablename__ = "attachments"
+
+    id: str = Field(
+        default_factory=lambda: str(uuid.uuid4()),
+        primary_key=True,
+    )
+    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    uploader_id: str
+    filename: str = Field(max_length=512)
+    content_type: str = Field(max_length=128)
+    size: int
+    storage_path: str = Field(max_length=1024)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # Связь обратно к тикету
+    ticket: Optional["Ticket"] = Relationship(back_populates="attachments")

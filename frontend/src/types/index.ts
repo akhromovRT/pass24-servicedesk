@@ -35,8 +35,13 @@ export interface Ticket {
   priority: TicketPriority
   created_at: string
   updated_at: string
+  first_response_at: string | null
+  resolved_at: string | null
+  sla_response_hours: number | null
+  sla_resolve_hours: number | null
   events: TicketEvent[]
   comments: TicketComment[]
+  attachments: Attachment[]
 }
 
 export interface TicketEvent {
@@ -53,6 +58,17 @@ export interface TicketComment {
   author_id: string
   author_name: string
   text: string
+  is_internal: boolean
+  created_at: string
+}
+
+export interface Attachment {
+  id: string
+  ticket_id: string
+  uploader_id: string
+  filename: string
+  content_type: string
+  size: number
   created_at: string
 }
 

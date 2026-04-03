@@ -15,7 +15,7 @@ from backend.config import settings
 # Импортируем ВСЕ модели, чтобы SQLModel.metadata знала о таблицах
 from backend.auth.models import User  # noqa: F401
 from backend.knowledge.models import Article  # noqa: F401
-from backend.tickets.models import Ticket, TicketComment, TicketEvent  # noqa: F401
+from backend.tickets.models import Attachment, Ticket, TicketComment, TicketEvent  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)
