@@ -7,13 +7,15 @@ Help Desk портал для пользователей СКУД-системы
 Веб-портал технической поддержки, где пользователи PASS24 (жители ЖК, администраторы УК) могут:
 - Создавать заявки в техподдержку и отслеживать их статус
 - Искать ответы в базе знаний (FAQ, инструкции)
+- Отправлять заявки по email на support@pass24online.ru
 
 ## Технический стек
 
 - **Backend:** Python 3.12, FastAPI, SQLModel, PostgreSQL 16
+- **Frontend:** Vue 3 + TypeScript + PrimeVue 4 (Aura)
 - **Auth:** JWT + bcrypt, RBAC (4 роли)
-- **Frontend:** Vue 3 + TypeScript + PrimeVue (в разработке)
-- **Деплой:** Docker, GitHub Actions CI/CD
+- **Email:** SMTP/IMAP (smtp.timeweb.ru) — уведомления + приём заявок
+- **Деплой:** Docker (multi-stage), GitHub Actions CI/CD
 
 ## Быстрый старт
 
@@ -55,18 +57,29 @@ uvicorn backend.main:app --reload
 | System | GET | /health | Healthcheck |
 | System | GET | /docs | Swagger UI |
 
+## Email-интеграция
+
+- **Исходящие:** уведомления при создании тикета, смене статуса, новом комментарии
+- **Входящие:** письма на support@pass24online.ru автоматически создают тикеты
+  - Достаточно информации → тикет + ответ-подтверждение
+  - Недостаточно → ответ с запросом уточнений
+
 ## Структура проекта
 
 ```
 backend/
-├── main.py              # FastAPI app
+├── main.py              # FastAPI app + email polling
 ├── config.py            # Настройки (.env)
 ├── database.py          # PostgreSQL async
 ├── auth/                # Аутентификация, RBAC
 ├── tickets/             # Тикеты, комментарии, FSM
-└── knowledge/           # База знаний, поиск
+├── knowledge/           # База знаний, поиск
+└── notifications/       # Email: SMTP (out) + IMAP (in)
+frontend/                # Vue 3 SPA (Vite + PrimeVue)
+├── src/pages/           # Страницы (Login, Tickets, Knowledge)
+├── src/stores/          # Pinia (auth, tickets, knowledge)
+└── src/components/      # Переиспользуемые компоненты
 tests/                   # Юнит-тесты (pytest)
-agent_docs/              # Проектная документация
 ```
 
 ## Документация

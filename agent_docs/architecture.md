@@ -109,8 +109,17 @@ backend/
 │   ├── models.py        # Article, ArticleCategory (SQLModel)
 │   ├── schemas.py       # CRUD + search
 │   └── router.py        # /knowledge/ CRUD + search + slug
-└── templates/
-    └── index.html       # Jinja2 mockup (будет заменён на Vue 3 SPA)
+└── notifications/       # Email-уведомления
+    ├── email.py         # Исходящие: SMTP, HTML-шаблоны
+    └── inbound.py       # Входящие: IMAP polling → тикеты
+
+frontend/                # Vue 3 SPA (Vite + TypeScript + PrimeVue)
+├── src/
+│   ├── pages/           # LoginPage, TicketsPage, KnowledgePage и др.
+│   ├── stores/          # Pinia stores (auth, tickets, knowledge)
+│   ├── components/      # StatusBadge, PriorityBadge, ArticleCard
+│   ├── api/client.ts    # fetch wrapper с JWT
+│   └── router/          # vue-router с auth guard
 ```
 
 ## Деплой
@@ -122,15 +131,16 @@ backend/
 
 ## Roadmap
 
-### MVP (v0.1) — Backend API
+### MVP (v0.1) — Завершён
 - [x] Авторизация и регистрация (JWT + bcrypt + RBAC)
 - [x] Создание и просмотр тикетов (пагинация, фильтры)
 - [x] Обработка тикетов (FSM статусов, комментарии, аудит)
 - [x] Базовая база знаний (CRUD, поиск, slug)
 - [x] PostgreSQL + SQLModel ORM
 - [x] CI/CD деплой на VPS
-- [ ] Vue 3 SPA frontend (замена Jinja2 mockup)
-- [ ] Email-уведомления
+- [x] Vue 3 SPA frontend (PrimeVue 4, Pinia, TypeScript)
+- [x] Email-уведомления (SMTP, support@pass24online.ru)
+- [x] Приём email → автосоздание тикетов (IMAP polling)
 - [ ] Alembic миграции
 
 ### v0.2

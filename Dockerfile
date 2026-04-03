@@ -17,6 +17,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ ./backend/
+COPY alembic.ini .
+COPY migrations/ ./migrations/
 
 # Копируем собранный фронтенд в static/
 COPY --from=frontend-build /frontend/dist ./static/

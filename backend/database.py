@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlmodel import SQLModel
 
 from .config import settings
+
+logger = logging.getLogger(__name__)
 
 engine = create_async_engine(settings.database_url, echo=False)
 
@@ -20,11 +25,11 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-async def init_db() -> None:
-    """Создание таблиц БД. При недоступности PostgreSQL — логирует ошибку."""
+async def run_migrations() -> None:
+    """Запуск Alembic-миграций при старте приложения."""
     try:
-        async with engine.begin() as conn:
-            await conn.run_sync(SQLModel.metadata.create_all)
+        alembic_cfg = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Миграции БД применены успешно")
     except Exception as exc:
-        import logging
-        logging.getLogger(__name__).warning("Не удалось инициализировать БД: %s", exc)
+        logger.warning("Не удалось применить миграции БД: %s", exc)

@@ -9,6 +9,41 @@
 
 ## Записи
 
+### 2026-04-03 — Vue 3 SPA frontend + email-уведомления + inbound email
+
+**Что сделано:**
+- Vue 3 SPA frontend (`frontend/`): Vite + TypeScript + PrimeVue 4 (Aura) + Pinia
+  - Auth: LoginPage, RegisterPage, auth store (JWT persist)
+  - Tickets: TicketsPage (DataTable, фильтры, пагинация), CreateTicketPage, TicketDetailPage (timeline, комментарии, FSM кнопки)
+  - Knowledge: KnowledgePage (поиск с debounce, grid), ArticlePage (markdown render, slug)
+  - Компоненты: TicketStatusBadge, TicketPriorityBadge, CategoryBadge, ArticleCard
+  - Router с auth guard, SPA fallback в FastAPI
+- Multi-stage Dockerfile: Node build → Python API + static serving
+- Email-уведомления (исходящие, SMTP):
+  - Создание тикета → email создателю
+  - Смена статуса → email создателю (с указанием кто изменил)
+  - Новый комментарий → email создателю (если комментирует не он)
+  - SMTP: smtp.timeweb.ru:465 SSL, support@pass24online.ru
+  - Async через BackgroundTasks (не блокирует API)
+- Приём входящей почты (IMAP polling):
+  - Чтение UNSEEN писем каждые 60 сек (imap.timeweb.ru:993)
+  - Парсинг темы/тела → определение категории по ключевым словам
+  - Достаточно информации → автосоздание тикета + ответ-подтверждение
+  - Недостаточно информации → ответ с запросом уточнений
+  - Авто-создание пользователя из email отправителя
+  - Защита от петель: собственные письма и auto-reply пропускаются
+
+**Обновления:**
+- [x] Документация обновлена
+- [x] Тесты: 14 unit, SMTP/IMAP проверены на production
+
+**Следующие шаги:**
+- Alembic миграции
+- Полнотекстовый поиск (PostgreSQL FTS)
+- Аналитика и дашборды
+
+---
+
 ### 2026-04-03 — Полный backend: auth, tickets DB, knowledge base, деплой
 
 **Что сделано:**
