@@ -15,6 +15,8 @@ import asyncio
 import uuid
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
 
 # Для запуска async тестов
 pytestmark = pytest.mark.asyncio
@@ -25,6 +27,23 @@ def event_loop():
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_db_connections():
+    """Создаёт изолированный engine для тестов, чтобы не конфликтовать с приложением."""
+    import backend.database as db_mod
+    from backend.config import settings
+
+    test_engine = create_async_engine(settings.database_url, echo=False)
+    test_session_factory = sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    # Подменяем фабрику сессий на изолированную
+    original_factory = db_mod.async_session_factory
+    db_mod.async_session_factory = test_session_factory
+    yield
+    db_mod.async_session_factory = original_factory
+    asyncio.get_event_loop().run_until_complete(test_engine.dispose())
 
 
 def _fake_attachment(filename="photo.jpg", content_type="image/jpeg", size=1024):
@@ -242,6 +261,7 @@ class TestNewTicketFromEmail:
     """Новое письмо → тикет + авто-анализ."""
 
     async def test_new_ticket_created(self):
+        from unittest.mock import AsyncMock, patch
         from backend.notifications.inbound import _handle_new_ticket
         from backend.database import async_session_factory
         from backend.tickets.models import Ticket
@@ -249,34 +269,37 @@ class TestNewTicketFromEmail:
 
         test_email = f"test-new-{uuid.uuid4().hex[:8]}@example.com"
 
-        await _handle_new_ticket({
-            "subject": "Не работает шлагбаум на парковке",
-            "from_email": test_email,
-            "from_name": "Новый Пользователь",
-            "body": "Шлагбаум не открывается, стою на парковке ЖК Солнечный уже 30 минут. Приложение показывает ошибку.",
-            "attachments": [_fake_attachment("error.png", "image/png", 500)],
-        })
+        # Мокаем отправку email чтобы не слать реальные письма из теста
+        with patch("backend.notifications.inbound._send_email", new_callable=AsyncMock):
+            await _handle_new_ticket({
+                "subject": "Не работает шлагбаум на парковке",
+                "from_email": test_email,
+                "from_name": "Новый Пользователь",
+                "body": "Шлагбаум не открывается, стою на парковке ЖК Солнечный уже 30 минут. Приложение показывает ошибку.",
+                "attachments": [_fake_attachment("error.png", "image/png", 500)],
+            })
 
-        # Проверяем что тикет создан
-        async with async_session_factory() as session:
-            result = await session.execute(
-                select(Ticket).where(Ticket.contact_email == test_email)
-            )
-            ticket = result.scalar_one_or_none()
-            assert ticket is not None, "Тикет должен быть создан"
-            assert "шлагбаум" in ticket.title.lower() or "шлагбаум" in ticket.description.lower()
-            assert ticket.source == "email"
+            # Проверяем что тикет создан
+            async with async_session_factory() as session:
+                result = await session.execute(
+                    select(Ticket).where(Ticket.contact_email == test_email)
+                )
+                ticket = result.scalar_one_or_none()
+                assert ticket is not None, "Тикет должен быть создан"
+                assert "шлагбаум" in ticket.title.lower() or "шлагбаум" in ticket.description.lower()
+                assert ticket.source == "email"
 
-            # Cleanup
-            await _cleanup_ticket(ticket.id)
+                # Cleanup
+                await _cleanup_ticket(ticket.id)
 
-            # Cleanup user
-            from backend.auth.models import User
-            from sqlalchemy import delete as sa_delete
-            await session.execute(sa_delete(User).where(User.email == test_email))
-            await session.commit()
+                # Cleanup user
+                from backend.auth.models import User
+                from sqlalchemy import delete as sa_delete
+                await session.execute(sa_delete(User).where(User.email == test_email))
+                await session.commit()
 
     async def test_insufficient_info_no_ticket(self):
+        from unittest.mock import AsyncMock, patch
         from backend.notifications.inbound import _handle_new_ticket
         from backend.database import async_session_factory
         from backend.tickets.models import Ticket
@@ -284,13 +307,14 @@ class TestNewTicketFromEmail:
 
         test_email = f"test-short-{uuid.uuid4().hex[:8]}@example.com"
 
-        await _handle_new_ticket({
-            "subject": "Ок",
-            "from_email": test_email,
-            "from_name": "Test",
-            "body": "Ок",
-            "attachments": [],
-        })
+        with patch("backend.notifications.inbound._send_email", new_callable=AsyncMock):
+            await _handle_new_ticket({
+                "subject": "Ок",
+                "from_email": test_email,
+                "from_name": "Test",
+                "body": "Ок",
+                "attachments": [],
+            })
 
         # Тикет НЕ должен быть создан (недостаточно информации)
         async with async_session_factory() as session:
