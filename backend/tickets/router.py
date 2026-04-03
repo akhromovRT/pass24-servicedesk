@@ -125,9 +125,16 @@ async def list_tickets(
 
     Параметры: ?page=1&per_page=20&status=new&category=access&object_id=obj1&my=true
     """
+    from backend.auth.models import UserRole
+
     # Базовый запрос
     query = select(Ticket)
     count_query = select(func.count()).select_from(Ticket)
+
+    # Резиденты и УК видят только свои тикеты
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        query = query.where(Ticket.creator_id == str(current_user.id))
+        count_query = count_query.where(Ticket.creator_id == str(current_user.id))
 
     # Фильтры
     if ticket_status is not None:
