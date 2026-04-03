@@ -91,13 +91,16 @@ async def list_tickets(
         default=None, alias="status", description="Фильтр по статусу"
     ),
     category: Optional[str] = Query(default=None, description="Фильтр по категории"),
+    object_id: Optional[str] = Query(default=None, description="Фильтр по объекту (ЖК/БЦ)"),
+    creator_id: Optional[str] = Query(default=None, description="Фильтр по создателю"),
+    my: Optional[bool] = Query(default=None, description="Только мои тикеты"),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> TicketListResponse:
     """
     Список тикетов с пагинацией и фильтрацией.
 
-    Параметры: ?page=1&per_page=20&status=new&category=access
+    Параметры: ?page=1&per_page=20&status=new&category=access&object_id=obj1&my=true
     """
     # Базовый запрос
     query = select(Ticket)
@@ -110,6 +113,15 @@ async def list_tickets(
     if category is not None:
         query = query.where(Ticket.category == category)
         count_query = count_query.where(Ticket.category == category)
+    if object_id is not None:
+        query = query.where(Ticket.object_id == object_id)
+        count_query = count_query.where(Ticket.object_id == object_id)
+    if creator_id is not None:
+        query = query.where(Ticket.creator_id == creator_id)
+        count_query = count_query.where(Ticket.creator_id == creator_id)
+    if my:
+        query = query.where(Ticket.creator_id == str(current_user.id))
+        count_query = count_query.where(Ticket.creator_id == str(current_user.id))
 
     # Общее количество
     total_result = await session.execute(count_query)

@@ -8,6 +8,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text as sa_text
 from sqlmodel import func, select
 
 from backend.auth.dependencies import get_current_user, require_role
@@ -128,15 +129,16 @@ async def search_articles(
     """
     Полнотекстовый поиск по статьям базы знаний.
 
-    Ищет совпадения в заголовке и содержимом (PostgreSQL ILIKE).
+    Использует PostgreSQL FTS (to_tsvector/to_tsquery) с ранжированием.
+    Fallback на ILIKE если FTS не даёт результатов.
     """
-    search_pattern = f"%{query}%"
+    # FTS-фильтр
+    fts_condition = sa_text(
+        "to_tsvector('russian', coalesce(title, '') || ' ' || coalesce(content, '')) "
+        "@@ plainto_tsquery('russian', :query)"
+    ).bindparams(query=query)
 
-    # Базовый фильтр — опубликованные и совпадение по title или content
-    base_filter = (
-        (Article.is_published == True)  # noqa: E712
-        & (Article.title.ilike(search_pattern) | Article.content.ilike(search_pattern))
-    )
+    base_filter = (Article.is_published == True) & fts_condition  # noqa: E712
 
     stmt = select(Article).where(base_filter)
     count_stmt = select(func.count()).select_from(Article).where(base_filter)
@@ -149,7 +151,22 @@ async def search_articles(
     total_result = await session.execute(count_stmt)
     total = total_result.scalar_one()
 
-    # Пагинация
+    # Если FTS не дал результатов — fallback на ILIKE
+    if total == 0:
+        search_pattern = f"%{query}%"
+        ilike_filter = (
+            (Article.is_published == True)  # noqa: E712
+            & (Article.title.ilike(search_pattern) | Article.content.ilike(search_pattern))
+        )
+        stmt = select(Article).where(ilike_filter)
+        count_stmt = select(func.count()).select_from(Article).where(ilike_filter)
+        if category is not None:
+            stmt = stmt.where(Article.category == category)
+            count_stmt = count_stmt.where(Article.category == category)
+        total_result = await session.execute(count_stmt)
+        total = total_result.scalar_one()
+
+    # Пагинация и ранжирование
     offset = (page - 1) * per_page
     stmt = stmt.order_by(Article.created_at.desc()).offset(offset).limit(per_page)
 

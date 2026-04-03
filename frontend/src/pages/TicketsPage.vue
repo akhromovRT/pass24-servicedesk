@@ -19,6 +19,7 @@ const store = useTicketsStore()
 
 const statusFilter = ref<TicketStatus | ''>('')
 const categoryFilter = ref('')
+const myOnly = ref(false)
 
 const statusOptions = [
   { label: 'Все статусы', value: '' },
@@ -67,6 +68,7 @@ async function loadTickets(page?: number) {
     await store.fetchTickets(page, {
       status: statusFilter.value || undefined,
       category: categoryFilter.value || undefined,
+      my: myOnly.value || undefined,
     })
   } catch (e: any) {
     toast.add({
@@ -121,6 +123,14 @@ onMounted(() => {
             placeholder="Все категории"
             class="filter-select"
             @change="onFilterChange"
+          />
+          <Button
+            :label="myOnly ? 'Все заявки' : 'Мои заявки'"
+            :icon="myOnly ? 'pi pi-list' : 'pi pi-user'"
+            :severity="myOnly ? 'primary' : 'secondary'"
+            :outlined="!myOnly"
+            size="small"
+            @click="myOnly = !myOnly; onFilterChange()"
           />
         </div>
       </template>

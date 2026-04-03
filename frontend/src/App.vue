@@ -10,20 +10,35 @@ const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 
-const menuItems = computed(() => [
-  {
-    label: 'Заявки',
-    icon: 'pi pi-ticket',
-    command: () => router.push('/'),
-    class: route.path === '/' ? 'p-menuitem-active' : '',
-  },
-  {
-    label: 'База знаний',
-    icon: 'pi pi-book',
-    command: () => router.push('/knowledge'),
-    class: route.path.startsWith('/knowledge') ? 'p-menuitem-active' : '',
-  },
-])
+const isStaff = computed(() =>
+  auth.user?.role === 'support_agent' || auth.user?.role === 'admin'
+)
+
+const menuItems = computed(() => {
+  const items = [
+    {
+      label: 'Заявки',
+      icon: 'pi pi-ticket',
+      command: () => router.push('/'),
+      class: route.path === '/' || route.path.startsWith('/tickets') ? 'p-menuitem-active' : '',
+    },
+    {
+      label: 'База знаний',
+      icon: 'pi pi-book',
+      command: () => router.push('/knowledge'),
+      class: route.path.startsWith('/knowledge') ? 'p-menuitem-active' : '',
+    },
+  ]
+  if (isStaff.value) {
+    items.push({
+      label: 'Аналитика',
+      icon: 'pi pi-chart-bar',
+      command: () => router.push('/analytics'),
+      class: route.path === '/analytics' ? 'p-menuitem-active' : '',
+    })
+  }
+  return items
+})
 
 function logout() {
   auth.logout()

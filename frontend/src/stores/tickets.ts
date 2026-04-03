@@ -12,6 +12,9 @@ import type {
 export interface TicketFilters {
   status?: TicketStatus | ''
   category?: string
+  object_id?: string
+  creator_id?: string
+  my?: boolean
 }
 
 export const useTicketsStore = defineStore('tickets', () => {
@@ -33,6 +36,9 @@ export const useTicketsStore = defineStore('tickets', () => {
       params.set('per_page', '20')
       if (filters.value.status) params.set('status', filters.value.status)
       if (filters.value.category) params.set('category', filters.value.category)
+      if (filters.value.object_id) params.set('object_id', filters.value.object_id)
+      if (filters.value.creator_id) params.set('creator_id', filters.value.creator_id)
+      if (filters.value.my) params.set('my', 'true')
 
       const data = await api.get<PaginatedResponse<Ticket>>(
         `/tickets/?${params.toString()}`,

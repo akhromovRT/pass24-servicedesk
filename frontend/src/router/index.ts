@@ -35,6 +35,12 @@ const router = createRouter({
       meta: { auth: true },
     },
     {
+      path: '/analytics',
+      name: 'analytics',
+      component: () => import('../pages/AnalyticsPage.vue'),
+      meta: { auth: true },
+    },
+    {
       path: '/knowledge',
       name: 'knowledge',
       component: () => import('../pages/KnowledgePage.vue'),
