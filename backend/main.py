@@ -24,18 +24,12 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 async def lifespan(app: FastAPI):
     """Запуск миграций БД и фоновых задач."""
     await run_migrations()
-    # Запускаем фоновый опрос входящей почты
     poll_task = asyncio.create_task(email_polling_loop())
     yield
     poll_task.cancel()
 
 
 def create_app() -> FastAPI:
-    """
-    Фабрика FastAPI-приложения PASS24 Service Desk.
-
-    Подключает модули: аутентификация, тикеты, база знаний.
-    """
     app = FastAPI(
         title="PASS24 Service Desk API",
         description="Help Desk портал для клиентов и партнёров PASS24",
@@ -43,7 +37,6 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CORS — разрешаем запросы от фронтенда
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -52,7 +45,23 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Роутеры
+    # SPA-маршруты ДО API (чтобы /tickets/create не перехватывался /tickets/{ticket_id})
+    if STATIC_DIR.is_dir():
+        _index = str(STATIC_DIR / "index.html")
+
+        @app.get("/tickets/create", response_class=FileResponse, include_in_schema=False)
+        async def spa_tickets_create():
+            return FileResponse(_index)
+
+        @app.get("/login", response_class=FileResponse, include_in_schema=False)
+        async def spa_login():
+            return FileResponse(_index)
+
+        @app.get("/register", response_class=FileResponse, include_in_schema=False)
+        async def spa_register():
+            return FileResponse(_index)
+
+    # API роутеры
     app.include_router(auth_router)
     app.include_router(tickets_router)
     app.include_router(knowledge_router)
@@ -61,27 +70,14 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health():
-        """Проверка работоспособности сервиса."""
         return {"status": "ok"}
 
-    # Раздача SPA: static файлы + fallback на index.html для vue-router
+    # SPA fallback для всех остальных путей
     if STATIC_DIR.is_dir():
         app.mount("/assets", StaticFiles(directory=str(STATIC_DIR / "assets")), name="static-assets")
 
-        # Явные SPA-маршруты (чтобы не перехватывались API routes с path params)
-        SPA_ROUTES = [
-            "/tickets/create", "/login", "/register",
-            "/instructions", "/knowledge", "/analytics",
-        ]
-
-        for spa_path in SPA_ROUTES:
-            @app.get(spa_path, response_class=FileResponse, include_in_schema=False)
-            async def serve_spa_explicit(request: Request):
-                return FileResponse(str(STATIC_DIR / "index.html"))
-
         @app.get("/{full_path:path}")
         async def serve_spa(request: Request, full_path: str):
-            """Отдаёт index.html для всех не-API путей (SPA fallback)."""
             file_path = STATIC_DIR / full_path
             if file_path.is_file():
                 return FileResponse(str(file_path))
