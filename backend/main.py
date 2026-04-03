@@ -68,6 +68,17 @@ def create_app() -> FastAPI:
     if STATIC_DIR.is_dir():
         app.mount("/assets", StaticFiles(directory=str(STATIC_DIR / "assets")), name="static-assets")
 
+        # Явные SPA-маршруты (чтобы не перехватывались API routes с path params)
+        SPA_ROUTES = [
+            "/tickets/create", "/login", "/register",
+            "/instructions", "/knowledge", "/analytics",
+        ]
+
+        for spa_path in SPA_ROUTES:
+            @app.get(spa_path, response_class=FileResponse, include_in_schema=False)
+            async def serve_spa_explicit(request: Request):
+                return FileResponse(str(STATIC_DIR / "index.html"))
+
         @app.get("/{full_path:path}")
         async def serve_spa(request: Request, full_path: str):
             """Отдаёт index.html для всех не-API путей (SPA fallback)."""
