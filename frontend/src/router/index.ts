@@ -4,6 +4,33 @@ import { isAuthenticated } from '../api/client'
 const router = createRouter({
   history: createWebHistory(),
   routes: [
+    // Публичные страницы (главный путь пользователя)
+    {
+      path: '/',
+      name: 'home',
+      component: () => import('../pages/InstructionsPage.vue'),
+    },
+    {
+      path: '/instructions',
+      name: 'instructions',
+      component: () => import('../pages/InstructionsPage.vue'),
+    },
+    {
+      path: '/instructions/:slug',
+      name: 'guide',
+      component: () => import('../pages/GuidePage.vue'),
+    },
+    {
+      path: '/knowledge',
+      name: 'knowledge',
+      component: () => import('../pages/KnowledgePage.vue'),
+    },
+    {
+      path: '/knowledge/:slug',
+      name: 'article',
+      component: () => import('../pages/ArticlePage.vue'),
+    },
+    // Авторизация
     {
       path: '/login',
       name: 'login',
@@ -16,8 +43,9 @@ const router = createRouter({
       component: () => import('../pages/RegisterPage.vue'),
       meta: { guest: true },
     },
+    // Требуют авторизации
     {
-      path: '/',
+      path: '/tickets',
       name: 'tickets',
       component: () => import('../pages/TicketsPage.vue'),
       meta: { auth: true },
@@ -40,35 +68,16 @@ const router = createRouter({
       component: () => import('../pages/AnalyticsPage.vue'),
       meta: { auth: true },
     },
-    {
-      path: '/instructions',
-      name: 'instructions',
-      component: () => import('../pages/InstructionsPage.vue'),
-    },
-    {
-      path: '/instructions/:slug',
-      name: 'guide',
-      component: () => import('../pages/GuidePage.vue'),
-    },
-    {
-      path: '/knowledge',
-      name: 'knowledge',
-      component: () => import('../pages/KnowledgePage.vue'),
-    },
-    {
-      path: '/knowledge/:slug',
-      name: 'article',
-      component: () => import('../pages/ArticlePage.vue'),
-    },
   ],
 })
 
 router.beforeEach((to) => {
   if (to.meta.auth && !isAuthenticated()) {
-    return { name: 'login' }
+    // Сохраняем куда хотели попасть
+    return { name: 'login', query: { redirect: to.fullPath } }
   }
   if (to.meta.guest && isAuthenticated()) {
-    return { name: 'tickets' }
+    return { name: 'home' }
   }
 })
 

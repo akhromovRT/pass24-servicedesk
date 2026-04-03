@@ -11,10 +11,9 @@ import re
 from typing import Optional
 
 import anthropic
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
-from backend.auth.dependencies import get_current_user
 from backend.auth.models import User
 from backend.config import settings
 
@@ -125,12 +124,34 @@ def _extract_ticket_data(text: str) -> tuple[str, Optional[TicketData]]:
         return clean_text, None
 
 
+async def _resolve_user(authorization: Optional[str]) -> Optional[User]:
+    """Извлекает пользователя из Bearer токена, если он есть."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    try:
+        from jose import jwt
+        from sqlmodel import select
+        from backend.database import async_session_factory
+
+        token = authorization[7:]
+        data = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        user_id = data.get("sub")
+        if not user_id:
+            return None
+        async with async_session_factory() as session:
+            result = await session.execute(select(User).where(User.id == user_id))
+            return result.scalar_one_or_none()
+    except Exception:
+        return None
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     payload: ChatRequest,
-    current_user: Optional[User] = Depends(get_current_user),
+    authorization: Optional[str] = Header(default=None),
 ) -> ChatResponse:
-    """AI-помощник с учётом роли пользователя и автозаполнением заявки."""
+    """AI-помощник — доступен без авторизации. С авторизацией — адаптирует под роль."""
+    current_user = await _resolve_user(authorization)
     if not settings.anthropic_api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

@@ -3,7 +3,7 @@ import { ref, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Textarea from 'primevue/textarea'
-import { api } from '../api/client'
+import { api, isAuthenticated } from '../api/client'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -100,17 +100,22 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 function createTicket(data?: TicketData | null) {
-  isOpen.value = false
+  const params = new URLSearchParams()
   if (data) {
-    const params = new URLSearchParams()
     if (data.title) params.set('title', data.title)
     if (data.description) params.set('description', data.description)
     if (data.product) params.set('product', data.product)
     if (data.category) params.set('category', data.category)
     if (data.ticket_type) params.set('ticket_type', data.ticket_type)
+  }
+  isOpen.value = false
+
+  if (isAuthenticated()) {
     router.push(`/tickets/create?${params.toString()}`)
   } else {
-    router.push('/tickets/create')
+    // Не авторизован — отправляем на логин, после него → на создание заявки
+    const redirect = `/tickets/create?${params.toString()}`
+    router.push(`/login?redirect=${encodeURIComponent(redirect)}`)
   }
 }
 

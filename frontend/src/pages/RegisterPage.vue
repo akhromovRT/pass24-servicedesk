@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import Card from 'primevue/card'
 import InputText from 'primevue/inputtext'
 import Password from 'primevue/password'
@@ -10,6 +10,7 @@ import Message from 'primevue/message'
 import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 
 const email = ref('')
@@ -37,7 +38,8 @@ async function onSubmit() {
 
   try {
     await auth.register(email.value, password.value, fullName.value, role.value)
-    router.push('/')
+    const redirect = route.query.redirect as string
+    router.push(redirect || '/')
   } catch (e: any) {
     error.value = e.message || 'Ошибка регистрации'
   }

@@ -18,16 +18,10 @@ const isStaff = computed(() =>
 const menuItems = computed(() => {
   const items = [
     {
-      label: 'Заявки',
-      icon: 'pi pi-ticket',
-      command: () => router.push('/'),
-      class: route.path === '/' || route.path.startsWith('/tickets') ? 'p-menuitem-active' : '',
-    },
-    {
       label: 'Инструкции',
       icon: 'pi pi-map',
-      command: () => router.push('/instructions'),
-      class: route.path === '/instructions' ? 'p-menuitem-active' : '',
+      command: () => router.push('/'),
+      class: route.path === '/' || route.path.startsWith('/instructions') ? 'p-menuitem-active' : '',
     },
     {
       label: 'База знаний',
@@ -36,6 +30,16 @@ const menuItems = computed(() => {
       class: route.path.startsWith('/knowledge') ? 'p-menuitem-active' : '',
     },
   ]
+
+  if (auth.isLoggedIn) {
+    items.push({
+      label: 'Мои заявки',
+      icon: 'pi pi-ticket',
+      command: () => router.push('/tickets'),
+      class: route.path.startsWith('/tickets') ? 'p-menuitem-active' : '',
+    })
+  }
+
   if (isStaff.value) {
     items.push({
       label: 'Аналитика',
@@ -44,19 +48,20 @@ const menuItems = computed(() => {
       class: route.path === '/analytics' ? 'p-menuitem-active' : '',
     })
   }
+
   return items
 })
 
 function logout() {
   auth.logout()
-  router.push('/login')
+  router.push('/')
 }
 </script>
 
 <template>
   <Toast />
   <div class="layout">
-    <Menubar v-if="auth.isLoggedIn" :model="menuItems" class="layout-header">
+    <Menubar :model="menuItems" class="layout-header">
       <template #start>
         <span class="layout-brand" @click="router.push('/')">
           <span class="brand-icon">P24</span>
@@ -64,7 +69,7 @@ function logout() {
         </span>
       </template>
       <template #end>
-        <div class="layout-user">
+        <div v-if="auth.isLoggedIn" class="layout-user">
           <span class="user-name">{{ auth.user?.full_name }}</span>
           <Button
             icon="pi pi-sign-out"
@@ -75,6 +80,15 @@ function logout() {
             @click="logout"
           />
         </div>
+        <Button
+          v-else
+          label="Войти"
+          icon="pi pi-sign-in"
+          severity="secondary"
+          outlined
+          size="small"
+          @click="router.push('/login')"
+        />
       </template>
     </Menubar>
 
@@ -82,7 +96,8 @@ function logout() {
       <router-view />
     </main>
 
-    <AiChat v-if="auth.isLoggedIn" />
+    <!-- AI-помощник доступен всегда -->
+    <AiChat />
   </div>
 </template>
 
