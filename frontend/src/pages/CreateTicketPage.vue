@@ -11,125 +11,48 @@ import Divider from 'primevue/divider'
 import { useToast } from 'primevue/usetoast'
 import { useTicketsStore } from '../stores/tickets'
 import { api, isAuthenticated } from '../api/client'
-import type {
-  TicketCreate,
-  TicketProduct,
-  TicketCategory,
-  TicketType,
-} from '../types'
+import { useAuthStore } from '../stores/auth'
+import type { TicketCreate, TicketProduct, TicketCategory, TicketType } from '../types'
 
 const router = useRouter()
 const route = useRoute()
 const toast = useToast()
 const store = useTicketsStore()
-const isGuest = computed(() => !isAuthenticated())
+const auth = useAuthStore()
 
-// Guest fields
-const guestEmail = ref('')
-const guestName = ref('')
-const guestPhone = ref('')
+const step = ref<1 | 2>(1)
+const submitted = ref(false)
 const ticketCreated = ref(false)
 const createdTicketId = ref('')
 
-// --- Step management ---
-const step = ref<1 | 2>(1)
-const submitted = ref(false)
+// Всегда показывать email — это ключ идентификации
+const email = ref(auth.user?.email || '')
+const contactName = ref(auth.user?.full_name || '')
+const contactPhone = ref('')
 
-// --- Quick select card definitions ---
 interface QuickCard {
   id: string
   icon: string
   label: string
+  hint: string
   defaults: Partial<TicketCreate>
 }
 
 const quickCards: QuickCard[] = [
-  {
-    id: 'cant_enter',
-    icon: 'pi pi-sign-in',
-    label: 'Не могу попасть / проехать',
-    defaults: {
-      product: 'pass24_online',
-      category: 'passes',
-      urgent: true,
-      ticket_type: 'incident',
-    },
-  },
-  {
-    id: 'app_problem',
-    icon: 'pi pi-mobile',
-    label: 'Проблема с приложением',
-    defaults: {
-      product: 'mobile_app',
-      category: 'app_issues',
-    },
-  },
-  {
-    id: 'mobile_key',
-    icon: 'pi pi-key',
-    label: 'Проблема с мобильным ключом',
-    defaults: {
-      product: 'pass24_key',
-    },
-  },
-  {
-    id: 'auto_recognition',
-    icon: 'pi pi-car',
-    label: 'Шлагбаум / распознавание номеров',
-    defaults: {
-      product: 'pass24_auto',
-      category: 'recognition',
-    },
-  },
-  {
-    id: 'pass_problem',
-    icon: 'pi pi-id-card',
-    label: 'Проблема с пропуском',
-    defaults: {
-      product: 'pass24_online',
-      category: 'passes',
-    },
-  },
-  {
-    id: 'equipment',
-    icon: 'pi pi-cog',
-    label: 'Оборудование',
-    defaults: {
-      product: 'equipment',
-      category: 'equipment_issues',
-    },
-  },
-  {
-    id: 'consultation',
-    icon: 'pi pi-question-circle',
-    label: 'Консультация / вопрос',
-    defaults: {
-      ticket_type: 'question',
-      category: 'consultation',
-    },
-  },
-  {
-    id: 'feature',
-    icon: 'pi pi-lightbulb',
-    label: 'Предложение / идея',
-    defaults: {
-      ticket_type: 'feature_request',
-      category: 'feature_request',
-    },
-  },
-  {
-    id: 'other',
-    icon: 'pi pi-box',
-    label: 'Другое',
-    defaults: {
-      product: 'other',
-    },
-  },
+  { id: 'cant_enter', icon: 'pi pi-sign-in', label: 'Не могу попасть / проехать', hint: 'Дверь или шлагбаум не открывается', defaults: { product: 'pass24_online', category: 'passes', urgent: true, ticket_type: 'incident' } },
+  { id: 'app_problem', icon: 'pi pi-mobile', label: 'Проблема с приложением', hint: 'Вылетает, не загружается, ошибка', defaults: { product: 'mobile_app', category: 'app_issues' } },
+  { id: 'mobile_key', icon: 'pi pi-key', label: 'Мобильный ключ', hint: 'BLE-ключ не работает, не активируется', defaults: { product: 'pass24_key' } },
+  { id: 'auto_recognition', icon: 'pi pi-car', label: 'Шлагбаум / номера', hint: 'Камера не распознаёт, шлагбаум не поднимается', defaults: { product: 'pass24_auto', category: 'recognition' } },
+  { id: 'pass_problem', icon: 'pi pi-id-card', label: 'Проблема с пропуском', hint: 'Не создаётся, не работает, отклонён', defaults: { product: 'pass24_online', category: 'passes' } },
+  { id: 'equipment', icon: 'pi pi-cog', label: 'Оборудование', hint: 'Считыватель, контроллер, камера', defaults: { product: 'equipment', category: 'equipment_issues' } },
+  { id: 'consultation', icon: 'pi pi-question-circle', label: 'Вопрос / консультация', hint: 'Как настроить, как работает', defaults: { ticket_type: 'question', category: 'consultation' } },
+  { id: 'feature', icon: 'pi pi-lightbulb', label: 'Предложение', hint: 'Идея по улучшению системы', defaults: { ticket_type: 'feature_request', category: 'feature_request' } },
+  { id: 'other', icon: 'pi pi-box', label: 'Другое', hint: 'Не нашли нужную тему', defaults: { product: 'other' } },
 ]
 
 const selectedCardId = ref<string | null>(null)
 
-// --- Form fields ---
+// Form fields
 const title = ref('')
 const description = ref('')
 const product = ref<TicketProduct | undefined>(undefined)
@@ -137,18 +60,16 @@ const category = ref<TicketCategory | undefined>(undefined)
 const ticketType = ref<TicketType | undefined>(undefined)
 const objectName = ref('')
 const accessPoint = ref('')
-const contactPhone = ref('')
 const company = ref('')
 const deviceType = ref<string | undefined>(undefined)
 const urgent = ref(false)
 
-// --- Dropdown options ---
 const productOptions = [
-  { label: 'PASS24.online', value: 'pass24_online' },
+  { label: 'PASS24.online (веб-портал)', value: 'pass24_online' },
   { label: 'Мобильное приложение', value: 'mobile_app' },
-  { label: 'PASS24.Key (мобильные ключи)', value: 'pass24_key' },
+  { label: 'PASS24.Key (BLE-ключи)', value: 'pass24_key' },
   { label: 'PASS24.control (СКУД)', value: 'pass24_control' },
-  { label: 'PASS24.auto (распознавание номеров)', value: 'pass24_auto' },
+  { label: 'PASS24.auto (номера авто)', value: 'pass24_auto' },
   { label: 'Оборудование', value: 'equipment' },
   { label: 'Интеграция', value: 'integration' },
   { label: 'Другое', value: 'other' },
@@ -168,39 +89,35 @@ const categoryOptions = [
 ]
 
 const ticketTypeOptions = [
-  { label: 'Инцидент (всё не работает)', value: 'incident' },
-  { label: 'Проблема', value: 'problem' },
-  { label: 'Вопрос', value: 'question' },
-  { label: 'Запрос на настройку', value: 'request' },
-  { label: 'Предложение / идея', value: 'feature_request' },
+  { label: 'Инцидент — всё не работает, срочно', value: 'incident' },
+  { label: 'Проблема — что-то не так', value: 'problem' },
+  { label: 'Вопрос — нужна консультация', value: 'question' },
+  { label: 'Запрос — настроить / изменить', value: 'request' },
+  { label: 'Предложение — идея по улучшению', value: 'feature_request' },
 ]
 
 const deviceTypeOptions = [
-  { label: 'iOS', value: 'ios' },
+  { label: 'iPhone (iOS)', value: 'ios' },
   { label: 'Android', value: 'android' },
-  { label: 'Веб', value: 'web' },
+  { label: 'Веб-браузер', value: 'web' },
   { label: 'Другое', value: 'other' },
 ]
 
-// --- Computed ---
 const showDeviceType = computed(() =>
   product.value === 'mobile_app' || product.value === 'pass24_key',
 )
 
-// --- Validation ---
+// Validation
+const emailInvalid = computed(() => submitted.value && (!email.value.trim() || !email.value.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)))
 const titleInvalid = computed(() => submitted.value && !title.value.trim())
 const descriptionInvalid = computed(() => submitted.value && !description.value.trim())
 
-// --- Actions ---
 function selectCard(card: QuickCard) {
   selectedCardId.value = card.id
-
-  // Apply defaults from the selected card
   product.value = card.defaults.product
   category.value = card.defaults.category
   ticketType.value = card.defaults.ticket_type
   urgent.value = card.defaults.urgent ?? false
-
   step.value = 2
 }
 
@@ -209,7 +126,6 @@ function goBackToStep1() {
   submitted.value = false
 }
 
-// Предзаполнение из query params (от AI-помощника)
 onMounted(() => {
   const q = route.query
   if (q.title || q.description) {
@@ -218,106 +134,74 @@ onMounted(() => {
     if (q.product) product.value = q.product as any
     if (q.category) category.value = q.category as any
     if (q.ticket_type) ticketType.value = q.ticket_type as any
-    step.value = 2  // Сразу на шаг 2
+    step.value = 2
+  }
+  // Pre-fill email from auth
+  if (auth.user) {
+    email.value = auth.user.email
+    contactName.value = auth.user.full_name
   }
 })
 
 async function onSubmit() {
   submitted.value = true
+  if (emailInvalid.value || titleInvalid.value || descriptionInvalid.value) return
 
-  if (titleInvalid.value || descriptionInvalid.value) return
-
-  // Гостевой режим
-  if (isGuest.value) {
-    if (!guestEmail.value.trim()) return
-
+  // Всегда через guest endpoint если не авторизован
+  if (!isAuthenticated()) {
     try {
-      const resp = await api.post<{ ticket_id: string; title: string }>('/tickets/guest', {
-        email: guestEmail.value.trim(),
-        name: guestName.value.trim() || undefined,
+      const resp = await api.post<{ ticket_id: string }>('/tickets/guest', {
+        email: email.value.trim(),
+        name: contactName.value.trim() || undefined,
         title: title.value.trim(),
         description: description.value.trim(),
         product: product.value,
         category: category.value,
         ticket_type: ticketType.value,
         object_name: objectName.value.trim() || undefined,
-        contact_phone: guestPhone.value.trim() || contactPhone.value.trim() || undefined,
+        contact_phone: contactPhone.value.trim() || undefined,
         urgent: urgent.value,
       })
-
       ticketCreated.value = true
       createdTicketId.value = resp.ticket_id.slice(0, 8)
-      toast.add({
-        severity: 'success',
-        summary: 'Заявка создана',
-        detail: `Обновления придут на ${guestEmail.value}`,
-        life: 5000,
-      })
+      toast.add({ severity: 'success', summary: 'Заявка создана', detail: `Обновления на ${email.value}`, life: 5000 })
     } catch (e: any) {
-      toast.add({
-        severity: 'error',
-        summary: 'Ошибка',
-        detail: e.message || 'Не удалось создать заявку',
-        life: 4000,
-      })
+      toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message || 'Не удалось создать', life: 4000 })
     }
     return
   }
 
-  // Авторизованный пользователь
-  const data: TicketCreate = {
-    title: title.value.trim(),
-    description: description.value.trim(),
-    product: product.value,
-    category: category.value,
-    ticket_type: ticketType.value,
-    object_name: objectName.value.trim() || undefined,
-    access_point: accessPoint.value.trim() || undefined,
-    contact_phone: contactPhone.value.trim() || undefined,
-    company: company.value.trim() || undefined,
-    device_type: showDeviceType.value ? deviceType.value : undefined,
-    urgent: urgent.value,
-  }
-
+  // Авторизован
   try {
-    const ticket = await store.createTicket(data)
-    toast.add({
-      severity: 'success',
-      summary: 'Заявка создана',
-      detail: `Заявка "${ticket.title}" создана`,
-      life: 3000,
+    const ticket = await store.createTicket({
+      title: title.value.trim(),
+      description: description.value.trim(),
+      product: product.value,
+      category: category.value,
+      ticket_type: ticketType.value,
+      object_name: objectName.value.trim() || undefined,
+      access_point: accessPoint.value.trim() || undefined,
+      contact_phone: contactPhone.value.trim() || undefined,
+      company: company.value.trim() || undefined,
+      device_type: showDeviceType.value ? deviceType.value : undefined,
+      urgent: urgent.value,
     })
+    toast.add({ severity: 'success', summary: 'Заявка создана', life: 3000 })
     router.push(`/tickets/${ticket.id}`)
   } catch (e: any) {
-    toast.add({
-      severity: 'error',
-      summary: 'Ошибка',
-      detail: e.message || 'Не удалось создать заявку',
-      life: 4000,
-    })
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
   }
-}
-
-function goBack() {
-  router.push('/')
 }
 </script>
 
 <template>
   <div class="create-ticket-page">
-    <Button
-      label="Назад к заявкам"
-      icon="pi pi-arrow-left"
-      severity="secondary"
-      text
-      class="back-button"
-      @click="goBack"
-    />
+    <Button label="На главную" icon="pi pi-arrow-left" severity="secondary" text class="back-button" @click="router.push('/')" />
 
-    <!-- Step 1: Quick select cards -->
+    <!-- Step 1: Quick cards -->
     <div v-if="step === 1" class="step-1">
       <h2 class="step-title">Что случилось?</h2>
-      <p class="step-subtitle">Выберите тему, чтобы мы быстрее помогли</p>
+      <p class="step-subtitle">Выберите тему — мы подберём нужную категорию автоматически</p>
 
       <div class="quick-cards-grid">
         <div
@@ -333,247 +217,171 @@ function goBack() {
         >
           <i :class="card.icon" class="quick-card-icon" />
           <span class="quick-card-label">{{ card.label }}</span>
+          <span class="quick-card-hint">{{ card.hint }}</span>
         </div>
       </div>
     </div>
 
-    <!-- Step 2: Details form -->
+    <!-- Step 2: Form -->
     <div v-if="step === 2" class="step-2">
-      <Button
-        label="Назад к выбору темы"
-        icon="pi pi-arrow-left"
-        severity="secondary"
-        text
-        class="back-to-step1"
-        @click="goBackToStep1"
-      />
+      <Button label="Назад к выбору темы" icon="pi pi-arrow-left" severity="secondary" text class="back-to-step1" @click="goBackToStep1" />
 
       <Card class="create-card">
         <template #title>Новая заявка</template>
         <template #content>
-          <!-- Успех (гостевой) -->
+          <!-- Success -->
           <div v-if="ticketCreated" class="ticket-success">
             <div class="success-icon"><i class="pi pi-check-circle" /></div>
             <h3>Заявка создана!</h3>
             <p>Номер: <strong>{{ createdTicketId }}</strong></p>
-            <p>Все обновления придут на <strong>{{ guestEmail }}</strong></p>
-            <p class="success-hint">Вы можете отвечать на письма — ответы будут добавлены в заявку.</p>
+            <p>Обновления придут на <strong>{{ email }}</strong></p>
+            <p class="success-hint">Вы можете отвечать на письма — ответы станут комментариями к заявке.</p>
             <Divider />
-            <p class="success-register">Хотите отслеживать заявки на портале?</p>
-            <Button
-              label="Зарегистрироваться"
-              icon="pi pi-user-plus"
-              severity="secondary"
-              outlined
-              @click="router.push('/register')"
-            />
-            <Button
-              label="На главную"
-              text
-              severity="secondary"
-              @click="router.push('/')"
-              class="ml-2"
-            />
+            <p class="success-register">Хотите отслеживать все заявки на портале в реальном времени?</p>
+            <Button label="Зарегистрироваться" icon="pi pi-user-plus" severity="secondary" outlined @click="router.push('/register')" />
+            <Button label="На главную" text severity="secondary" @click="router.push('/')" class="ml-2" />
           </div>
 
           <form v-else class="ticket-form" @submit.prevent="onSubmit">
-            <!-- Guest email section -->
-            <div v-if="isGuest" class="guest-section">
-              <div class="form-section-title">Ваши данные</div>
-              <p class="guest-hint">Укажите email — мы сообщим о решении. Регистрация не требуется.</p>
-              <div class="field">
-                <label for="guest-email">Email <span class="required">*</span></label>
-                <InputText
-                  id="guest-email"
-                  v-model="guestEmail"
-                  placeholder="your@email.com"
-                  type="email"
-                  :invalid="submitted && !guestEmail.trim()"
-                  fluid
-                />
-              </div>
-              <div class="form-row">
-                <div class="field">
-                  <label for="guest-name">Имя</label>
-                  <InputText id="guest-name" v-model="guestName" placeholder="Как к вам обращаться" fluid />
-                </div>
-                <div class="field">
-                  <label for="guest-phone">Телефон</label>
-                  <InputText id="guest-phone" v-model="guestPhone" placeholder="+7..." fluid />
-                </div>
-              </div>
-              <Divider />
-            </div>
-
-            <!-- Section: Main info -->
-            <div class="form-section-title">Описание проблемы</div>
+            <!-- Email — обязательно для всех -->
+            <div class="form-section-title"><i class="pi pi-envelope section-icon" /> Контактные данные</div>
 
             <div class="field">
-              <label for="title">Тема <span class="required">*</span></label>
+              <label for="email">Электронная почта <span class="required">*</span></label>
+              <InputText
+                id="email"
+                v-model="email"
+                placeholder="ivan@example.com"
+                type="email"
+                :invalid="emailInvalid"
+                :disabled="!!auth.user"
+                fluid
+              />
+              <small class="field-help">На этот адрес придёт подтверждение и все обновления по заявке. Вы сможете отвечать на письма.</small>
+              <small v-if="emailInvalid" class="field-error">Укажите корректный email — это обязательное поле</small>
+            </div>
+
+            <div class="form-row">
+              <div class="field">
+                <label for="contactName">Ваше имя</label>
+                <InputText
+                  id="contactName"
+                  v-model="contactName"
+                  placeholder="Иван Петров"
+                  :disabled="!!auth.user"
+                  fluid
+                />
+                <small class="field-help">Как к вам обращаться в переписке</small>
+              </div>
+              <div class="field">
+                <label for="contactPhone">Телефон</label>
+                <InputText id="contactPhone" v-model="contactPhone" placeholder="+7 (999) 123-45-67" fluid />
+                <small class="field-help">Для срочной связи — если проблема критичная</small>
+              </div>
+            </div>
+
+            <Divider />
+
+            <!-- Описание -->
+            <div class="form-section-title"><i class="pi pi-file-edit section-icon" /> Описание проблемы</div>
+
+            <div class="field">
+              <label for="title">Тема заявки <span class="required">*</span></label>
               <InputText
                 id="title"
                 v-model="title"
-                placeholder="Кратко опишите проблему"
+                placeholder="Например: Не открывается дверь в подъезд 3"
                 :invalid="titleInvalid"
                 fluid
               />
-              <small v-if="titleInvalid" class="field-error">Укажите тему заявки</small>
+              <small class="field-help">Кратко опишите суть проблемы — это будет заголовок заявки</small>
+              <small v-if="titleInvalid" class="field-error">Укажите тему — без неё не получится создать заявку</small>
             </div>
 
             <div class="field">
-              <label for="description">Описание <span class="required">*</span></label>
+              <label for="description">Подробное описание <span class="required">*</span></label>
               <Textarea
                 id="description"
                 v-model="description"
-                placeholder="Подробно опишите проблему: что произошло, когда, при каких условиях"
+                placeholder="Что произошло? Когда? Что вы уже пробовали? Какую ошибку видите?"
                 :invalid="descriptionInvalid"
-                rows="5"
+                rows="4"
                 auto-resize
                 fluid
               />
-              <small v-if="descriptionInvalid" class="field-error">Укажите описание проблемы</small>
+              <small class="field-help">Чем подробнее — тем быстрее решим. Укажите: что делали, что ожидали, что получили</small>
+              <small v-if="descriptionInvalid" class="field-error">Опишите проблему подробнее</small>
             </div>
 
             <Divider />
 
-            <!-- Section: Classification -->
-            <div class="form-section-title">Классификация</div>
+            <!-- Объект -->
+            <div class="form-section-title"><i class="pi pi-building section-icon" /> Где проблема</div>
 
-            <div class="field">
-              <label for="product">Продукт</label>
-              <Select
-                id="product"
-                v-model="product"
-                :options="productOptions"
-                option-label="label"
-                option-value="value"
-                placeholder="Выберите продукт"
-                fluid
-              />
-            </div>
-
-            <div class="field">
-              <label for="category">Категория</label>
-              <Select
-                id="category"
-                v-model="category"
-                :options="categoryOptions"
-                option-label="label"
-                option-value="value"
-                placeholder="Выберите категорию"
-                fluid
-              />
-            </div>
-
-            <div class="field">
-              <label for="ticketType">Тип обращения</label>
-              <Select
-                id="ticketType"
-                v-model="ticketType"
-                :options="ticketTypeOptions"
-                option-label="label"
-                option-value="value"
-                placeholder="Выберите тип"
-                fluid
-              />
-            </div>
-
-            <Divider />
-
-            <!-- Section: Object info -->
-            <div class="form-section-title">Объект и точка доступа</div>
-
-            <div class="field">
-              <label for="objectName">Название объекта</label>
-              <InputText
-                id="objectName"
-                v-model="objectName"
-                placeholder="ЖК Солнечный, БЦ Меридиан"
-                fluid
-              />
-            </div>
-
-            <div class="field">
-              <label for="accessPoint">Точка доступа</label>
-              <InputText
-                id="accessPoint"
-                v-model="accessPoint"
-                placeholder="КПП-1, подъезд 3"
-                fluid
-              />
-            </div>
-
-            <Divider />
-
-            <!-- Section: Contact info -->
-            <div class="form-section-title">Контактная информация</div>
-
-            <div class="field">
-              <label for="contactPhone">Телефон для связи</label>
-              <InputText
-                id="contactPhone"
-                v-model="contactPhone"
-                placeholder="+7 (999) 123-45-67"
-                fluid
-              />
-            </div>
-
-            <div class="field">
-              <label for="company">Компания</label>
-              <InputText
-                id="company"
-                v-model="company"
-                placeholder="Название управляющей компании"
-                fluid
-              />
-            </div>
-
-            <!-- Section: Device (conditional) -->
-            <template v-if="showDeviceType">
-              <Divider />
-
-              <div class="form-section-title">Устройство</div>
-
+            <div class="form-row">
               <div class="field">
-                <label for="deviceType">Тип устройства</label>
-                <Select
-                  id="deviceType"
-                  v-model="deviceType"
-                  :options="deviceTypeOptions"
-                  option-label="label"
-                  option-value="value"
-                  placeholder="Выберите тип устройства"
-                  fluid
-                />
+                <label for="objectName">Название объекта</label>
+                <InputText id="objectName" v-model="objectName" placeholder="ЖК Солнечный, БЦ Меридиан, КП Трувиль" fluid />
+                <small class="field-help">Жилой комплекс, бизнес-центр или коттеджный посёлок</small>
               </div>
-            </template>
+              <div class="field">
+                <label for="accessPoint">Точка доступа</label>
+                <InputText id="accessPoint" v-model="accessPoint" placeholder="КПП-1, подъезд 3, парковка B2" fluid />
+                <small class="field-help">Конкретная дверь, шлагбаум или КПП</small>
+              </div>
+            </div>
 
             <Divider />
 
-            <!-- Urgent checkbox -->
-            <div class="field-check">
-              <Checkbox
-                v-model="urgent"
-                input-id="urgent"
-                :binary="true"
-              />
-              <label for="urgent">Не могу попасть / проехать прямо сейчас</label>
+            <!-- Классификация (складываемая) -->
+            <div class="form-section-title"><i class="pi pi-tag section-icon" /> Классификация</div>
+
+            <div class="form-row">
+              <div class="field">
+                <label for="product">Продукт</label>
+                <Select id="product" v-model="product" :options="productOptions" option-label="label" option-value="value" placeholder="Какой продукт затронут?" fluid />
+                <small class="field-help">Если не уверены — оставьте пустым, мы определим сами</small>
+              </div>
+              <div class="field">
+                <label for="category">Категория</label>
+                <Select id="category" v-model="category" :options="categoryOptions" option-label="label" option-value="value" placeholder="Тип проблемы" fluid />
+                <small class="field-help">Помогает нам быстрее направить заявку нужному специалисту</small>
+              </div>
             </div>
 
-            <!-- Actions -->
+            <div class="form-row">
+              <div class="field">
+                <label for="ticketType">Тип обращения</label>
+                <Select id="ticketType" v-model="ticketType" :options="ticketTypeOptions" option-label="label" option-value="value" placeholder="Что нужно?" fluid />
+                <small class="field-help">Инцидент = срочно, всё сломалось. Вопрос = нужна консультация</small>
+              </div>
+              <div class="field" v-if="showDeviceType">
+                <label for="deviceType">Устройство</label>
+                <Select id="deviceType" v-model="deviceType" :options="deviceTypeOptions" option-label="label" option-value="value" placeholder="На каком устройстве?" fluid />
+                <small class="field-help">Поможет воспроизвести проблему на аналогичном устройстве</small>
+              </div>
+              <div class="field" v-if="!showDeviceType">
+                <label for="company">Компания / УК</label>
+                <InputText id="company" v-model="company" placeholder="ООО «Управляющая компания»" fluid />
+                <small class="field-help">Название вашей управляющей компании, если актуально</small>
+              </div>
+            </div>
+
+            <Divider />
+
+            <!-- Срочность -->
+            <div class="field-check urgent-check">
+              <Checkbox v-model="urgent" input-id="urgent" :binary="true" />
+              <div>
+                <label for="urgent">Не могу попасть / проехать прямо сейчас</label>
+                <small class="field-help-inline">Отметьте, если вы заблокированы — мы отреагируем в первую очередь</small>
+              </div>
+            </div>
+
+            <!-- Submit -->
             <div class="form-actions">
-              <Button
-                label="Отмена"
-                severity="secondary"
-                outlined
-                @click="goBack"
-              />
-              <Button
-                type="submit"
-                label="Создать заявку"
-                icon="pi pi-check"
-                :loading="store.loading"
-              />
+              <Button label="Отмена" severity="secondary" outlined @click="router.push('/')" />
+              <Button type="submit" label="Создать заявку" icon="pi pi-check" :loading="store.loading" />
             </div>
           </form>
         </template>
@@ -591,185 +399,62 @@ function goBack() {
   margin: 0 auto;
 }
 
-.back-button {
-  align-self: flex-start;
-}
+.back-button { align-self: flex-start; }
 
-/* Step 1 */
-.step-title {
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin: 0;
-  color: var(--p-text-color);
-}
+.step-title { font-size: 1.5rem; font-weight: 600; margin: 0; }
+.step-subtitle { font-size: 0.95rem; color: #64748b; margin: 4px 0 16px; }
 
-.step-subtitle {
-  font-size: 0.95rem;
-  color: var(--p-text-muted-color);
-  margin: 0.25rem 0 1rem;
-}
-
-.quick-cards-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-}
-
-@media (max-width: 768px) {
-  .quick-cards-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (max-width: 480px) {
-  .quick-cards-grid {
-    grid-template-columns: 1fr;
-  }
-}
+/* Quick cards */
+.quick-cards-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+@media (max-width: 768px) { .quick-cards-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px) { .quick-cards-grid { grid-template-columns: 1fr; } }
 
 .quick-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  padding: 1.25rem 1rem;
-  border: 1px solid var(--p-surface-200);
-  border-radius: var(--p-border-radius);
-  background: var(--p-surface-0);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-align: center;
-  min-height: 100px;
-  user-select: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; padding: 18px 14px; border: 1px solid #e2e8f0; border-radius: 12px;
+  background: white; cursor: pointer; transition: all 0.2s; text-align: center; min-height: 110px;
 }
-
-.quick-card:hover {
-  border-color: var(--p-primary-color);
-  background: var(--p-primary-50);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-
-.quick-card:focus-visible {
-  outline: 2px solid var(--p-primary-color);
-  outline-offset: 2px;
-}
-
-.quick-card.selected {
-  border-color: var(--p-primary-color);
-  background: var(--p-primary-50);
-}
-
-.quick-card-icon {
-  font-size: 1.75rem;
-  color: var(--p-primary-color);
-}
-
-.quick-card-label {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--p-text-color);
-  line-height: 1.3;
-}
+.quick-card:hover { border-color: #3b82f6; background: #eff6ff; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+.quick-card.selected { border-color: #3b82f6; background: #eff6ff; }
+.quick-card-icon { font-size: 24px; color: #3b82f6; }
+.quick-card-label { font-size: 14px; font-weight: 600; color: #1e293b; }
+.quick-card-hint { font-size: 12px; color: #94a3b8; line-height: 1.3; }
 
 /* Step 2 */
-.back-to-step1 {
-  align-self: flex-start;
-  margin-bottom: -8px;
-}
+.back-to-step1 { align-self: flex-start; margin-bottom: -8px; }
 
-.create-card {
-  width: 100%;
-}
-
-/* Success state */
-.ticket-success {
-  text-align: center;
-  padding: 24px 0;
-}
-.success-icon {
-  font-size: 48px;
-  color: #22c55e;
-  margin-bottom: 12px;
-}
-.ticket-success h3 {
-  margin: 0 0 8px;
-  color: #1e293b;
-}
-.ticket-success p {
-  color: #475569;
-  margin: 4px 0;
-}
-.success-hint {
-  font-size: 13px;
-  color: #64748b !important;
-  margin-top: 8px !important;
-}
-.success-register {
-  font-weight: 600;
-  color: #1e293b !important;
-  margin-bottom: 12px !important;
-}
+/* Success */
+.ticket-success { text-align: center; padding: 24px 0; }
+.success-icon { font-size: 48px; color: #22c55e; margin-bottom: 12px; }
+.ticket-success h3 { margin: 0 0 8px; color: #1e293b; }
+.ticket-success p { color: #475569; margin: 4px 0; }
+.success-hint { font-size: 13px; color: #64748b !important; margin-top: 8px !important; }
+.success-register { font-weight: 600; color: #1e293b !important; margin-bottom: 12px !important; }
 .ml-2 { margin-left: 8px; }
 
-/* Guest section */
-.guest-section { margin-bottom: 8px; }
-.guest-hint {
-  font-size: 13px;
-  color: #64748b;
-  margin: -4px 0 12px;
-}
-
-.ticket-form {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-}
+/* Form */
+.ticket-form { display: flex; flex-direction: column; gap: 16px; }
 
 .form-section-title {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--p-text-color);
-  margin-bottom: -0.5rem;
+  font-size: 15px; font-weight: 600; color: #1e293b;
+  display: flex; align-items: center; gap: 8px; margin-bottom: -4px;
 }
+.section-icon { font-size: 16px; color: #3b82f6; }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { font-weight: 500; font-size: 14px; color: #334155; }
+.required { color: #ef4444; }
 
-.field label {
-  font-weight: 500;
-  font-size: 0.875rem;
-}
+.field-help { font-size: 12px; color: #94a3b8; line-height: 1.4; }
+.field-error { font-size: 12px; color: #ef4444; }
 
-.required {
-  color: var(--p-red-500);
-}
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } }
 
-.field-error {
-  color: var(--p-red-500);
-  font-size: 0.75rem;
-}
+.field-check { display: flex; align-items: flex-start; gap: 10px; }
+.field-check label { font-weight: 500; font-size: 14px; cursor: pointer; color: #1e293b; }
+.field-help-inline { display: block; font-size: 12px; color: #94a3b8; margin-top: 2px; }
+.urgent-check { background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 12px 14px; }
 
-.field-check {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.field-check label {
-  font-weight: 500;
-  font-size: 0.875rem;
-  cursor: pointer;
-}
-
-.form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 0.5rem;
-}
+.form-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 8px; }
 </style>
