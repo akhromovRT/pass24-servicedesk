@@ -7,6 +7,7 @@ import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Password from 'primevue/password'
 import Select from 'primevue/select'
+import MultiSelect from 'primevue/multiselect'
 import Dialog from 'primevue/dialog'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
@@ -60,15 +61,37 @@ const roleOptions = [
   { label: 'Администратор', value: 'admin' },
 ]
 
+// Filters
+const filterRoles = ref<string[]>([])
+const filterActive = ref<string>('all')  // 'all' | 'active' | 'inactive'
+
+const activeStatusOptions = [
+  { label: 'Все', value: 'all' },
+  { label: 'Активные', value: 'active' },
+  { label: 'Заблокированные', value: 'inactive' },
+]
+
 async function loadUsers() {
   usersLoading.value = true
   try {
-    users.value = await api.get<User[]>('/auth/users')
+    const params = new URLSearchParams()
+    if (filterRoles.value.length) params.set('role', filterRoles.value.join(','))
+    if (filterActive.value === 'active') params.set('is_active', 'true')
+    if (filterActive.value === 'inactive') params.set('is_active', 'false')
+
+    const qs = params.toString()
+    users.value = await api.get<User[]>(`/auth/users${qs ? '?' + qs : ''}`)
   } catch (e: any) {
     toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
   } finally {
     usersLoading.value = false
   }
+}
+
+function resetFilters() {
+  filterRoles.value = []
+  filterActive.value = 'all'
+  loadUsers()
 }
 
 // Create user
@@ -449,6 +472,39 @@ onMounted(() => {
         <template #content>
           <p class="intro">Управление учётными записями агентов поддержки, администраторов и пользователей портала.</p>
 
+          <!-- Filters -->
+          <div class="users-filters">
+            <MultiSelect
+              v-model="filterRoles"
+              :options="roleOptions"
+              option-label="label"
+              option-value="value"
+              placeholder="Все роли"
+              :max-selected-labels="2"
+              selected-items-label="{0} ролей"
+              class="filter-select"
+              @change="loadUsers"
+            />
+            <Select
+              v-model="filterActive"
+              :options="activeStatusOptions"
+              option-label="label"
+              option-value="value"
+              class="filter-select"
+              @change="loadUsers"
+            />
+            <Button
+              v-if="filterRoles.length || filterActive !== 'all'"
+              label="Сбросить"
+              icon="pi pi-times"
+              text
+              severity="secondary"
+              size="small"
+              @click="resetFilters"
+            />
+            <div class="filter-counter">Найдено: {{ users.length }}</div>
+          </div>
+
           <DataTable :value="users" :loading="usersLoading" class="users-table" striped-rows>
             <template #empty><div class="empty-msg">Пользователи не найдены</div></template>
 
@@ -692,6 +748,25 @@ a { color: #3b82f6; }
 
 /* Users management */
 .content-title-row { display: flex; justify-content: space-between; align-items: center; }
+
+.users-filters {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 12px 0;
+  flex-wrap: wrap;
+}
+.filter-select { min-width: 180px; }
+.filter-counter {
+  margin-left: auto;
+  font-size: 13px;
+  color: #64748b;
+}
+@media (max-width: 640px) {
+  .users-filters { flex-direction: column; align-items: stretch; }
+  .filter-select { min-width: 100%; }
+  .filter-counter { margin-left: 0; }
+}
 
 .users-table { margin-top: 12px; }
 

@@ -122,9 +122,24 @@ class AdminResetPassword(BaseModel):
 async def list_users(
     session: AsyncSession = Depends(get_session),
     _: User = Depends(require_role(UserRole.ADMIN)),
+    role: Optional[str] = None,
+    is_active: Optional[bool] = None,
 ) -> list[UserRead]:
-    """Список всех пользователей (только для админа)."""
-    result = await session.execute(select(User).order_by(User.created_at.desc()))
+    """Список всех пользователей с фильтрами по роли и статусу."""
+    query = select(User).order_by(User.created_at.desc())
+
+    if role:
+        # Поддержка нескольких ролей через запятую
+        roles = [r.strip() for r in role.split(",") if r.strip()]
+        if len(roles) == 1:
+            query = query.where(User.role == roles[0])
+        elif roles:
+            query = query.where(User.role.in_(roles))
+
+    if is_active is not None:
+        query = query.where(User.is_active == is_active)
+
+    result = await session.execute(query)
     return [UserRead.model_validate(u) for u in result.scalars().all()]
 
 
