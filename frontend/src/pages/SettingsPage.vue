@@ -1,8 +1,26 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import Card from 'primevue/card'
 import Tag from 'primevue/tag'
 import Divider from 'primevue/divider'
+import Button from 'primevue/button'
+import InputText from 'primevue/inputtext'
+import Password from 'primevue/password'
+import Select from 'primevue/select'
+import Dialog from 'primevue/dialog'
+import DataTable from 'primevue/datatable'
+import Column from 'primevue/column'
+import { useToast } from 'primevue/usetoast'
+import { useConfirm } from 'primevue/useconfirm'
+import ConfirmDialog from 'primevue/confirmdialog'
+import { api } from '../api/client'
+import { useAuthStore } from '../stores/auth'
+import type { User } from '../types'
+
+const auth = useAuthStore()
+const toast = useToast()
+const confirm = useConfirm()
+const isAdmin = computed(() => auth.user?.role === 'admin')
 
 interface SettingsSection {
   id: string
@@ -10,30 +28,190 @@ interface SettingsSection {
   icon: string
   description: string
   color: string
+  adminOnly?: boolean
 }
 
-const sections: SettingsSection[] = [
-  {
-    id: 'email',
-    title: 'Подключение почты',
-    icon: 'pi pi-envelope',
-    description: 'SMTP / IMAP для отправки и приёма email-обращений',
-    color: '#3b82f6',
-  },
-  {
-    id: 'telegram',
-    title: 'Telegram-бот',
-    icon: 'pi pi-send',
-    description: 'Настройка бота для приёма заявок из Telegram',
-    color: '#0ea5e9',
-  },
-]
+const sections = computed<SettingsSection[]>(() => {
+  const base: SettingsSection[] = [
+    { id: 'email', title: 'Подключение почты', icon: 'pi pi-envelope', description: 'SMTP / IMAP для отправки и приёма email-обращений', color: '#3b82f6' },
+    { id: 'telegram', title: 'Telegram-бот', icon: 'pi pi-send', description: 'Настройка бота для приёма заявок из Telegram', color: '#0ea5e9' },
+  ]
+  if (isAdmin.value) {
+    base.push({ id: 'users', title: 'Пользователи и агенты', icon: 'pi pi-users', description: 'Управление учётными записями, ролями, паролями', color: '#8b5cf6', adminOnly: true })
+  }
+  return base
+})
 
 const activeSection = ref<string | null>('email')
 
 function toggleSection(id: string) {
   activeSection.value = activeSection.value === id ? null : id
+  if (id === 'users' && activeSection.value === 'users') loadUsers()
 }
+
+// ─── Users management ────────────────────────────────────────────
+const users = ref<User[]>([])
+const usersLoading = ref(false)
+
+const roleOptions = [
+  { label: 'Житель', value: 'resident' },
+  { label: 'Админ УК', value: 'property_manager' },
+  { label: 'Агент поддержки', value: 'support_agent' },
+  { label: 'Администратор', value: 'admin' },
+]
+
+async function loadUsers() {
+  usersLoading.value = true
+  try {
+    users.value = await api.get<User[]>('/auth/users')
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+  } finally {
+    usersLoading.value = false
+  }
+}
+
+// Create user
+const showCreateDialog = ref(false)
+const newUserEmail = ref('')
+const newUserName = ref('')
+const newUserPassword = ref('')
+const newUserRole = ref<string>('support_agent')
+const creating = ref(false)
+
+function openCreateDialog() {
+  newUserEmail.value = ''
+  newUserName.value = ''
+  newUserPassword.value = ''
+  newUserRole.value = 'support_agent'
+  showCreateDialog.value = true
+}
+
+async function createUser() {
+  if (!newUserEmail.value || !newUserPassword.value || !newUserName.value) {
+    toast.add({ severity: 'warn', summary: 'Заполните все поля', life: 3000 })
+    return
+  }
+  creating.value = true
+  try {
+    await api.post('/auth/users', {
+      email: newUserEmail.value.trim(),
+      password: newUserPassword.value,
+      full_name: newUserName.value.trim(),
+      role: newUserRole.value,
+    })
+    toast.add({ severity: 'success', summary: 'Пользователь создан', life: 3000 })
+    showCreateDialog.value = false
+    loadUsers()
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+  } finally {
+    creating.value = false
+  }
+}
+
+// Reset password
+const showPasswordDialog = ref(false)
+const passwordUserId = ref('')
+const passwordUserEmail = ref('')
+const resetPassword = ref('')
+const resetting = ref(false)
+
+function openPasswordDialog(user: User) {
+  passwordUserId.value = user.id
+  passwordUserEmail.value = user.email
+  resetPassword.value = ''
+  showPasswordDialog.value = true
+}
+
+async function doResetPassword() {
+  if (resetPassword.value.length < 6) {
+    toast.add({ severity: 'warn', summary: 'Минимум 6 символов', life: 3000 })
+    return
+  }
+  resetting.value = true
+  try {
+    await api.post(`/auth/users/${passwordUserId.value}/password`, { new_password: resetPassword.value })
+    toast.add({ severity: 'success', summary: 'Пароль изменён', detail: passwordUserEmail.value, life: 3000 })
+    showPasswordDialog.value = false
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+  } finally {
+    resetting.value = false
+  }
+}
+
+// Change role
+async function updateRole(user: User, newRole: string) {
+  try {
+    await api.put(`/auth/users/${user.id}`, { role: newRole })
+    // PATCH не поддержан api client — используем post fallback
+  } catch {}
+  // Используем fetch напрямую для PATCH
+  try {
+    const token = localStorage.getItem('access_token')
+    const resp = await fetch(`/auth/users/${user.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ role: newRole }),
+    })
+    if (resp.ok) {
+      toast.add({ severity: 'success', summary: 'Роль изменена', life: 2000 })
+      loadUsers()
+    } else {
+      toast.add({ severity: 'error', summary: 'Ошибка смены роли', life: 3000 })
+    }
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 3000 })
+  }
+}
+
+// Toggle active
+async function toggleActive(user: User) {
+  try {
+    const token = localStorage.getItem('access_token')
+    const resp = await fetch(`/auth/users/${user.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ is_active: !user.is_active }),
+    })
+    if (resp.ok) {
+      toast.add({ severity: 'success', summary: user.is_active ? 'Деактивирован' : 'Активирован', life: 2000 })
+      loadUsers()
+    }
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 3000 })
+  }
+}
+
+// Delete user
+function confirmDelete(user: User) {
+  confirm.require({
+    message: `Удалить пользователя ${user.email}? Это действие нельзя отменить.`,
+    header: 'Удаление пользователя',
+    icon: 'pi pi-exclamation-triangle',
+    acceptClass: 'p-button-danger',
+    acceptLabel: 'Удалить',
+    rejectLabel: 'Отмена',
+    accept: async () => {
+      try {
+        await api.delete(`/auth/users/${user.id}`)
+        toast.add({ severity: 'success', summary: 'Удалён', life: 2000 })
+        loadUsers()
+      } catch (e: any) {
+        toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+      }
+    },
+  })
+}
+
+function formatDate(d: string) {
+  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(d))
+}
+
+onMounted(() => {
+  if (isAdmin.value && activeSection.value === 'users') loadUsers()
+})
 </script>
 
 <template>
@@ -258,6 +436,136 @@ function toggleSection(id: string) {
         </template>
       </Card>
     </Transition>
+
+    <!-- Users management (admin only) -->
+    <Transition name="slide-down">
+      <Card v-if="activeSection === 'users' && isAdmin" class="settings-content">
+        <template #title>
+          <div class="content-title-row">
+            <div class="content-title"><i class="pi pi-users" style="color:#8b5cf6" /> Пользователи и агенты</div>
+            <Button label="Добавить пользователя" icon="pi pi-plus" size="small" @click="openCreateDialog" />
+          </div>
+        </template>
+        <template #content>
+          <p class="intro">Управление учётными записями агентов поддержки, администраторов и пользователей портала.</p>
+
+          <DataTable :value="users" :loading="usersLoading" class="users-table" striped-rows>
+            <template #empty><div class="empty-msg">Пользователи не найдены</div></template>
+
+            <Column field="full_name" header="ФИО">
+              <template #body="{ data }">
+                <div class="user-cell">
+                  <div class="user-avatar" :class="{ inactive: !data.is_active }">
+                    {{ (data.full_name || data.email)[0].toUpperCase() }}
+                  </div>
+                  <div>
+                    <div class="user-name">{{ data.full_name }}</div>
+                    <div class="user-email">{{ data.email }}</div>
+                  </div>
+                </div>
+              </template>
+            </Column>
+
+            <Column field="role" header="Роль" style="width: 180px">
+              <template #body="{ data }">
+                <Select
+                  :model-value="data.role"
+                  :options="roleOptions"
+                  option-label="label"
+                  option-value="value"
+                  class="role-select"
+                  @update:model-value="updateRole(data, $event)"
+                />
+              </template>
+            </Column>
+
+            <Column field="is_active" header="Статус" style="width: 110px">
+              <template #body="{ data }">
+                <Tag
+                  :value="data.is_active ? 'Активен' : 'Заблокирован'"
+                  :severity="data.is_active ? 'success' : 'danger'"
+                  :class="{ 'cursor-pointer': true }"
+                  @click="toggleActive(data)"
+                />
+              </template>
+            </Column>
+
+            <Column field="created_at" header="Создан" style="width: 120px">
+              <template #body="{ data }">
+                <span class="user-date">{{ formatDate(data.created_at) }}</span>
+              </template>
+            </Column>
+
+            <Column header="Действия" style="width: 140px">
+              <template #body="{ data }">
+                <div class="actions-cell">
+                  <Button
+                    icon="pi pi-key"
+                    severity="secondary"
+                    outlined
+                    size="small"
+                    v-tooltip.top="'Сменить пароль'"
+                    @click="openPasswordDialog(data)"
+                  />
+                  <Button
+                    icon="pi pi-trash"
+                    severity="danger"
+                    outlined
+                    size="small"
+                    v-tooltip.top="'Удалить'"
+                    :disabled="data.id === auth.user?.id"
+                    @click="confirmDelete(data)"
+                  />
+                </div>
+              </template>
+            </Column>
+          </DataTable>
+        </template>
+      </Card>
+    </Transition>
+
+    <!-- Create user dialog -->
+    <Dialog v-model:visible="showCreateDialog" modal header="Новый пользователь" :style="{ width: '400px' }">
+      <div class="dialog-form">
+        <div class="field">
+          <label>Email</label>
+          <InputText v-model="newUserEmail" placeholder="agent@pass24online.ru" fluid />
+        </div>
+        <div class="field">
+          <label>ФИО</label>
+          <InputText v-model="newUserName" placeholder="Иванов Иван Иванович" fluid />
+        </div>
+        <div class="field">
+          <label>Пароль (минимум 6 символов)</label>
+          <Password v-model="newUserPassword" :feedback="false" toggle-mask fluid input-class="w-full" />
+        </div>
+        <div class="field">
+          <label>Роль</label>
+          <Select v-model="newUserRole" :options="roleOptions" option-label="label" option-value="value" fluid />
+        </div>
+      </div>
+      <template #footer>
+        <Button label="Отмена" severity="secondary" text @click="showCreateDialog = false" />
+        <Button label="Создать" icon="pi pi-check" :loading="creating" @click="createUser" />
+      </template>
+    </Dialog>
+
+    <!-- Reset password dialog -->
+    <Dialog v-model:visible="showPasswordDialog" modal header="Сменить пароль" :style="{ width: '400px' }">
+      <div class="dialog-form">
+        <p class="dialog-hint">Пользователь: <strong>{{ passwordUserEmail }}</strong></p>
+        <div class="field">
+          <label>Новый пароль (минимум 6 символов)</label>
+          <Password v-model="resetPassword" :feedback="false" toggle-mask fluid input-class="w-full" />
+        </div>
+      </div>
+      <template #footer>
+        <Button label="Отмена" severity="secondary" text @click="showPasswordDialog = false" />
+        <Button label="Сменить" icon="pi pi-check" :loading="resetting" @click="doResetPassword" />
+      </template>
+    </Dialog>
+
+    <ConfirmDialog />
   </div>
 </template>
 
@@ -381,4 +689,37 @@ code {
 .info-box code { background: #dbeafe; color: #1e3a8a; }
 
 a { color: #3b82f6; }
+
+/* Users management */
+.content-title-row { display: flex; justify-content: space-between; align-items: center; }
+
+.users-table { margin-top: 12px; }
+
+.user-cell { display: flex; align-items: center; gap: 10px; }
+.user-avatar {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+  color: white; font-weight: 600; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.user-avatar.inactive { background: linear-gradient(135deg, #94a3b8, #64748b); }
+.user-name { font-size: 14px; font-weight: 500; color: #1e293b; }
+.user-email { font-size: 12px; color: #94a3b8; }
+.user-date { font-size: 13px; color: #64748b; }
+
+.role-select { width: 100%; font-size: 13px; }
+.role-select :deep(.p-select-label) { padding: 6px 10px; font-size: 13px; }
+
+.actions-cell { display: flex; gap: 6px; }
+
+.cursor-pointer { cursor: pointer; }
+
+.empty-msg { text-align: center; padding: 32px; color: #94a3b8; }
+
+/* Dialog */
+.dialog-form { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
+.dialog-form .field { display: flex; flex-direction: column; gap: 6px; }
+.dialog-form label { font-size: 13px; font-weight: 500; color: #334155; }
+.dialog-hint { color: #64748b; font-size: 13px; margin: 0 0 8px; }
 </style>
