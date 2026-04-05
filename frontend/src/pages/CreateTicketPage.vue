@@ -37,63 +37,78 @@ const onBehalfOfMode = ref(
 // Если включён режим "от имени клиента" — поля пустые
 const email = ref(onBehalfOfMode.value ? '' : (auth.user?.email || ''))
 const contactName = ref(onBehalfOfMode.value ? '' : (auth.user?.full_name || ''))
-const contactPhone = ref('')
 
 // ------------------------------------------------------------------
-// Маска для телефона: отображение +7 (XXX) XXX-XX-XX, хранение +7XXXXXXXXXX
+// Телефон: отдельный код страны + цифры. Хранение: +<code><digits>
 // ------------------------------------------------------------------
-function formatPhone(raw: string): string {
-  // Оставляем только цифры
-  let digits = raw.replace(/\D/g, '')
-  // Если начинается с 8 или 7 — отбрасываем первую цифру
-  if (digits.startsWith('8') || digits.startsWith('7')) {
-    digits = digits.slice(1)
-  }
-  // Ограничиваем 10 цифрами после +7
-  digits = digits.slice(0, 10)
-
-  if (!digits) return ''
-
-  let formatted = '+7'
-  if (digits.length > 0) formatted += ' (' + digits.slice(0, 3)
-  if (digits.length >= 3) formatted += ')'
-  if (digits.length > 3) formatted += ' ' + digits.slice(3, 6)
-  if (digits.length > 6) formatted += '-' + digits.slice(6, 8)
-  if (digits.length > 8) formatted += '-' + digits.slice(8, 10)
-  return formatted
+interface CountryCode {
+  code: string         // "+7"
+  flag: string         // "🇷🇺"
+  name: string         // "Россия"
+  length: number       // макс. цифр после кода
 }
 
-function onPhoneInput(e: Event) {
+const countryCodes: CountryCode[] = [
+  { code: '+7',   flag: '🇷🇺', name: 'Россия / Казахстан',  length: 10 },
+  { code: '+375', flag: '🇧🇾', name: 'Беларусь',            length: 9  },
+  { code: '+380', flag: '🇺🇦', name: 'Украина',             length: 9  },
+  { code: '+374', flag: '🇦🇲', name: 'Армения',             length: 8  },
+  { code: '+994', flag: '🇦🇿', name: 'Азербайджан',         length: 9  },
+  { code: '+995', flag: '🇬🇪', name: 'Грузия',              length: 9  },
+  { code: '+996', flag: '🇰🇬', name: 'Киргизия',            length: 9  },
+  { code: '+992', flag: '🇹🇯', name: 'Таджикистан',         length: 9  },
+  { code: '+993', flag: '🇹🇲', name: 'Туркменистан',        length: 8  },
+  { code: '+998', flag: '🇺🇿', name: 'Узбекистан',          length: 9  },
+  { code: '+373', flag: '🇲🇩', name: 'Молдова',             length: 8  },
+  { code: '+371', flag: '🇱🇻', name: 'Латвия',              length: 8  },
+  { code: '+370', flag: '🇱🇹', name: 'Литва',               length: 8  },
+  { code: '+372', flag: '🇪🇪', name: 'Эстония',             length: 8  },
+  { code: '+1',   flag: '🇺🇸', name: 'США / Канада',        length: 10 },
+  { code: '+44',  flag: '🇬🇧', name: 'Великобритания',      length: 10 },
+  { code: '+49',  flag: '🇩🇪', name: 'Германия',            length: 11 },
+  { code: '+33',  flag: '🇫🇷', name: 'Франция',             length: 9  },
+  { code: '+39',  flag: '🇮🇹', name: 'Италия',              length: 10 },
+  { code: '+34',  flag: '🇪🇸', name: 'Испания',             length: 9  },
+  { code: '+48',  flag: '🇵🇱', name: 'Польша',              length: 9  },
+  { code: '+420', flag: '🇨🇿', name: 'Чехия',               length: 9  },
+  { code: '+86',  flag: '🇨🇳', name: 'Китай',               length: 11 },
+  { code: '+90',  flag: '🇹🇷', name: 'Турция',              length: 10 },
+  { code: '+972', flag: '🇮🇱', name: 'Израиль',             length: 9  },
+  { code: '+971', flag: '🇦🇪', name: 'ОАЭ',                 length: 9  },
+]
+
+const countryCode = ref<CountryCode>(countryCodes[0])  // default: +7 Россия
+const phoneDigits = ref('')  // только цифры, без формата
+
+function onPhoneDigitsInput(e: Event) {
   const input = e.target as HTMLInputElement
-  const formatted = formatPhone(input.value)
-  contactPhone.value = formatted
-  // Возвращаем курсор в конец
-  requestAnimationFrame(() => {
-    input.setSelectionRange(formatted.length, formatted.length)
-  })
+  // Оставляем только цифры + ограничиваем длину для страны
+  const clean = input.value.replace(/\D/g, '').slice(0, countryCode.value.length)
+  phoneDigits.value = clean
+  // Не трогаем курсор — браузер сам обработает, т.к. мы просто отфильтровали
+  if (input.value !== clean) {
+    input.value = clean
+  }
 }
 
-function normalizePhone(formatted: string): string {
-  // Возвращает +79991234567 (или пустую строку)
-  const digits = formatted.replace(/\D/g, '')
-  if (!digits) return ''
-  const clean = (digits.startsWith('7') || digits.startsWith('8')) ? digits.slice(1) : digits
-  if (clean.length !== 10) return ''
-  return '+7' + clean
+function normalizePhone(): string {
+  // Возвращает +<code><digits> или пустую строку
+  if (!phoneDigits.value) return ''
+  if (phoneDigits.value.length < countryCode.value.length) return ''
+  return countryCode.value.code + phoneDigits.value
 }
 
 function toggleBehalfMode() {
   onBehalfOfMode.value = !onBehalfOfMode.value
+  phoneDigits.value = ''
   if (onBehalfOfMode.value) {
     // Переключились в режим "от имени клиента" — очищаем поля
     email.value = ''
     contactName.value = ''
-    contactPhone.value = ''
   } else {
     // От своего имени — подставляем данные агента
     email.value = auth.user?.email || ''
     contactName.value = auth.user?.full_name || ''
-    contactPhone.value = ''
   }
 }
 
@@ -226,7 +241,7 @@ async function onSubmit() {
         category: category.value,
         ticket_type: ticketType.value,
         object_name: objectName.value.trim() || undefined,
-        contact_phone: normalizePhone(contactPhone.value) || undefined,
+        contact_phone: normalizePhone() || undefined,
         urgent: urgent.value,
       })
       ticketCreated.value = true
@@ -252,7 +267,7 @@ async function onSubmit() {
       ticket_type: ticketType.value,
       object_name: objectName.value.trim() || undefined,
       access_point: accessPoint.value.trim() || undefined,
-      contact_phone: normalizePhone(contactPhone.value) || undefined,
+      contact_phone: normalizePhone() || undefined,
       contact_name: creatingOnBehalf ? contactName.value.trim() || undefined : undefined,
       company: company.value.trim() || undefined,
       device_type: showDeviceType.value ? deviceType.value : undefined,
@@ -364,14 +379,36 @@ async function onSubmit() {
               </div>
               <div class="field">
                 <label for="contactPhone">Телефон</label>
-                <InputText
-                  id="contactPhone"
-                  :model-value="contactPhone"
-                  @input="onPhoneInput"
-                  inputmode="tel"
-                  fluid
-                />
-                <small class="field-help">Для срочной связи — формат +7 (999) 123-45-67</small>
+                <div class="phone-input-group">
+                  <Select
+                    v-model="countryCode"
+                    :options="countryCodes"
+                    option-label="code"
+                    class="country-code-select"
+                  >
+                    <template #value="{ value }">
+                      <span v-if="value" class="country-value">
+                        <span class="flag">{{ value.flag }}</span>
+                        <span>{{ value.code }}</span>
+                      </span>
+                    </template>
+                    <template #option="{ option }">
+                      <span class="country-option">
+                        <span class="flag">{{ option.flag }}</span>
+                        <span class="code">{{ option.code }}</span>
+                        <span class="name">{{ option.name }}</span>
+                      </span>
+                    </template>
+                  </Select>
+                  <InputText
+                    id="contactPhone"
+                    :model-value="phoneDigits"
+                    @input="onPhoneDigitsInput"
+                    inputmode="tel"
+                    class="phone-digits-input"
+                  />
+                </div>
+                <small class="field-help">Для срочной связи — выберите страну и введите номер ({{ countryCode.length }} цифр)</small>
               </div>
             </div>
 
@@ -538,6 +575,27 @@ async function onSubmit() {
   font-size: 13px; color: #0369a1; background: #f0f9ff;
   border: 1px solid #bae6fd; border-radius: 8px; padding: 10px 12px;
 }
+
+/* Phone input: country code + digits */
+.phone-input-group {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+.country-code-select { flex: 0 0 auto; min-width: 100px; }
+.phone-digits-input { flex: 1; }
+.country-value {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.country-option {
+  display: inline-flex; align-items: center; gap: 8px;
+  white-space: nowrap;
+}
+.country-option .flag { font-size: 18px; }
+.country-option .code { font-weight: 600; color: #1e293b; min-width: 48px; }
+.country-option .name { font-size: 13px; color: #64748b; }
+.country-value .flag { font-size: 16px; }
 
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field label { font-weight: 500; font-size: 14px; color: #334155; }
