@@ -20,6 +20,7 @@ import re
 import uuid
 from email.header import decode_header
 from email.utils import parseaddr
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Optional
 
@@ -57,24 +58,131 @@ def _decode_mime_header(raw: str) -> str:
     return " ".join(decoded)
 
 
+class _HTMLToTextParser(HTMLParser):
+    """Преобразует HTML в plain text с сохранением переносов строк.
+
+    - Блочные теги (<p>, <div>, <br>, <tr>, <li>, <blockquote>...) → \n
+    - Содержимое <style>, <script>, <head> — игнорируется
+    - HTML entities (&lt;, &amp;, &nbsp;) декодируются автоматически (convert_charrefs=True)
+    """
+
+    BLOCK_TAGS = {
+        "p", "div", "br", "tr", "li", "h1", "h2", "h3", "h4", "h5", "h6",
+        "blockquote", "hr", "pre", "article", "section",
+    }
+    SKIP_TAGS = {"style", "script", "head", "title", "meta", "link"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._parts: list[str] = []
+        self._skip_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        if tag in self.SKIP_TAGS:
+            self._skip_depth += 1
+            return
+        if self._skip_depth == 0 and tag in self.BLOCK_TAGS:
+            self._parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self.SKIP_TAGS:
+            if self._skip_depth > 0:
+                self._skip_depth -= 1
+            return
+        if self._skip_depth == 0 and tag in self.BLOCK_TAGS:
+            self._parts.append("\n")
+
+    def handle_startendtag(self, tag: str, attrs: list) -> None:
+        # <br/>, <hr/> и прочие self-closing
+        if self._skip_depth == 0 and tag in self.BLOCK_TAGS:
+            self._parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth == 0:
+            self._parts.append(data)
+
+    def get_text(self) -> str:
+        text = "".join(self._parts)
+        # Схлопываем множественные пробелы и переносы
+        text = re.sub(r"[ \t\r\f\v]+", " ", text)
+        text = re.sub(r" *\n *", "\n", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
+
+
+def _html_to_text(html_str: str) -> str:
+    """Преобразует HTML в читабельный plain text."""
+    parser = _HTMLToTextParser()
+    try:
+        parser.feed(html_str)
+        parser.close()
+        return parser.get_text()
+    except Exception as exc:
+        logger.warning("HTML parse error, fallback to regex: %s", exc)
+        # Fallback: регулярка + unescape
+        import html as html_lib
+        stripped = re.sub(r"<[^>]+>", " ", html_str)
+        return re.sub(r"\s+", " ", html_lib.unescape(stripped)).strip()
+
+
+def _looks_like_html(text: str) -> bool:
+    """Эвристика: содержит ли текст HTML-разметку, которую надо очистить."""
+    # Явные HTML-теги
+    tag_matches = re.findall(
+        r"<\s*/?\s*(br|div|p|table|tr|td|blockquote|span|a|ul|ol|li|html|body|head)\b",
+        text,
+        re.IGNORECASE,
+    )
+    if len(tag_matches) >= 3:
+        return True
+    # HTML-entities (Яндекс мобильная почта их оставляет в text/plain)
+    if re.search(r"&(lt|gt|amp|nbsp|quot|#\d+);", text):
+        return True
+    return False
+
+
+def _decode_payload(part: email.message.Message) -> str:
+    """Безопасно декодирует payload части email."""
+    payload = part.get_payload(decode=True)
+    if not payload:
+        return ""
+    charset = part.get_content_charset() or "utf-8"
+    return payload.decode(charset, errors="replace")
+
+
 def _extract_text_body(msg: email.message.Message) -> str:
-    """Извлекает текст из email (text/plain или text/html fallback)."""
+    """Извлекает текст из email (text/plain или text/html fallback).
+
+    Обрабатывает три случая:
+    1. Multipart с text/plain — берём как есть, но если в plain внезапно HTML → чистим
+    2. Multipart без text/plain — парсим text/html через _html_to_text
+    3. Single-part — проверяем content-type и чистим, если это text/html
+    """
     if msg.is_multipart():
+        # 1. Предпочитаем text/plain
         for part in msg.walk():
             if part.get_content_type() == "text/plain":
-                payload = part.get_payload(decode=True)
-                charset = part.get_content_charset() or "utf-8"
-                return payload.decode(charset, errors="replace") if payload else ""
+                text = _decode_payload(part)
+                if not text:
+                    continue
+                # Защита: некоторые клиенты (Яндекс мобильная) суют HTML в text/plain
+                if _looks_like_html(text):
+                    return _html_to_text(text)
+                return text
+        # 2. Fallback на text/html
         for part in msg.walk():
             if part.get_content_type() == "text/html":
-                payload = part.get_payload(decode=True)
-                charset = part.get_content_charset() or "utf-8"
-                html = payload.decode(charset, errors="replace") if payload else ""
-                return re.sub(r"<[^>]+>", " ", html).strip()
+                html_str = _decode_payload(part)
+                if html_str:
+                    return _html_to_text(html_str)
     else:
-        payload = msg.get_payload(decode=True)
-        charset = msg.get_content_charset() or "utf-8"
-        return payload.decode(charset, errors="replace") if payload else ""
+        # 3. Single-part письмо
+        body = _decode_payload(msg)
+        if not body:
+            return ""
+        if msg.get_content_type() == "text/html" or _looks_like_html(body):
+            return _html_to_text(body)
+        return body
     return ""
 
 
