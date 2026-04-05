@@ -96,10 +96,30 @@ async def notify_ticket_status_changed(
     new_status: str,
     actor_name: str,
 ) -> None:
-    """Уведомление о смене статуса тикета."""
+    """Уведомление о смене статуса + CSAT запрос при resolved."""
     old_label = STATUS_LABELS.get(old_status, old_status)
     new_label = STATUS_LABELS.get(new_status, new_status)
     tag = ticket_subject_tag(ticket_id)
+
+    # CSAT block при переходе в resolved
+    csat_block = ""
+    if new_status == "resolved":
+        csat_url = "https://support.pass24pro.ru"
+        csat_block = f"""
+                <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px; margin: 16px 0; text-align: center;">
+                    <p style="color: #166534; font-weight: 600; margin: 0 0 12px;">Как прошло обслуживание?</p>
+                    <p style="color: #166534; font-size: 14px; margin: 0 0 12px;">Оцените качество решения вашей заявки:</p>
+                    <div style="font-size: 24px; margin: 8px 0;">
+                        <a href="{csat_url}/tickets/{ticket_id}/rate?r=1" style="text-decoration: none; margin: 0 4px;">😞</a>
+                        <a href="{csat_url}/tickets/{ticket_id}/rate?r=2" style="text-decoration: none; margin: 0 4px;">😐</a>
+                        <a href="{csat_url}/tickets/{ticket_id}/rate?r=3" style="text-decoration: none; margin: 0 4px;">🙂</a>
+                        <a href="{csat_url}/tickets/{ticket_id}/rate?r=4" style="text-decoration: none; margin: 0 4px;">😀</a>
+                        <a href="{csat_url}/tickets/{ticket_id}/rate?r=5" style="text-decoration: none; margin: 0 4px;">🤩</a>
+                    </div>
+                    <p style="color: #64748b; font-size: 12px; margin: 8px 0 0;">Ваша оценка поможет нам стать лучше</p>
+                </div>
+        """
+
     await _send_email(
         to=creator_email,
         subject=f"{tag} Статус заявки изменён: {title}",
@@ -118,6 +138,7 @@ async def notify_ticket_status_changed(
                     <span style="color: #059669; font-weight: 600;">{new_label}</span>
                 </p>
                 <p style="color: #475569; margin: 0 0 12px;"><strong>Изменил:</strong> {actor_name}</p>
+                {csat_block}
                 <p style="color: #64748b; font-size: 14px; margin: 16px 0 0;">
                     Вы можете отслеживать статус заявки в личном кабинете Service Desk.
                 </p>

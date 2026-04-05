@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -35,10 +36,13 @@ from .schemas import (
     AttachmentRead,
     CommentCreate,
     CommentRead,
+    CsatSubmit,
     GuestTicketCreate,
     GuestTicketResponse,
+    TicketAssignmentUpdate,
     TicketCreate,
     TicketListResponse,
+    TicketPriorityUpdate,
     TicketRead,
     TicketStatusUpdate,
 )
@@ -109,6 +113,7 @@ async def create_guest_ticket(
     )
     ticket.auto_detect_category()
     ticket.assign_priority_based_on_context()
+    ticket.auto_assign_group()
 
     event = TicketEvent(
         ticket_id=ticket.id,
@@ -224,6 +229,7 @@ async def create_ticket(
     )
     ticket.auto_detect_category()
     ticket.assign_priority_based_on_context()
+    ticket.auto_assign_group()
 
     # Событие создания (actor — тот, кто реально создал через UI)
     actor_desc = "Тикет создан"
@@ -613,3 +619,115 @@ async def delete_ticket(
     )
     await session.delete(ticket)
     await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# ITIL: Impact / Urgency / Assignment
+# ---------------------------------------------------------------------------
+
+
+@router.put("/{ticket_id}/priority", response_model=TicketRead)
+async def update_priority(
+    ticket_id: str,
+    payload: TicketPriorityUpdate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> TicketRead:
+    """Ручное изменение impact/urgency (только для агентов). Priority пересчитывается из матрицы."""
+    from backend.auth.models import UserRole
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Только агент может менять приоритет")
+
+    result = await session.execute(
+        select(Ticket).where(Ticket.id == ticket_id).options(*_ticket_load_options())
+    )
+    ticket = result.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Тикет не найден")
+
+    ticket.impact = payload.impact
+    ticket.urgency = payload.urgency
+    ticket.recalculate_priority()
+    ticket.updated_at = datetime.utcnow()
+
+    event = TicketEvent(
+        ticket_id=ticket.id,
+        actor_id=str(current_user.id),
+        description=f"Приоритет пересчитан: impact={payload.impact}, urgency={payload.urgency} → {ticket.priority.value}",
+    )
+    session.add(event)
+    session.add(ticket)
+    await session.commit()
+    await session.refresh(ticket)
+    return TicketRead.model_validate(ticket)
+
+
+@router.put("/{ticket_id}/assignment", response_model=TicketRead)
+async def update_assignment(
+    ticket_id: str,
+    payload: TicketAssignmentUpdate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> TicketRead:
+    """Назначение группы / агента на тикет (только для агентов)."""
+    from backend.auth.models import UserRole
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Только агент может назначать")
+
+    result = await session.execute(
+        select(Ticket).where(Ticket.id == ticket_id).options(*_ticket_load_options())
+    )
+    ticket = result.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Тикет не найден")
+
+    changes = []
+    if payload.assignment_group is not None and ticket.assignment_group != payload.assignment_group:
+        ticket.assignment_group = payload.assignment_group
+        changes.append(f"группа: {payload.assignment_group}")
+    if payload.assignee_id is not None and ticket.assignee_id != payload.assignee_id:
+        ticket.assignee_id = payload.assignee_id or None
+        changes.append(f"агент: {payload.assignee_id or 'снят'}")
+
+    if changes:
+        ticket.updated_at = datetime.utcnow()
+        event = TicketEvent(
+            ticket_id=ticket.id,
+            actor_id=str(current_user.id),
+            description=f"Назначение: {', '.join(changes)}",
+        )
+        session.add(event)
+        session.add(ticket)
+        await session.commit()
+        await session.refresh(ticket)
+
+    return TicketRead.model_validate(ticket)
+
+
+@router.post("/{ticket_id}/satisfaction", response_model=TicketRead)
+async def submit_satisfaction(
+    ticket_id: str,
+    payload: CsatSubmit,
+    session: AsyncSession = Depends(get_session),
+) -> TicketRead:
+    """Отправка оценки удовлетворённости клиентом (публичный endpoint)."""
+    result = await session.execute(
+        select(Ticket).where(Ticket.id == ticket_id).options(*_ticket_load_options())
+    )
+    ticket = result.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Тикет не найден")
+
+    if ticket.satisfaction_submitted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Оценка уже отправлена",
+        )
+
+    ticket.satisfaction_rating = payload.rating
+    ticket.satisfaction_comment = payload.comment
+    ticket.satisfaction_submitted_at = datetime.utcnow()
+    session.add(ticket)
+    await session.commit()
+    await session.refresh(ticket)
+    return TicketRead.model_validate(ticket)

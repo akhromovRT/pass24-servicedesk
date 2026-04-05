@@ -145,12 +145,24 @@ class TicketRead(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # ITIL
+    impact: Optional[str] = None
+    urgency: Optional[str] = None
+    assignment_group: Optional[str] = None
+
     # SLA
     first_response_at: Optional[datetime] = None
     resolved_at: Optional[datetime] = None
     sla_response_hours: Optional[int] = None
     sla_resolve_hours: Optional[int] = None
     sla_breached: bool = False
+    sla_paused_at: Optional[datetime] = None
+    sla_total_pause_seconds: int = 0
+
+    # CSAT
+    satisfaction_rating: Optional[int] = None
+    satisfaction_comment: Optional[str] = None
+    satisfaction_submitted_at: Optional[datetime] = None
 
     events: List[EventRead] = []
     comments: List[CommentRead] = []
@@ -161,6 +173,24 @@ class TicketRead(BaseModel):
 
 class TicketStatusUpdate(BaseModel):
     new_status: TicketStatus
+
+
+class TicketPriorityUpdate(BaseModel):
+    """Ручное изменение impact/urgency агентом."""
+    impact: str
+    urgency: str
+
+
+class TicketAssignmentUpdate(BaseModel):
+    """Назначение группы / агента."""
+    assignment_group: Optional[str] = None
+    assignee_id: Optional[str] = None
+
+
+class CsatSubmit(BaseModel):
+    """Оценка удовлетворённости клиентом."""
+    rating: int = Field(..., ge=1, le=5)
+    comment: Optional[str] = Field(default=None, max_length=2000)
 
 
 class TicketListResponse(BaseModel):

@@ -432,6 +432,7 @@ async def _handle_new_ticket(mail_data: dict) -> None:
         )
         ticket.auto_detect_category()
         ticket.assign_priority_based_on_context()
+        ticket.auto_assign_group()
 
         event = TicketEvent(
             ticket_id=ticket.id,

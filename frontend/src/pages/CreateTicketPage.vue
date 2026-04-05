@@ -171,10 +171,11 @@ const categoryOptions = [
 ]
 
 const ticketTypeOptions = [
-  { label: 'Инцидент — всё не работает, срочно', value: 'incident' },
-  { label: 'Проблема — что-то не так', value: 'problem' },
+  { label: 'Инцидент — нарушение работы сервиса', value: 'incident' },
+  { label: 'Проблема — корневая причина', value: 'problem' },
+  { label: 'Service Request — стандартный запрос', value: 'service_request' },
+  { label: 'Change Request — изменение системы', value: 'change_request' },
   { label: 'Вопрос — нужна консультация', value: 'question' },
-  { label: 'Запрос — настроить / изменить', value: 'request' },
   { label: 'Предложение — идея по улучшению', value: 'feature_request' },
 ]
 

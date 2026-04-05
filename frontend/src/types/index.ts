@@ -20,13 +20,17 @@ export type TicketStatus = 'new' | 'in_progress' | 'waiting_for_user' | 'resolve
 export type TicketPriority = 'low' | 'normal' | 'high' | 'critical'
 export type TicketProduct = 'pass24_online' | 'mobile_app' | 'pass24_key' | 'pass24_control' | 'pass24_auto' | 'equipment' | 'integration' | 'other'
 export type TicketCategory = 'registration' | 'passes' | 'recognition' | 'app_issues' | 'objects' | 'trusted_persons' | 'equipment_issues' | 'consultation' | 'feature_request' | 'other'
-export type TicketType = 'incident' | 'problem' | 'question' | 'request' | 'feature_request'
+export type TicketType = 'incident' | 'problem' | 'service_request' | 'change_request' | 'question' | 'feature_request'
 export type TicketSource = 'web' | 'email' | 'telegram' | 'api' | 'phone'
+export type TicketImpact = 'high' | 'medium' | 'low'
+export type TicketUrgency = 'high' | 'medium' | 'low'
+export type AssignmentGroup = 'l1_support' | 'l2_engineers' | 'l3_development' | 'installers' | 'integrations' | 'billing' | 'unassigned'
 
 export interface Ticket {
   id: string
   creator_id: string
   assignee_id: string | null
+  assignment_group: string | null
   title: string
   description: string
   product: string | null
@@ -35,6 +39,8 @@ export interface Ticket {
   source: string | null
   status: TicketStatus
   priority: TicketPriority
+  impact: string | null
+  urgency: string | null
   object_name: string | null
   object_address: string | null
   access_point: string | null
@@ -53,6 +59,11 @@ export interface Ticket {
   sla_response_hours: number | null
   sla_resolve_hours: number | null
   sla_breached: boolean
+  sla_paused_at: string | null
+  sla_total_pause_seconds: number
+  satisfaction_rating: number | null
+  satisfaction_comment: string | null
+  satisfaction_submitted_at: string | null
   events: TicketEvent[]
   comments: TicketComment[]
   attachments: Attachment[]
