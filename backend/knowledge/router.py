@@ -223,7 +223,7 @@ async def search_articles(
         total_result = await session.execute(count_stmt)
         total = total_result.scalar_one()
 
-    # Ранжирование по релевантности FTS (ts_rank_cd), fallback на created_at
+    # Ранжирование по релевантности FTS (ts_rank_cd DESC), fallback на created_at
     rank_expr = sa_text("""
         ts_rank_cd(
             setweight(to_tsvector('russian', coalesce(title, '')), 'A') ||
@@ -237,11 +237,11 @@ async def search_articles(
             )), 'B') ||
             setweight(to_tsvector('russian', coalesce(content, '')), 'C'),
             plainto_tsquery('russian', :query)
-        )
+        ) DESC
     """).bindparams(query=expanded_query)
 
     offset = (page - 1) * per_page
-    stmt = stmt.order_by(rank_expr.desc(), Article.created_at.desc()).offset(offset).limit(per_page)
+    stmt = stmt.order_by(rank_expr, Article.created_at.desc()).offset(offset).limit(per_page)
 
     result = await session.execute(stmt)
     articles = result.scalars().all()
