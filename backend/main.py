@@ -26,6 +26,7 @@ from .assistant.router import router as assistant_router
 from .stats.router import router as stats_router
 from .tickets.router import router as tickets_router
 from .tickets.templates_router import router as templates_router
+from .tickets.views_router import router as views_router
 from .tickets.sla_watcher import sla_watcher_loop
 from .notifications.telegram import router as telegram_router
 
@@ -84,6 +85,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(tickets_router)
     app.include_router(templates_router)
+    app.include_router(views_router)
     app.include_router(knowledge_router)
     app.include_router(stats_router)
     app.include_router(assistant_router)

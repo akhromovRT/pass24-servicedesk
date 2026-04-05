@@ -205,6 +205,8 @@ class Ticket(SQLModel, table=True):
     sla_breach_warned: bool = Field(default=False)
     # Merge: если тикет слит с другим — ссылка на тикет-приёмник
     merged_into_ticket_id: Optional[str] = Field(default=None, index=True)
+    # Parent: для Incident-тикетов, связанных с Problem (master ticket)
+    parent_ticket_id: Optional[str] = Field(default=None, index=True)
 
     # CSAT (Customer Satisfaction)
     satisfaction_rating: Optional[int] = Field(default=None, description="Оценка 1-5")

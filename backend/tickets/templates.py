@@ -36,3 +36,34 @@ class Macro(SQLModel, table=True):
     author_id: str
     is_shared: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class SavedView(SQLModel, table=True):
+    """Сохранённый набор фильтров для списка тикетов."""
+
+    __tablename__ = "saved_views"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    name: str = Field(max_length=128)
+    icon: Optional[str] = Field(default=None, max_length=64)
+    # JSON: { "status": ["new","in_progress"], "category": [...], "q": "...", "view": "open" }
+    filters: str
+    owner_id: str = Field(index=True)
+    is_shared: bool = Field(default=False, description="Виден всем агентам")
+    sort_order: int = Field(default=0)
+    usage_count: int = Field(default=0)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class TicketArticleLink(SQLModel, table=True):
+    """Связь тикета со статьёй базы знаний (m2m)."""
+
+    __tablename__ = "ticket_article_links"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    article_id: str = Field(index=True)
+    # 'helped' (помогла решить), 'related' (связана), 'created_from' (создана из этого тикета)
+    relation_type: str = Field(default="helped", max_length=32)
+    linked_by: str = Field(description="user_id того кто привязал")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
