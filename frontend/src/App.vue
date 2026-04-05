@@ -4,9 +4,11 @@ import { useRouter, useRoute } from 'vue-router'
 import Menubar from 'primevue/menubar'
 import Button from 'primevue/button'
 import Toast from 'primevue/toast'
+import { ref } from 'vue'
 import { useAuthStore } from './stores/auth'
 import AiChat from './components/AiChat.vue'
 import NotificationBell from './components/NotificationBell.vue'
+import HelpModal from './components/HelpModal.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -15,6 +17,9 @@ const auth = useAuthStore()
 const isStaff = computed(() =>
   auth.user?.role === 'support_agent' || auth.user?.role === 'admin'
 )
+
+const helpModalRef = ref<InstanceType<typeof HelpModal> | null>(null)
+function openHelp() { helpModalRef.value?.open() }
 
 const menuItems = computed(() => {
   const items = []
@@ -85,6 +90,17 @@ function logout() {
       </template>
       <template #end>
         <div v-if="auth.isLoggedIn" class="layout-user">
+          <Button
+            v-if="isStaff"
+            icon="pi pi-question-circle"
+            severity="secondary"
+            text
+            rounded
+            size="small"
+            title="Инструкция для агентов"
+            aria-label="Помощь"
+            @click="openHelp"
+          />
           <NotificationBell v-if="isStaff" />
           <span class="user-name">{{ auth.user?.full_name }}</span>
           <Button
@@ -114,6 +130,9 @@ function logout() {
 
     <!-- AI-помощник доступен всегда -->
     <AiChat />
+
+    <!-- Модалка с инструкцией для агентов -->
+    <HelpModal ref="helpModalRef" />
   </div>
 </template>
 
