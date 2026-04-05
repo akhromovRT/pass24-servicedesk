@@ -4,11 +4,16 @@ import { isAuthenticated } from '../api/client'
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    // Публичные страницы (главный путь пользователя)
+    // Главная: для авторизованных — заявки, для гостей — инструкции
     {
       path: '/',
       name: 'home',
-      component: () => import('../pages/InstructionsPage.vue'),
+      component: () => import('../pages/TicketsPage.vue'),
+      beforeEnter: (_to) => {
+        if (!isAuthenticated()) {
+          return { name: 'instructions' }
+        }
+      },
     },
     {
       path: '/instructions',
@@ -47,8 +52,7 @@ const router = createRouter({
     {
       path: '/tickets',
       name: 'tickets',
-      component: () => import('../pages/TicketsPage.vue'),
-      meta: { auth: true },
+      redirect: { name: 'home' },
     },
     {
       path: '/tickets/create',
