@@ -317,51 +317,146 @@ onUnmounted(() => {
 
       <!-- Описание -->
       <Card class="section-card">
-        <template #title>Описание</template>
+        <template #title>
+          <div class="card-title-row"><i class="pi pi-file-edit" /> Описание</div>
+        </template>
         <template #content>
           <p class="ticket-description">{{ ticket.description }}</p>
-          <div class="ticket-meta-details">
-            <div class="meta-section" v-if="ticket.contact_email || ticket.contact_phone || ticket.contact_name || ticket.company">
-              <h4>Контакт</h4>
-              <p v-if="ticket.contact_name"><i class="pi pi-user"></i> {{ ticket.contact_name }}</p>
-              <p v-if="ticket.contact_email"><i class="pi pi-envelope"></i> {{ ticket.contact_email }}</p>
-              <p v-if="ticket.contact_phone"><i class="pi pi-phone"></i> {{ ticket.contact_phone }}</p>
-              <p v-if="ticket.company"><i class="pi pi-briefcase"></i> {{ ticket.company }}</p>
+        </template>
+      </Card>
+
+      <!-- Информация -->
+      <Card class="section-card">
+        <template #title>
+          <div class="card-title-row"><i class="pi pi-info-circle" /> Информация</div>
+        </template>
+        <template #content>
+          <div class="info-grid">
+            <!-- Контакт -->
+            <div v-if="ticket.contact_email || ticket.contact_phone || ticket.contact_name || ticket.company" class="info-block" style="--accent:#3b82f6">
+              <div class="info-header">
+                <i class="pi pi-user info-icon" />
+                <span class="info-title">Контакт</span>
+              </div>
+              <div class="info-items">
+                <div v-if="ticket.contact_name" class="info-item">
+                  <span class="info-label">Имя</span>
+                  <span class="info-value">{{ ticket.contact_name }}</span>
+                </div>
+                <div v-if="ticket.contact_email" class="info-item">
+                  <span class="info-label">Email</span>
+                  <a :href="`mailto:${ticket.contact_email}`" class="info-value info-link">{{ ticket.contact_email }}</a>
+                </div>
+                <div v-if="ticket.contact_phone" class="info-item">
+                  <span class="info-label">Телефон</span>
+                  <a :href="`tel:${ticket.contact_phone}`" class="info-value info-link">{{ ticket.contact_phone }}</a>
+                </div>
+                <div v-if="ticket.company" class="info-item">
+                  <span class="info-label">Компания</span>
+                  <span class="info-value">{{ ticket.company }}</span>
+                </div>
+              </div>
             </div>
-            <div class="meta-section" v-if="ticket.object_name || ticket.access_point">
-              <h4>Объект</h4>
-              <p v-if="ticket.object_name"><i class="pi pi-building"></i> {{ ticket.object_name }}</p>
-              <p v-if="ticket.object_address"><i class="pi pi-map-marker"></i> {{ ticket.object_address }}</p>
-              <p v-if="ticket.access_point"><i class="pi pi-sign-in"></i> {{ ticket.access_point }}</p>
+
+            <!-- Объект -->
+            <div v-if="ticket.object_name || ticket.access_point || ticket.object_address" class="info-block" style="--accent:#8b5cf6">
+              <div class="info-header">
+                <i class="pi pi-building info-icon" />
+                <span class="info-title">Объект</span>
+              </div>
+              <div class="info-items">
+                <div v-if="ticket.object_name" class="info-item">
+                  <span class="info-label">Название</span>
+                  <span class="info-value">{{ ticket.object_name }}</span>
+                </div>
+                <div v-if="ticket.object_address" class="info-item">
+                  <span class="info-label">Адрес</span>
+                  <span class="info-value">{{ ticket.object_address }}</span>
+                </div>
+                <div v-if="ticket.access_point" class="info-item">
+                  <span class="info-label">КПП / дверь</span>
+                  <span class="info-value">{{ ticket.access_point }}</span>
+                </div>
+              </div>
             </div>
-            <div class="meta-section" v-if="ticket.product || ticket.ticket_type || ticket.source">
-              <h4>Классификация</h4>
-              <p v-if="ticket.product"><i class="pi pi-box"></i> {{ productLabels[ticket.product] || ticket.product }}</p>
-              <p v-if="ticket.ticket_type"><i class="pi pi-tag"></i> {{ typeLabels[ticket.ticket_type] || ticket.ticket_type }}</p>
-              <p v-if="ticket.source"><i class="pi pi-send"></i> Источник: {{ sourceLabels[ticket.source] || ticket.source }}</p>
+
+            <!-- Классификация -->
+            <div v-if="ticket.product || ticket.ticket_type || ticket.source" class="info-block" style="--accent:#10b981">
+              <div class="info-header">
+                <i class="pi pi-tag info-icon" />
+                <span class="info-title">Классификация</span>
+              </div>
+              <div class="info-items">
+                <div v-if="ticket.product" class="info-item">
+                  <span class="info-label">Продукт</span>
+                  <span class="info-value">{{ productLabels[ticket.product] || ticket.product }}</span>
+                </div>
+                <div v-if="ticket.ticket_type" class="info-item">
+                  <span class="info-label">Тип</span>
+                  <span class="info-value">{{ typeLabels[ticket.ticket_type] || ticket.ticket_type }}</span>
+                </div>
+                <div v-if="ticket.source" class="info-item">
+                  <span class="info-label">Источник</span>
+                  <span class="info-value">{{ sourceLabels[ticket.source] || ticket.source }}</span>
+                </div>
+              </div>
             </div>
-            <div class="meta-section" v-if="ticket.device_type || ticket.app_version || ticket.error_message">
-              <h4>Техническая информация</h4>
-              <p v-if="ticket.device_type"><i class="pi pi-mobile"></i> {{ ticket.device_type }}</p>
-              <p v-if="ticket.app_version"><i class="pi pi-code"></i> v{{ ticket.app_version }}</p>
-              <p v-if="ticket.error_message"><i class="pi pi-exclamation-circle"></i> {{ ticket.error_message }}</p>
+
+            <!-- Техника -->
+            <div v-if="ticket.device_type || ticket.app_version || ticket.error_message" class="info-block" style="--accent:#f59e0b">
+              <div class="info-header">
+                <i class="pi pi-desktop info-icon" />
+                <span class="info-title">Техническая информация</span>
+              </div>
+              <div class="info-items">
+                <div v-if="ticket.device_type" class="info-item">
+                  <span class="info-label">Устройство</span>
+                  <span class="info-value">{{ ticket.device_type }}</span>
+                </div>
+                <div v-if="ticket.app_version" class="info-item">
+                  <span class="info-label">Версия</span>
+                  <span class="info-value info-mono">v{{ ticket.app_version }}</span>
+                </div>
+                <div v-if="ticket.error_message" class="info-item">
+                  <span class="info-label">Ошибка</span>
+                  <span class="info-value info-mono">{{ ticket.error_message }}</span>
+                </div>
+              </div>
             </div>
           </div>
 
           <!-- SLA -->
-          <div v-if="isStaff" class="sla-info">
+          <div v-if="isStaff" class="sla-section">
             <Divider />
-            <div class="sla-row">
-              <span class="sla-label">Первый ответ:</span>
-              <span v-if="ticket.first_response_at">{{ formatDate(ticket.first_response_at) }}</span>
-              <Tag v-else value="Ожидает" severity="warn" />
-              <span class="sla-target">(SLA: {{ ticket.sla_response_hours || 4 }}ч)</span>
+            <div class="sla-header">
+              <i class="pi pi-clock" />
+              <span>SLA — соблюдение сроков</span>
             </div>
-            <div class="sla-row">
-              <span class="sla-label">Решение:</span>
-              <span v-if="ticket.resolved_at">{{ formatDate(ticket.resolved_at) }}</span>
-              <Tag v-else value="В процессе" severity="info" />
-              <span class="sla-target">(SLA: {{ ticket.sla_resolve_hours || 24 }}ч)</span>
+            <div class="sla-cards">
+              <div class="sla-card" :class="ticket.first_response_at ? 'done' : 'pending'">
+                <div class="sla-card-label">Первый ответ</div>
+                <div class="sla-card-value">
+                  <template v-if="ticket.first_response_at">
+                    <i class="pi pi-check-circle" /> {{ formatDate(ticket.first_response_at) }}
+                  </template>
+                  <template v-else>
+                    <i class="pi pi-hourglass" /> Ожидает ответа
+                  </template>
+                </div>
+                <div class="sla-card-target">Цель: {{ ticket.sla_response_hours || 4 }} часов</div>
+              </div>
+              <div class="sla-card" :class="ticket.resolved_at ? 'done' : 'pending'">
+                <div class="sla-card-label">Решение</div>
+                <div class="sla-card-value">
+                  <template v-if="ticket.resolved_at">
+                    <i class="pi pi-check-circle" /> {{ formatDate(ticket.resolved_at) }}
+                  </template>
+                  <template v-else>
+                    <i class="pi pi-spin pi-spinner" /> В процессе
+                  </template>
+                </div>
+                <div class="sla-card-target">Цель: {{ ticket.sla_resolve_hours || 24 }} часов</div>
+              </div>
             </div>
           </div>
         </template>
@@ -533,9 +628,167 @@ onUnmounted(() => {
 
 .ticket-description {
   white-space: pre-wrap;
-  line-height: 1.6;
+  line-height: 1.7;
   color: #334155;
   margin: 0;
+  font-size: 15px;
+}
+
+.card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+.card-title-row i { color: #3b82f6; font-size: 16px; }
+
+/* Info grid — красивые блоки с цветными акцентами */
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.info-block {
+  background: #fafbfc;
+  border: 1px solid #f1f5f9;
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.info-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.info-icon {
+  color: var(--accent);
+  font-size: 15px;
+}
+
+.info-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.info-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.info-label {
+  font-size: 11px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.info-value {
+  font-size: 14px;
+  color: #1e293b;
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.info-link {
+  color: #3b82f6;
+  text-decoration: none;
+}
+.info-link:hover { text-decoration: underline; }
+
+.info-mono {
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 13px;
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-block;
+  width: fit-content;
+}
+
+/* SLA section */
+.sla-section { margin-top: 8px; }
+
+.sla-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 12px;
+}
+.sla-header i { color: #3b82f6; font-size: 14px; }
+
+.sla-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.sla-card {
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid #f1f5f9;
+  background: #fafbfc;
+  transition: all 0.15s;
+}
+
+.sla-card.done {
+  background: linear-gradient(135deg, #ecfdf5, #f0fdf4);
+  border-color: #a7f3d0;
+}
+.sla-card.done .sla-card-value { color: #047857; }
+
+.sla-card.pending {
+  background: linear-gradient(135deg, #fef3c7, #fffbeb);
+  border-color: #fde68a;
+}
+.sla-card.pending .sla-card-value { color: #92400e; }
+
+.sla-card-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+.sla-card-value {
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.sla-card-value i { font-size: 14px; }
+
+.sla-card-target {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+@media (max-width: 600px) {
+  .sla-cards { grid-template-columns: 1fr; }
 }
 
 .ticket-contact {
