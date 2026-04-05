@@ -158,6 +158,7 @@ class TicketRead(BaseModel):
     sla_breached: bool = False
     sla_paused_at: Optional[datetime] = None
     sla_total_pause_seconds: int = 0
+    has_unread_reply: bool = False
 
     # CSAT
     satisfaction_rating: Optional[int] = None

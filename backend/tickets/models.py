@@ -199,6 +199,9 @@ class Ticket(SQLModel, table=True):
     sla_paused_at: Optional[datetime] = Field(default=None)
     sla_total_pause_seconds: int = Field(default=0)
 
+    # Уведомления для агентов: клиент ответил → True; агент открыл/ответил → False
+    has_unread_reply: bool = Field(default=False, index=True)
+
     # CSAT (Customer Satisfaction)
     satisfaction_rating: Optional[int] = Field(default=None, description="Оценка 1-5")
     satisfaction_comment: Optional[str] = Field(default=None, max_length=2000)

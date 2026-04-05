@@ -390,6 +390,45 @@ async def list_tickets(
     )
 
 
+@router.get("/notifications/unread")
+async def get_unread_notifications(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Список тикетов с непрочитанными ответами клиента (для агентов/админов)."""
+    from backend.auth.models import UserRole
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        return {"count": 0, "items": []}
+
+    result = await session.execute(
+        select(Ticket)
+        .where(Ticket.has_unread_reply == True)  # noqa: E712
+        .order_by(Ticket.updated_at.desc())
+        .limit(20)
+    )
+    tickets = result.scalars().all()
+    count_result = await session.execute(
+        select(func.count()).select_from(Ticket).where(Ticket.has_unread_reply == True)  # noqa: E712
+    )
+    total = count_result.scalar_one()
+
+    return {
+        "count": total,
+        "items": [
+            {
+                "id": t.id,
+                "title": t.title,
+                "status": t.status.value if hasattr(t.status, 'value') else str(t.status),
+                "priority": t.priority.value if hasattr(t.priority, 'value') else str(t.priority),
+                "contact_name": t.contact_name,
+                "contact_email": t.contact_email,
+                "updated_at": t.updated_at.isoformat(),
+            }
+            for t in tickets
+        ],
+    }
+
+
 @router.get("/{ticket_id}", response_model=TicketRead)
 async def get_ticket(
     ticket_id: str,
@@ -410,6 +449,13 @@ async def get_ticket(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Тикет не найден",
         )
+
+    # Агент открыл тикет → сбрасываем флаг unread
+    if current_user.role in (UserRole.SUPPORT_AGENT, UserRole.ADMIN) and ticket.has_unread_reply:
+        ticket.has_unread_reply = False
+        session.add(ticket)
+        await session.commit()
+        await session.refresh(ticket)
 
     ticket_data = TicketRead.model_validate(ticket)
     # Скрыть внутренние комментарии от обычных пользователей
@@ -501,7 +547,8 @@ async def add_comment(
 
     # Внутренние комментарии — только для агентов и админов
     from backend.auth.models import UserRole
-    is_internal = payload.is_internal and current_user.role in (UserRole.SUPPORT_AGENT, UserRole.ADMIN)
+    is_staff = current_user.role in (UserRole.SUPPORT_AGENT, UserRole.ADMIN)
+    is_internal = payload.is_internal and is_staff
 
     comment = TicketComment(
         ticket_id=ticket_id,
@@ -511,6 +558,35 @@ async def add_comment(
         is_internal=is_internal,
     )
     session.add(comment)
+
+    # Авто-переход статуса + флаг unread
+    if not is_internal:
+        if is_staff:
+            # Агент ответил клиенту → ждём ответа от клиента
+            if ticket.status in (TicketStatus.NEW, TicketStatus.IN_PROGRESS):
+                try:
+                    event = ticket.transition(
+                        actor_id=str(current_user.id),
+                        new_status=TicketStatus.WAITING_FOR_USER,
+                    )
+                    session.add(event)
+                except ValueError:
+                    pass
+            ticket.has_unread_reply = False  # агент обработал
+        else:
+            # Клиент ответил → агентам нужно работать
+            if ticket.status == TicketStatus.WAITING_FOR_USER:
+                try:
+                    event = ticket.transition(
+                        actor_id=str(current_user.id),
+                        new_status=TicketStatus.IN_PROGRESS,
+                    )
+                    session.add(event)
+                except ValueError:
+                    pass
+            ticket.has_unread_reply = True
+        session.add(ticket)
+
     await session.commit()
     await session.refresh(comment)
 

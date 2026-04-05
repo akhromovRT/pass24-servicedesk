@@ -6,6 +6,7 @@ import Button from 'primevue/button'
 import Toast from 'primevue/toast'
 import { useAuthStore } from './stores/auth'
 import AiChat from './components/AiChat.vue'
+import NotificationBell from './components/NotificationBell.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -16,29 +17,31 @@ const isStaff = computed(() =>
 )
 
 const menuItems = computed(() => {
-  const items = [
-    {
-      label: 'Инструкции',
-      icon: 'pi pi-map',
-      command: () => router.push('/'),
-      class: route.path === '/' || route.path.startsWith('/instructions') ? 'p-menuitem-active' : '',
-    },
-    {
-      label: 'База знаний',
-      icon: 'pi pi-book',
-      command: () => router.push('/knowledge'),
-      class: route.path.startsWith('/knowledge') ? 'p-menuitem-active' : '',
-    },
-  ]
+  const items = []
 
+  // «Мои заявки» — первый пункт для авторизованных (ведёт на главную /)
   if (auth.isLoggedIn) {
     items.push({
       label: 'Мои заявки',
       icon: 'pi pi-ticket',
-      command: () => router.push('/tickets'),
-      class: route.path.startsWith('/tickets') ? 'p-menuitem-active' : '',
+      command: () => router.push('/'),
+      class: (route.path === '/' || (route.path.startsWith('/tickets') && route.path !== '/tickets/create')) ? 'p-menuitem-active' : '',
     })
   }
+
+  items.push({
+    label: 'Инструкции',
+    icon: 'pi pi-map',
+    command: () => router.push('/instructions'),
+    class: (route.path.startsWith('/instructions') || (!auth.isLoggedIn && route.path === '/')) ? 'p-menuitem-active' : '',
+  })
+
+  items.push({
+    label: 'База знаний',
+    icon: 'pi pi-book',
+    command: () => router.push('/knowledge'),
+    class: route.path.startsWith('/knowledge') ? 'p-menuitem-active' : '',
+  })
 
   if (isStaff.value) {
     items.push({
@@ -76,6 +79,7 @@ function logout() {
       </template>
       <template #end>
         <div v-if="auth.isLoggedIn" class="layout-user">
+          <NotificationBell v-if="isStaff" />
           <span class="user-name">{{ auth.user?.full_name }}</span>
           <Button
             icon="pi pi-sign-out"

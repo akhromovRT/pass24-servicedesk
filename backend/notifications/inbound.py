@@ -259,7 +259,7 @@ async def _handle_reply(mail_data: dict, ticket_id_prefix: str) -> bool:
     """Обрабатывает ответ на существующий тикет: комментарий + вложения."""
     from backend.database import async_session_factory
     from backend.auth.models import User
-    from backend.tickets.models import Ticket, TicketComment
+    from backend.tickets.models import Ticket, TicketComment, TicketStatus
 
     async with async_session_factory() as session:
         # Найти тикет по начальным 8 символам id
@@ -294,6 +294,19 @@ async def _handle_reply(mail_data: dict, ticket_id_prefix: str) -> bool:
         for att in mail_data.get("attachments", []):
             await _save_attachment(ticket.id, author_id, att, session)
 
+        # Клиент ответил → флаг unread + переход в IN_PROGRESS
+        ticket.has_unread_reply = True
+        if ticket.status == TicketStatus.WAITING_FOR_USER:
+            try:
+                event = ticket.transition(
+                    actor_id=author_id,
+                    new_status=TicketStatus.IN_PROGRESS,
+                )
+                session.add(event)
+            except ValueError:
+                pass
+        session.add(ticket)
+
         await session.commit()
 
         att_count = len(mail_data.get("attachments", []))
@@ -308,7 +321,7 @@ async def _handle_reply_by_subject(mail_data: dict) -> bool:
     """Fallback: ищет тикет по заголовку из Re: темы."""
     from backend.database import async_session_factory
     from backend.auth.models import User
-    from backend.tickets.models import Ticket, TicketComment
+    from backend.tickets.models import Ticket, TicketComment, TicketStatus
 
     subject = mail_data["subject"]
     # Убираем Re:/Fwd: и ищем оригинальный заголовок
@@ -355,6 +368,19 @@ async def _handle_reply_by_subject(mail_data: dict) -> bool:
 
         for att in mail_data.get("attachments", []):
             await _save_attachment(ticket.id, str(user.id), att, session)
+
+        # Клиент ответил → флаг unread + переход в IN_PROGRESS
+        ticket.has_unread_reply = True
+        if ticket.status == TicketStatus.WAITING_FOR_USER:
+            try:
+                event = ticket.transition(
+                    actor_id=str(user.id),
+                    new_status=TicketStatus.IN_PROGRESS,
+                )
+                session.add(event)
+            except ValueError:
+                pass
+        session.add(ticket)
 
         await session.commit()
 
