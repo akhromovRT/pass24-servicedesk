@@ -1,16 +1,15 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import InputText from 'primevue/inputtext'
-import Select from 'primevue/select'
+import IconField from 'primevue/iconfield'
+import InputIcon from 'primevue/inputicon'
 import Button from 'primevue/button'
-import Paginator from 'primevue/paginator'
+import Tag from 'primevue/tag'
 import { useToast } from 'primevue/usetoast'
 import { useKnowledgeStore } from '../stores/knowledge'
 import { useAuthStore } from '../stores/auth'
-import IconField from 'primevue/iconfield'
-import InputIcon from 'primevue/inputicon'
-import ArticleCard from '../components/ArticleCard.vue'
+import type { Article } from '../types'
 
 const router = useRouter()
 const toast = useToast()
@@ -18,33 +17,136 @@ const knowledge = useKnowledgeStore()
 const auth = useAuthStore()
 
 const searchInput = ref('')
-const selectedCategory = ref<string | null>(null)
+const selectedType = ref<'all' | 'guide' | 'faq'>('all')
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
-interface CategoryOption {
-  label: string
-  value: string | null
+interface CategoryMeta {
+  id: string
+  title: string
+  subtitle: string
+  icon: string
+  color: string
+  gradient: string
 }
 
-const categoryOptions: CategoryOption[] = [
-  { label: 'Все категории', value: null },
-  { label: 'Доступ', value: 'access' },
-  { label: 'Пропуска', value: 'pass' },
-  { label: 'Шлагбаумы', value: 'gate' },
-  { label: 'Приложение', value: 'app' },
-  { label: 'Уведомления', value: 'notifications' },
-  { label: 'Общее', value: 'general' },
+// Метаданные для 6 категорий БД: иконки и цвета
+const CATEGORIES: CategoryMeta[] = [
+  {
+    id: 'app',
+    title: 'Мобильное приложение',
+    subtitle: 'Установка, пропуска, проходы со смартфона',
+    icon: 'pi pi-mobile',
+    color: '#3b82f6',
+    gradient: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+  },
+  {
+    id: 'pass',
+    title: 'Пропуска и QR-коды',
+    subtitle: 'Создание, приглашения, гостевые пропуска',
+    icon: 'pi pi-id-card',
+    color: '#22c55e',
+    gradient: 'linear-gradient(135deg, #22c55e, #16a34a)',
+  },
+  {
+    id: 'access',
+    title: 'Доступ и вход',
+    subtitle: 'Регистрация, вход, SMS-коды, восстановление',
+    icon: 'pi pi-sign-in',
+    color: '#ef4444',
+    gradient: 'linear-gradient(135deg, #ef4444, #dc2626)',
+  },
+  {
+    id: 'gate',
+    title: 'Шлагбаумы и камеры',
+    subtitle: 'Распознавание номеров, проезд через КПП',
+    icon: 'pi pi-car',
+    color: '#f59e0b',
+    gradient: 'linear-gradient(135deg, #f59e0b, #d97706)',
+  },
+  {
+    id: 'notifications',
+    title: 'Уведомления',
+    subtitle: 'Push, email, настройки оповещений',
+    icon: 'pi pi-bell',
+    color: '#8b5cf6',
+    gradient: 'linear-gradient(135deg, #8b5cf6, #6d28d9)',
+  },
+  {
+    id: 'general',
+    title: 'Общее',
+    subtitle: 'О платформе, безопасность, тарифы',
+    icon: 'pi pi-info-circle',
+    color: '#64748b',
+    gradient: 'linear-gradient(135deg, #64748b, #475569)',
+  },
 ]
 
-const canCreate = () =>
-  auth.user?.role === 'support_agent' || auth.user?.role === 'admin'
+const allArticles = ref<Article[]>([])
+const loadingAll = ref(false)
 
-async function loadArticles(page = 1) {
+const canCreate = computed(
+  () => auth.user?.role === 'support_agent' || auth.user?.role === 'admin',
+)
+
+// Фильтрация по типу + поисковому запросу (клиентская, т.к. статей немного)
+const filteredArticles = computed(() => {
+  let list = allArticles.value
+  if (selectedType.value !== 'all') {
+    list = list.filter((a) => a.article_type === selectedType.value)
+  }
+  const q = searchInput.value.trim().toLowerCase()
+  if (q) {
+    list = list.filter(
+      (a) =>
+        a.title.toLowerCase().includes(q) ||
+        a.content.toLowerCase().includes(q),
+    )
+  }
+  return list
+})
+
+// Группировка статей по категории (для секций)
+const articlesByCategory = computed(() => {
+  const map = new Map<string, Article[]>()
+  for (const article of filteredArticles.value) {
+    if (!map.has(article.category)) map.set(article.category, [])
+    map.get(article.category)!.push(article)
+  }
+  return map
+})
+
+const visibleCategories = computed(() =>
+  CATEGORIES.filter((c) => (articlesByCategory.value.get(c.id)?.length || 0) > 0),
+)
+
+const totalVisibleCount = computed(() => filteredArticles.value.length)
+
+function typeLabel(t: string): { label: string; severity: string } {
+  return t === 'guide'
+    ? { label: 'Инструкция', severity: 'info' }
+    : { label: 'FAQ', severity: 'warn' }
+}
+
+function articleIcon(article: Article): string {
+  // Для guide — pi-book, для faq — pi-question-circle
+  return article.article_type === 'guide' ? 'pi pi-book' : 'pi pi-question-circle'
+}
+
+async function loadAll() {
+  loadingAll.value = true
   try {
-    if (searchInput.value.trim()) {
-      await knowledge.searchArticles(searchInput.value.trim(), page, 'faq')
-    } else {
-      await knowledge.fetchArticles(page, selectedCategory.value || undefined, 'faq')
+    // Store хардкодит per_page=20; собираем все страницы вручную
+    await knowledge.fetchArticles(1)
+    allArticles.value = [...knowledge.articles]
+
+    // Защита: максимум 10 страниц (200 статей) чтобы не зациклиться при багах API
+    let safety = 10
+    while (allArticles.value.length < knowledge.total && safety-- > 0) {
+      const nextPage = Math.floor(allArticles.value.length / 20) + 1
+      const prevCount = allArticles.value.length
+      await knowledge.fetchArticles(nextPage)
+      allArticles.value.push(...knowledge.articles)
+      if (allArticles.value.length === prevCount) break
     }
   } catch (e: any) {
     toast.add({
@@ -53,158 +155,501 @@ async function loadArticles(page = 1) {
       detail: e.message || 'Не удалось загрузить статьи',
       life: 4000,
     })
+  } finally {
+    loadingAll.value = false
   }
 }
 
 function onSearchInput() {
   if (debounceTimer) clearTimeout(debounceTimer)
+  // Здесь debounce нужен только чтобы computed не дёргался на каждой букве,
+  // но так как Vue реактивность и так дешёвая, просто применяем сразу
   debounceTimer = setTimeout(() => {
-    loadArticles(1)
-  }, 300)
-}
-
-function onCategoryChange() {
-  searchInput.value = ''
-  knowledge.searchQuery = ''
-  loadArticles(1)
-}
-
-function onPageChange(event: { page: number }) {
-  loadArticles(event.page + 1)
+    // trigger reactivity (уже через v-model → searchInput)
+  }, 100)
 }
 
 function openArticle(slug: string) {
   router.push(`/knowledge/${slug}`)
 }
 
-onMounted(() => {
-  loadArticles()
-})
-
+onMounted(loadAll)
 watch(searchInput, onSearchInput)
 </script>
 
 <template>
-  <div class="knowledge-page">
-    <div class="knowledge-header">
-      <h1>База знаний</h1>
-      <Button
-        v-if="canCreate()"
-        label="Создать статью"
-        icon="pi pi-plus"
-        @click="router.push('/knowledge/create')"
-      />
-    </div>
-
-    <div class="knowledge-filters">
-      <IconField class="search-input">
+  <div class="knowledge">
+    <!-- Hero -->
+    <div class="hero">
+      <h1 class="hero-title">База знаний PASS24</h1>
+      <p class="hero-subtitle">
+        Пошаговые инструкции, ответы на частые вопросы и руководства по всем продуктам
+      </p>
+      <IconField class="hero-search">
         <InputIcon class="pi pi-search" />
         <InputText
           v-model="searchInput"
-          placeholder="Поиск по статьям..."
-          fluid
+          placeholder="Найти статью или инструкцию..."
+          class="hero-search-input"
         />
       </IconField>
-      <Select
-        v-model="selectedCategory"
-        :options="categoryOptions"
-        option-label="label"
-        option-value="value"
-        placeholder="Все категории"
-        class="category-select"
-        @change="onCategoryChange"
-      />
+
+      <!-- Фильтр по типу: переключатель -->
+      <div class="type-filter">
+        <button
+          type="button"
+          :class="['type-btn', { active: selectedType === 'all' }]"
+          @click="selectedType = 'all'"
+        >
+          <i class="pi pi-th-large" />
+          Все
+        </button>
+        <button
+          type="button"
+          :class="['type-btn', { active: selectedType === 'guide' }]"
+          @click="selectedType = 'guide'"
+        >
+          <i class="pi pi-book" />
+          Инструкции
+        </button>
+        <button
+          type="button"
+          :class="['type-btn', { active: selectedType === 'faq' }]"
+          @click="selectedType = 'faq'"
+        >
+          <i class="pi pi-question-circle" />
+          FAQ
+        </button>
+      </div>
+
+      <div v-if="canCreate" class="hero-actions">
+        <Button
+          label="Создать статью"
+          icon="pi pi-plus"
+          size="small"
+          severity="secondary"
+          outlined
+          @click="router.push('/knowledge/create')"
+        />
+      </div>
     </div>
 
-    <div v-if="knowledge.loading" class="knowledge-loading">
-      <i class="pi pi-spin pi-spinner" style="font-size: 2rem" />
+    <!-- Loading -->
+    <div v-if="loadingAll" class="knowledge-loading">
+      <i class="pi pi-spin pi-spinner" style="font-size: 2rem; color: #94a3b8" />
     </div>
 
-    <div v-else-if="knowledge.articles.length === 0" class="knowledge-empty">
-      <i class="pi pi-inbox" style="font-size: 3rem; color: #cbd5e1" />
-      <p>Статьи не найдены</p>
+    <!-- Empty state -->
+    <div v-else-if="totalVisibleCount === 0" class="empty">
+      <i class="pi pi-search empty-icon" />
+      <p v-if="searchInput">По запросу «{{ searchInput }}» ничего не найдено</p>
+      <p v-else>Статьи не найдены</p>
+      <p class="empty-hint">
+        Не нашли ответ?
+        <router-link to="/tickets/create">Создайте заявку</router-link>
+      </p>
     </div>
 
-    <div v-else class="knowledge-grid">
-      <ArticleCard
-        v-for="article in knowledge.articles"
-        :key="article.id"
-        :article="article"
-        @click="openArticle(article.slug)"
-      />
+    <!-- Stats bar -->
+    <div v-else-if="!searchInput && selectedType === 'all'" class="stats-bar">
+      <div
+        v-for="cat in CATEGORIES"
+        :key="cat.id"
+        class="stat"
+        :style="{ borderColor: (articlesByCategory.get(cat.id)?.length || 0) > 0 ? cat.color : '#e2e8f0' }"
+      >
+        <i :class="cat.icon" :style="{ color: cat.color }" />
+        <span class="stat-count">{{ articlesByCategory.get(cat.id)?.length || 0 }}</span>
+        <span class="stat-label">{{ cat.title.split(' ')[0] }}</span>
+      </div>
     </div>
 
-    <Paginator
-      v-if="knowledge.total > 20"
-      :rows="20"
-      :total-records="knowledge.total"
-      :first="(knowledge.page - 1) * 20"
-      @page="onPageChange"
-    />
+    <!-- Sections -->
+    <div v-if="!loadingAll && totalVisibleCount > 0" class="sections">
+      <div v-for="cat in visibleCategories" :key="cat.id" class="section">
+        <div class="section-header">
+          <div class="section-icon" :style="{ background: cat.gradient }">
+            <i :class="cat.icon" />
+          </div>
+          <div class="section-head-text">
+            <h2 class="section-title">{{ cat.title }}</h2>
+            <p class="section-subtitle">{{ cat.subtitle }}</p>
+          </div>
+          <div class="section-count">
+            {{ articlesByCategory.get(cat.id)?.length || 0 }}
+          </div>
+        </div>
+
+        <div class="articles-grid">
+          <div
+            v-for="article in articlesByCategory.get(cat.id) || []"
+            :key="article.id"
+            class="article-card"
+            @click="openArticle(article.slug)"
+          >
+            <div class="article-icon" :style="{ color: cat.color }">
+              <i :class="articleIcon(article)" />
+            </div>
+            <div class="article-body">
+              <div class="article-title-row">
+                <h3 class="article-title">{{ article.title }}</h3>
+                <Tag
+                  :value="typeLabel(article.article_type).label"
+                  :severity="typeLabel(article.article_type).severity"
+                  class="article-type-tag"
+                />
+              </div>
+              <div class="article-meta">
+                <span><i class="pi pi-eye" /> {{ article.views_count }}</span>
+              </div>
+            </div>
+            <i class="pi pi-chevron-right article-arrow" />
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.knowledge-page {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+.knowledge {
+  max-width: 900px;
+  margin: 0 auto;
 }
 
-.knowledge-header {
+/* Hero */
+.hero {
+  text-align: center;
+  padding: 40px 20px 24px;
+}
+
+.hero-title {
+  font-size: 32px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 8px;
+  letter-spacing: -0.02em;
+}
+
+.hero-subtitle {
+  font-size: 16px;
+  color: #64748b;
+  margin: 0 0 24px;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.hero-search {
+  max-width: 520px;
+  margin: 0 auto;
+  display: block;
+}
+
+.hero-search :deep(input) {
+  width: 100%;
+  border-radius: 12px;
+  padding: 13px 16px 13px 40px;
+  font-size: 15px;
+  border: 2px solid #e2e8f0;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.hero-search :deep(input:focus) {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Type filter (segmented control) */
+.type-filter {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: #f1f5f9;
+  border-radius: 10px;
+  margin-top: 20px;
+}
+
+.type-btn {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s;
 }
 
-.knowledge-header h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
+.type-btn:hover {
+  color: #1e293b;
 }
 
-.knowledge-filters {
-  display: flex;
-  gap: 12px;
-  align-items: center;
+.type-btn.active {
+  background: white;
+  color: #1e293b;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
-.search-input {
-  flex: 1;
+.type-btn i {
+  font-size: 13px;
 }
 
-.category-select {
-  min-width: 200px;
+.hero-actions {
+  margin-top: 16px;
 }
 
+/* Loading / empty */
 .knowledge-loading {
   display: flex;
   justify-content: center;
-  padding: 60px 0;
+  padding: 80px 0;
 }
 
-.knowledge-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 60px 0;
+.empty {
+  text-align: center;
+  padding: 60px 20px;
   color: #94a3b8;
 }
 
-.knowledge-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 16px;
+.empty-icon {
+  font-size: 40px;
+  margin-bottom: 12px;
+  opacity: 0.5;
 }
 
+.empty-hint {
+  font-size: 14px;
+  margin-top: 8px;
+}
+
+.empty-hint a {
+  color: #3b82f6;
+  text-decoration: none;
+}
+
+.empty-hint a:hover {
+  text-decoration: underline;
+}
+
+/* Stats bar */
+.stats-bar {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 32px;
+  padding: 0 20px;
+}
+
+.stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: white;
+  border-radius: 20px;
+  font-size: 13px;
+  border: 1px solid #e2e8f0;
+}
+
+.stat i {
+  font-size: 14px;
+}
+
+.stat-count {
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.stat-label {
+  color: #64748b;
+}
+
+/* Sections */
+.sections {
+  padding: 0 4px;
+}
+
+.section {
+  margin-bottom: 36px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+  padding: 0 4px;
+}
+
+.section-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.section-head-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.section-subtitle {
+  font-size: 14px;
+  color: #64748b;
+  margin: 2px 0 0;
+}
+
+.section-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  background: #f1f5f9;
+  padding: 4px 10px;
+  border-radius: 20px;
+  flex-shrink: 0;
+}
+
+/* Articles grid */
+.articles-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.article-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  background: white;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid #f1f5f9;
+}
+
+.article-card:hover {
+  border-color: #e2e8f0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transform: translateX(4px);
+}
+
+.article-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.article-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.article-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.article-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.article-type-tag {
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.article-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+.article-meta span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.article-meta i {
+  font-size: 11px;
+}
+
+.article-arrow {
+  color: #cbd5e1;
+  font-size: 12px;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.article-card:hover .article-arrow {
+  color: #3b82f6;
+}
+
+/* Responsive */
 @media (max-width: 640px) {
-  .knowledge-filters {
-    flex-direction: column;
+  .hero-title {
+    font-size: 24px;
   }
 
-  .category-select {
-    min-width: unset;
+  .type-filter {
     width: 100%;
+  }
+
+  .type-btn {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .stats-bar {
+    gap: 6px;
+  }
+
+  .stat {
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+
+  .article-card {
+    padding: 12px 14px;
+  }
+
+  .article-title {
+    font-size: 14px;
   }
 }
 </style>

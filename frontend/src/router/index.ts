@@ -4,26 +4,16 @@ import { isAuthenticated } from '../api/client'
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    // Главная: для авторизованных — заявки, для гостей — инструкции
+    // Главная: для авторизованных — заявки, для гостей — база знаний
     {
       path: '/',
       name: 'home',
       component: () => import('../pages/TicketsPage.vue'),
       beforeEnter: (_to) => {
         if (!isAuthenticated()) {
-          return { name: 'instructions' }
+          return { name: 'knowledge' }
         }
       },
-    },
-    {
-      path: '/instructions',
-      name: 'instructions',
-      component: () => import('../pages/InstructionsPage.vue'),
-    },
-    {
-      path: '/instructions/:slug',
-      name: 'guide',
-      component: () => import('../pages/GuidePage.vue'),
     },
     {
       path: '/knowledge',
@@ -34,6 +24,15 @@ const router = createRouter({
       path: '/knowledge/:slug',
       name: 'article',
       component: () => import('../pages/ArticlePage.vue'),
+    },
+    // Обратная совместимость: старые ссылки /instructions → /knowledge
+    {
+      path: '/instructions',
+      redirect: '/knowledge',
+    },
+    {
+      path: '/instructions/:slug',
+      redirect: (to) => `/knowledge/${to.params.slug}`,
     },
     // Авторизация
     {

@@ -35,17 +35,14 @@ const menuItems = computed(() => {
   }
 
   items.push({
-    label: 'Инструкции',
-    icon: 'pi pi-map',
-    command: () => router.push('/instructions'),
-    class: (route.path.startsWith('/instructions') || (!auth.isLoggedIn && route.path === '/')) ? 'p-menuitem-active' : '',
-  })
-
-  items.push({
     label: 'База знаний',
     icon: 'pi pi-book',
     command: () => router.push('/knowledge'),
-    class: route.path.startsWith('/knowledge') ? 'p-menuitem-active' : '',
+    class: (
+      route.path.startsWith('/knowledge') ||
+      route.path.startsWith('/instructions') ||
+      (!auth.isLoggedIn && route.path === '/')
+    ) ? 'p-menuitem-active' : '',
   })
 
   if (isStaff.value) {
