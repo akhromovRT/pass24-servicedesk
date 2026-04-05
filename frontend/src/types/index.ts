@@ -61,6 +61,7 @@ export interface Ticket {
   sla_breached: boolean
   sla_paused_at: string | null
   sla_total_pause_seconds: number
+  has_unread_reply: boolean
   satisfaction_rating: number | null
   satisfaction_comment: string | null
   satisfaction_submitted_at: string | null

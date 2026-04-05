@@ -17,6 +17,16 @@ export interface TicketFilters {
   creator_id?: string
   my?: boolean
   q?: string
+  view?: string
+}
+
+export interface TicketStats {
+  total: number
+  open: number
+  overdue: number
+  waiting: number
+  urgent: number
+  new: number
 }
 
 export const useTicketsStore = defineStore('tickets', () => {
@@ -26,6 +36,7 @@ export const useTicketsStore = defineStore('tickets', () => {
   const page = ref(1)
   const loading = ref(false)
   const filters = ref<TicketFilters>({})
+  const stats = ref<TicketStats>({ total: 0, open: 0, overdue: 0, waiting: 0, urgent: 0, new: 0 })
 
   async function fetchTickets(p?: number, f?: TicketFilters) {
     loading.value = true
@@ -45,6 +56,7 @@ export const useTicketsStore = defineStore('tickets', () => {
       if (filters.value.creator_id) params.set('creator_id', filters.value.creator_id)
       if (filters.value.my) params.set('my', 'true')
       if (filters.value.q) params.set('q', filters.value.q)
+      if (filters.value.view) params.set('view', filters.value.view)
 
       const data = await api.get<PaginatedResponse<Ticket>>(
         `/tickets/?${params.toString()}`,
@@ -53,6 +65,14 @@ export const useTicketsStore = defineStore('tickets', () => {
       total.value = data.total
     } finally {
       loading.value = false
+    }
+  }
+
+  async function fetchStats() {
+    try {
+      stats.value = await api.get<TicketStats>('/tickets/stats')
+    } catch {
+      // silent
     }
   }
 
@@ -108,7 +128,9 @@ export const useTicketsStore = defineStore('tickets', () => {
     page,
     loading,
     filters,
+    stats,
     fetchTickets,
+    fetchStats,
     fetchTicket,
     createTicket,
     updateStatus,
