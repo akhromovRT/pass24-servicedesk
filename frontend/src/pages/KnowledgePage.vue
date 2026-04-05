@@ -224,6 +224,14 @@ watch(searchInput, onSearchInput)
 
       <div v-if="canCreate" class="hero-actions">
         <Button
+          label="Аналитика"
+          icon="pi pi-chart-line"
+          size="small"
+          severity="secondary"
+          outlined
+          @click="router.push('/kb-analytics')"
+        />
+        <Button
           label="Создать статью"
           icon="pi pi-plus"
           size="small"
@@ -401,6 +409,10 @@ watch(searchInput, onSearchInput)
 
 .hero-actions {
   margin-top: 16px;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 /* Loading / empty */

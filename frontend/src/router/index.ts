@@ -78,6 +78,12 @@ const router = createRouter({
       meta: { auth: true },
     },
     {
+      path: '/kb-analytics',
+      name: 'kb-analytics',
+      component: () => import('../pages/KbAnalyticsPage.vue'),
+      meta: { auth: true },
+    },
+    {
       path: '/settings',
       name: 'settings',
       component: () => import('../pages/SettingsPage.vue'),
