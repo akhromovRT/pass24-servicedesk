@@ -25,16 +25,77 @@ const submitted = ref(false)
 const ticketCreated = ref(false)
 const createdTicketId = ref('')
 
-// Всегда показывать email — это ключ идентификации
-const email = ref(auth.user?.email || '')
-const contactName = ref(auth.user?.full_name || '')
-const contactPhone = ref('')
-
 // Агент/админ может создать заявку от имени клиента
 const isStaff = computed(() =>
   auth.user?.role === 'support_agent' || auth.user?.role === 'admin'
 )
-const onBehalfOfMode = ref(false)  // режим "от имени клиента"
+// Для агентов/админов по умолчанию включаем режим "от имени клиента"
+const onBehalfOfMode = ref(
+  auth.user?.role === 'support_agent' || auth.user?.role === 'admin'
+)
+
+// Если включён режим "от имени клиента" — поля пустые
+const email = ref(onBehalfOfMode.value ? '' : (auth.user?.email || ''))
+const contactName = ref(onBehalfOfMode.value ? '' : (auth.user?.full_name || ''))
+const contactPhone = ref('')
+
+// ------------------------------------------------------------------
+// Маска для телефона: отображение +7 (XXX) XXX-XX-XX, хранение +7XXXXXXXXXX
+// ------------------------------------------------------------------
+function formatPhone(raw: string): string {
+  // Оставляем только цифры
+  let digits = raw.replace(/\D/g, '')
+  // Если начинается с 8 или 7 — отбрасываем первую цифру
+  if (digits.startsWith('8') || digits.startsWith('7')) {
+    digits = digits.slice(1)
+  }
+  // Ограничиваем 10 цифрами после +7
+  digits = digits.slice(0, 10)
+
+  if (!digits) return ''
+
+  let formatted = '+7'
+  if (digits.length > 0) formatted += ' (' + digits.slice(0, 3)
+  if (digits.length >= 3) formatted += ')'
+  if (digits.length > 3) formatted += ' ' + digits.slice(3, 6)
+  if (digits.length > 6) formatted += '-' + digits.slice(6, 8)
+  if (digits.length > 8) formatted += '-' + digits.slice(8, 10)
+  return formatted
+}
+
+function onPhoneInput(e: Event) {
+  const input = e.target as HTMLInputElement
+  const formatted = formatPhone(input.value)
+  contactPhone.value = formatted
+  // Возвращаем курсор в конец
+  requestAnimationFrame(() => {
+    input.setSelectionRange(formatted.length, formatted.length)
+  })
+}
+
+function normalizePhone(formatted: string): string {
+  // Возвращает +79991234567 (или пустую строку)
+  const digits = formatted.replace(/\D/g, '')
+  if (!digits) return ''
+  const clean = (digits.startsWith('7') || digits.startsWith('8')) ? digits.slice(1) : digits
+  if (clean.length !== 10) return ''
+  return '+7' + clean
+}
+
+function toggleBehalfMode() {
+  onBehalfOfMode.value = !onBehalfOfMode.value
+  if (onBehalfOfMode.value) {
+    // Переключились в режим "от имени клиента" — очищаем поля
+    email.value = ''
+    contactName.value = ''
+    contactPhone.value = ''
+  } else {
+    // От своего имени — подставляем данные агента
+    email.value = auth.user?.email || ''
+    contactName.value = auth.user?.full_name || ''
+    contactPhone.value = ''
+  }
+}
 
 interface QuickCard {
   id: string
@@ -142,8 +203,8 @@ onMounted(() => {
     if (q.ticket_type) ticketType.value = q.ticket_type as any
     step.value = 2
   }
-  // Pre-fill email from auth
-  if (auth.user) {
+  // Pre-fill email from auth (только если НЕ режим "от имени клиента")
+  if (auth.user && !onBehalfOfMode.value) {
     email.value = auth.user.email
     contactName.value = auth.user.full_name
   }
@@ -165,7 +226,7 @@ async function onSubmit() {
         category: category.value,
         ticket_type: ticketType.value,
         object_name: objectName.value.trim() || undefined,
-        contact_phone: contactPhone.value.trim() || undefined,
+        contact_phone: normalizePhone(contactPhone.value) || undefined,
         urgent: urgent.value,
       })
       ticketCreated.value = true
@@ -191,7 +252,7 @@ async function onSubmit() {
       ticket_type: ticketType.value,
       object_name: objectName.value.trim() || undefined,
       access_point: accessPoint.value.trim() || undefined,
-      contact_phone: contactPhone.value.trim() || undefined,
+      contact_phone: normalizePhone(contactPhone.value) || undefined,
       contact_name: creatingOnBehalf ? contactName.value.trim() || undefined : undefined,
       company: company.value.trim() || undefined,
       device_type: showDeviceType.value ? deviceType.value : undefined,
@@ -268,7 +329,7 @@ async function onSubmit() {
                 :outlined="!onBehalfOfMode"
                 class="behalf-toggle"
                 type="button"
-                @click="onBehalfOfMode = !onBehalfOfMode; if (!onBehalfOfMode) { email = auth.user?.email || ''; contactName = auth.user?.full_name || '' } else { email = ''; contactName = ''; contactPhone = '' }"
+                @click="toggleBehalfMode"
               />
             </div>
 
@@ -303,8 +364,14 @@ async function onSubmit() {
               </div>
               <div class="field">
                 <label for="contactPhone">Телефон</label>
-                <InputText id="contactPhone" v-model="contactPhone" fluid />
-                <small class="field-help">Для срочной связи — если проблема критичная</small>
+                <InputText
+                  id="contactPhone"
+                  :model-value="contactPhone"
+                  @input="onPhoneInput"
+                  inputmode="tel"
+                  fluid
+                />
+                <small class="field-help">Для срочной связи — формат +7 (999) 123-45-67</small>
               </div>
             </div>
 
