@@ -94,8 +94,8 @@ function logout() {
             text
             rounded
             size="small"
-            title="Инструкция для агентов"
-            aria-label="Помощь"
+            title="Руководство пользователя"
+            aria-label="Руководство пользователя"
             @click="openHelp"
           />
           <NotificationBell v-if="isStaff" />

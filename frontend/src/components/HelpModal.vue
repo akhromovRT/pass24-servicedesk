@@ -1,9 +1,19 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
+import { useAuthStore } from '../stores/auth'
 
+const auth = useAuthStore()
 const visible = ref(false)
+
+const isAdmin = computed(() => auth.user?.role === 'admin')
+
+const title = computed(() =>
+  isAdmin.value
+    ? 'Руководство администратора'
+    : 'Руководство агента поддержки'
+)
 
 function open() { visible.value = true }
 function close() { visible.value = false }
@@ -21,8 +31,8 @@ defineExpose({ open, close })
   >
     <template #header>
       <div class="help-header">
-        <i class="pi pi-book help-header-icon" />
-        <span class="help-header-title">Инструкция для агентов поддержки</span>
+        <i :class="isAdmin ? 'pi pi-shield' : 'pi pi-book'" class="help-header-icon" />
+        <span class="help-header-title">{{ title }}</span>
       </div>
     </template>
 
@@ -41,6 +51,11 @@ defineExpose({ open, close })
         <a href="#sla">⏱️ SLA</a>
         <a href="#dashboard">📊 Дашборд</a>
         <a href="#ai">🤖 AI-ассистент</a>
+        <template v-if="isAdmin">
+          <a href="#users" class="admin-link">👥 Пользователи и роли</a>
+          <a href="#kb-review" class="admin-link">📝 Ревью улучшений БЗ</a>
+          <a href="#settings" class="admin-link">⚙️ SLA и настройки</a>
+        </template>
       </nav>
 
       <section id="tickets" class="help-section">
@@ -206,6 +221,77 @@ defineExpose({ open, close })
         </ul>
       </section>
 
+      <!-- ========== ADMIN-ONLY SECTIONS ========== -->
+      <template v-if="isAdmin">
+        <div class="admin-divider">
+          <i class="pi pi-shield" />
+          <span>Разделы только для администратора</span>
+        </div>
+
+        <section id="users" class="help-section admin-section">
+          <h3>👥 Пользователи и роли</h3>
+          <ul>
+            <li><b>4 роли:</b>
+              <ul>
+                <li><code>resident</code> — житель / сотрудник БЦ</li>
+                <li><code>property_manager</code> — администратор УК</li>
+                <li><code>support_agent</code> — агент поддержки</li>
+                <li><code>admin</code> — супер-администратор</li>
+              </ul>
+            </li>
+            <li><b>Самостоятельная регистрация</b> — только <code>resident</code> и <code>property_manager</code></li>
+            <li><b>support_agent / admin</b> — назначаются только администратором (через БД или в будущем через UI)</li>
+            <li><b>RBAC</b>: резиденты видят только свои тикеты; агенты/админы — все</li>
+            <li><b>Удаление тикетов</b> — только admin (не agent)</li>
+            <li><b>Удаление статей БЗ</b> — только admin</li>
+            <li><b>Одобрение улучшений БЗ</b> — только admin</li>
+          </ul>
+          <p class="help-note">💡 Сейчас смена роли делается через БД. В будущем появится UI управления пользователями.</p>
+        </section>
+
+        <section id="kb-review" class="help-section admin-section">
+          <h3>📝 Ревью улучшений базы знаний</h3>
+          <p>Агенты отправляют предложения по улучшению статей после решения тикетов, где клиент пришёл из конкретной статьи БЗ и не нашёл ответ.</p>
+          <ul>
+            <li><b>Endpoint</b>: <code>GET /tickets/kb-improvements/pending</code> — все ожидающие</li>
+            <li><b>Workflow</b>:
+              <ul>
+                <li><code>pending</code> → ждёт решения</li>
+                <li><code>applied</code> → вы внесли правку в статью</li>
+                <li><code>rejected</code> → отклонено с причиной</li>
+              </ul>
+            </li>
+            <li><b>Endpoint</b>: <code>PUT /tickets/kb-improvements/{id}/status</code> (admin-only) — сменить статус</li>
+            <li><b>Метрики</b>: сколько предложений применено за период → качество обучения БЗ</li>
+          </ul>
+          <p class="help-note">💡 Data Flywheel: каждое решённое предложение снижает приток одинаковых тикетов. Следите за pending-очередью.</p>
+        </section>
+
+        <section id="settings" class="help-section admin-section">
+          <h3>⚙️ SLA и системные настройки</h3>
+          <ul>
+            <li><b>SLA по приоритетам</b> (часы реакции / решения):
+              <ul>
+                <li>Critical: 1 / 4</li>
+                <li>High: 2 / 8</li>
+                <li>Normal: 4 / 24</li>
+                <li>Low: 8 / 48</li>
+              </ul>
+              Задаются в коде <code>backend/tickets/models.py</code> (SLA_TABLE).
+            </li>
+            <li><b>Рабочие часы</b>: пн-пт 9-18 МСК (<code>backend/tickets/sla_watcher.py</code>)</li>
+            <li><b>SLA watcher</b> запускается каждые 5 минут как фоновая задача lifespan FastAPI</li>
+            <li><b>Email-настройки</b> (SMTP/IMAP): env-переменные в docker-compose</li>
+            <li><b>Telegram bot</b> (@PASS24bot): <code>TELEGRAM_BOT_TOKEN</code>, <code>TELEGRAM_WEBHOOK_SECRET</code></li>
+            <li><b>AI-ассистент</b>: <code>ANTHROPIC_API_KEY</code>, Qdrant для RAG</li>
+            <li><b>Миграции БД</b>: применяются вручную после деплоя:
+              <pre class="help-code">docker exec site-pass24-servicedesk python -m alembic upgrade head</pre>
+            </li>
+          </ul>
+        </section>
+      </template>
+      <!-- ========== END ADMIN-ONLY ========== -->
+
       <section class="help-section">
         <h3>💡 Полезные советы</h3>
         <ul>
@@ -260,4 +346,18 @@ defineExpose({ open, close })
   background: #fef3c7; border-left: 3px solid #f59e0b; padding: 10px 14px;
   border-radius: 4px; font-size: 13px; color: #78350f;
 }
+
+/* Admin-specific styling */
+.admin-link { background: #fef3c7 !important; border-color: #fcd34d !important; color: #78350f !important; }
+.admin-link:hover { background: #fde68a !important; }
+.admin-divider {
+  display: flex; align-items: center; gap: 10px; margin: 24px 0 16px;
+  padding: 10px 14px; background: linear-gradient(90deg, #fef3c7, transparent);
+  border-left: 4px solid #f59e0b; border-radius: 4px;
+  font-size: 13px; font-weight: 600; color: #78350f; text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.admin-divider i { font-size: 16px; }
+.admin-section h3 { color: #78350f; }
+.admin-section { border-left: 3px solid #fcd34d; padding-left: 14px; background: #fffbeb; border-radius: 0 6px 6px 0; padding-top: 8px; padding-bottom: 8px; }
 </style>
