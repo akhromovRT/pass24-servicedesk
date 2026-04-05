@@ -47,6 +47,12 @@ const menuItems = computed(() => {
       command: () => router.push('/analytics'),
       class: route.path === '/analytics' ? 'p-menuitem-active' : '',
     })
+    items.push({
+      label: 'Настройки',
+      icon: 'pi pi-cog',
+      command: () => router.push('/settings'),
+      class: route.path === '/settings' ? 'p-menuitem-active' : '',
+    })
   }
 
   return items
