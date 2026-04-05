@@ -162,6 +162,7 @@ class TicketRead(BaseModel):
     # CSAT
     satisfaction_rating: Optional[int] = None
     satisfaction_comment: Optional[str] = None
+    satisfaction_requested_at: Optional[datetime] = None
     satisfaction_submitted_at: Optional[datetime] = None
 
     events: List[EventRead] = []
