@@ -29,6 +29,26 @@ export interface TicketStats {
   new: number
 }
 
+export interface SavedView {
+  id: string
+  name: string
+  icon: string | null
+  filters: Record<string, any>
+  owner_id: string
+  is_shared: boolean
+  sort_order: number
+  usage_count: number
+  created_at: string
+}
+
+export interface SavedViewCreate {
+  name: string
+  icon?: string | null
+  filters: Record<string, any>
+  is_shared?: boolean
+  sort_order?: number
+}
+
 export const useTicketsStore = defineStore('tickets', () => {
   const tickets = ref<Ticket[]>([])
   const currentTicket = ref<Ticket | null>(null)
@@ -37,6 +57,7 @@ export const useTicketsStore = defineStore('tickets', () => {
   const loading = ref(false)
   const filters = ref<TicketFilters>({})
   const stats = ref<TicketStats>({ total: 0, open: 0, overdue: 0, waiting: 0, urgent: 0, new: 0 })
+  const savedViews = ref<SavedView[]>([])
 
   async function fetchTickets(p?: number, f?: TicketFilters) {
     loading.value = true
@@ -142,6 +163,33 @@ export const useTicketsStore = defineStore('tickets', () => {
     return ticket
   }
 
+  async function fetchSavedViews(): Promise<SavedView[]> {
+    try {
+      const data = await api.get<SavedView[]>('/tickets/saved-views')
+      savedViews.value = data
+      return data
+    } catch {
+      savedViews.value = []
+      return []
+    }
+  }
+
+  async function createSavedView(data: SavedViewCreate): Promise<SavedView> {
+    return await api.post<SavedView>('/tickets/saved-views', data)
+  }
+
+  async function deleteSavedView(id: string): Promise<void> {
+    await api.delete<void>(`/tickets/saved-views/${id}`)
+    savedViews.value = savedViews.value.filter((v) => v.id !== id)
+  }
+
+  function recordViewUsage(id: string): void {
+    // fire and forget
+    api.post<void>(`/tickets/saved-views/${id}/use`).catch(() => {
+      // silent
+    })
+  }
+
   return {
     tickets,
     currentTicket,
@@ -150,6 +198,7 @@ export const useTicketsStore = defineStore('tickets', () => {
     loading,
     filters,
     stats,
+    savedViews,
     fetchTickets,
     fetchStats,
     fetchTicket,
@@ -161,5 +210,9 @@ export const useTicketsStore = defineStore('tickets', () => {
     bulkAction,
     mergeTicket,
     applyMacro,
+    fetchSavedViews,
+    createSavedView,
+    deleteSavedView,
+    recordViewUsage,
   }
 })

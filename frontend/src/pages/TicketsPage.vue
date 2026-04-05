@@ -7,13 +7,19 @@ import Paginator from 'primevue/paginator'
 import InputText from 'primevue/inputtext'
 import IconField from 'primevue/iconfield'
 import InputIcon from 'primevue/inputicon'
+import Dialog from 'primevue/dialog'
+import Select from 'primevue/select'
+import Checkbox from 'primevue/checkbox'
+import ConfirmDialog from 'primevue/confirmdialog'
 import { useToast } from 'primevue/usetoast'
-import { useTicketsStore } from '../stores/tickets'
+import { useConfirm } from 'primevue/useconfirm'
+import { useTicketsStore, type SavedView } from '../stores/tickets'
 import { useAuthStore } from '../stores/auth'
 import type { Ticket } from '../types'
 
 const router = useRouter()
 const toast = useToast()
+const confirm = useConfirm()
 const store = useTicketsStore()
 const auth = useAuthStore()
 
@@ -21,11 +27,61 @@ const isStaff = computed(() => auth.user?.role === 'support_agent' || auth.user?
 
 // ─── Filters & View ─────────────────────────────────────────────
 const activeView = ref<string>('all')
+const activeSavedViewId = ref<string | null>(null)
 const statusFilter = ref<string[]>([])
 const categoryFilter = ref<string[]>([])
 const searchQuery = ref('')
 const showAdvancedFilters = ref(false)
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+// ─── Saved Views ────────────────────────────────────────────────
+const iconOptions = [
+  { label: 'Звезда', value: 'pi pi-star', icon: 'pi pi-star' },
+  { label: 'Закладка', value: 'pi pi-bookmark', icon: 'pi pi-bookmark' },
+  { label: 'Флаг', value: 'pi pi-flag', icon: 'pi pi-flag' },
+  { label: 'Пользователь', value: 'pi pi-user', icon: 'pi pi-user' },
+  { label: 'Объект', value: 'pi pi-building', icon: 'pi pi-building' },
+  { label: 'Внимание', value: 'pi pi-exclamation-triangle', icon: 'pi pi-exclamation-triangle' },
+]
+
+const showSaveDialog = ref(false)
+const savingView = ref(false)
+const newViewName = ref('')
+const newViewIcon = ref<string>('pi pi-star')
+const newViewShared = ref(false)
+
+const hasActiveFilters = computed(() =>
+  statusFilter.value.length > 0 || categoryFilter.value.length > 0 || searchQuery.value.trim().length > 0,
+)
+
+const visibleSavedViews = computed(() => {
+  const me = auth.user?.id
+  return store.savedViews.filter((v) => v.owner_id === me || v.is_shared)
+})
+
+const currentFiltersPreview = computed(() => {
+  const chips: { label: string; value: string }[] = []
+  if (activeView.value !== 'all') {
+    const view = views.value.find((v) => v.id === activeView.value)
+    if (view) chips.push({ label: 'Раздел', value: view.label })
+  }
+  if (statusFilter.value.length) {
+    const names = statusFilter.value
+      .map((s) => statusOptions.find((o) => o.value === s)?.label || s)
+      .join(', ')
+    chips.push({ label: 'Статус', value: names })
+  }
+  if (categoryFilter.value.length) {
+    const names = categoryFilter.value
+      .map((c) => categoryOptions.find((o) => o.value === c)?.label || c)
+      .join(', ')
+    chips.push({ label: 'Категория', value: names })
+  }
+  if (searchQuery.value.trim()) {
+    chips.push({ label: 'Поиск', value: searchQuery.value.trim() })
+  }
+  return chips
+})
 
 // ─── Views (tabs) ────────────────────────────────────────────────
 const views = computed(() => {
@@ -150,23 +206,100 @@ async function loadTickets(p?: number) {
 
 function selectView(viewId: string) {
   activeView.value = viewId
+  activeSavedViewId.value = null
   statusFilter.value = []
   categoryFilter.value = []
   loadTickets(1)
 }
 
+function applySavedView(view: SavedView) {
+  const f = view.filters || {}
+  activeSavedViewId.value = view.id
+  activeView.value = typeof f.view === 'string' ? f.view : 'all'
+  statusFilter.value = Array.isArray(f.status) ? [...f.status] : []
+  categoryFilter.value = Array.isArray(f.category) ? [...f.category] : []
+  searchQuery.value = typeof f.q === 'string' ? f.q : ''
+  // fire-and-forget usage increment
+  store.recordViewUsage(view.id)
+  // bump local count so UI reflects immediately
+  const local = store.savedViews.find((v) => v.id === view.id)
+  if (local) local.usage_count += 1
+  loadTickets(1)
+}
+
+function openSaveDialog() {
+  newViewName.value = ''
+  newViewIcon.value = 'pi pi-star'
+  newViewShared.value = false
+  showSaveDialog.value = true
+}
+
+async function submitSaveView() {
+  const name = newViewName.value.trim()
+  if (!name) return
+  savingView.value = true
+  try {
+    const filtersPayload: Record<string, any> = {}
+    if (activeView.value !== 'all') filtersPayload.view = activeView.value
+    if (statusFilter.value.length) filtersPayload.status = [...statusFilter.value]
+    if (categoryFilter.value.length) filtersPayload.category = [...categoryFilter.value]
+    if (searchQuery.value.trim()) filtersPayload.q = searchQuery.value.trim()
+
+    await store.createSavedView({
+      name: name.slice(0, 128),
+      icon: newViewIcon.value || null,
+      filters: filtersPayload,
+      is_shared: newViewShared.value,
+    })
+    await store.fetchSavedViews()
+    showSaveDialog.value = false
+    toast.add({ severity: 'success', summary: 'View сохранён', life: 2000 })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message || 'Не удалось сохранить', life: 4000 })
+  } finally {
+    savingView.value = false
+  }
+}
+
+function confirmDeleteView(view: SavedView, event: Event) {
+  event.stopPropagation()
+  confirm.require({
+    message: `Удалить сохранённый view «${view.name}»?`,
+    header: 'Удаление view',
+    icon: 'pi pi-exclamation-triangle',
+    acceptClass: 'p-button-danger',
+    acceptLabel: 'Удалить',
+    rejectLabel: 'Отмена',
+    accept: async () => {
+      try {
+        await store.deleteSavedView(view.id)
+        if (activeSavedViewId.value === view.id) activeSavedViewId.value = null
+        toast.add({ severity: 'success', summary: 'Удалён', life: 2000 })
+      } catch (e: any) {
+        toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message || 'Не удалось удалить', life: 4000 })
+      }
+    },
+  })
+}
+
 function onPageChange(event: { page: number }) { loadTickets(event.page + 1) }
 
-watch(searchQuery, () => {
+watch(searchQuery, (v, prev) => {
+  if (v !== prev && activeSavedViewId.value) activeSavedViewId.value = null
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
   searchDebounceTimer = setTimeout(() => loadTickets(1), 300)
 })
+
+watch([statusFilter, categoryFilter], () => {
+  if (activeSavedViewId.value) activeSavedViewId.value = null
+}, { deep: true })
 
 function openTicket(id: string) { router.push(`/tickets/${id}`) }
 
 onMounted(() => {
   store.fetchStats()
   loadTickets(1)
+  if (auth.isLoggedIn) store.fetchSavedViews()
 })
 </script>
 
@@ -187,13 +320,49 @@ onMounted(() => {
         v-for="view in views"
         :key="view.id"
         class="view-tab"
-        :class="{ active: activeView === view.id, danger: view.severity === 'danger', warn: view.severity === 'warn' }"
+        :class="{ active: activeView === view.id && !activeSavedViewId, danger: view.severity === 'danger', warn: view.severity === 'warn' }"
         @click="selectView(view.id)"
       >
         <i :class="view.icon" />
         <span>{{ view.label }}</span>
         <span v-if="view.count !== undefined && view.count > 0" class="view-count">{{ view.count }}</span>
       </button>
+
+      <template v-if="auth.isLoggedIn && (visibleSavedViews.length > 0 || hasActiveFilters)">
+        <span class="views-separator" aria-hidden="true" />
+
+        <button
+          v-for="sv in visibleSavedViews"
+          :key="sv.id"
+          class="view-tab saved-view-tab"
+          :class="{ active: activeSavedViewId === sv.id }"
+          :title="sv.is_shared ? 'Общий view' : 'Личный view'"
+          @click="applySavedView(sv)"
+        >
+          <i :class="sv.icon || 'pi pi-star'" />
+          <span>{{ sv.name }}</span>
+          <span v-if="sv.is_shared" class="saved-view-shared" title="Общий"><i class="pi pi-users" /></span>
+          <span v-if="sv.usage_count > 0" class="view-count">{{ sv.usage_count }}</span>
+          <span
+            v-if="auth.user && sv.owner_id === auth.user.id"
+            class="saved-view-delete"
+            title="Удалить"
+            @click="confirmDeleteView(sv, $event)"
+          >
+            <i class="pi pi-trash" />
+          </span>
+        </button>
+
+        <button
+          v-if="hasActiveFilters"
+          class="view-tab saved-view-add"
+          title="Сохранить текущие фильтры как view"
+          @click="openSaveDialog"
+        >
+          <i class="pi pi-plus" />
+          <span>Сохранить</span>
+        </button>
+      </template>
     </div>
 
     <!-- Search + Advanced filters toggle -->
@@ -331,6 +500,80 @@ onMounted(() => {
       :first="(store.page - 1) * 20"
       @page="onPageChange"
     />
+
+    <!-- Save view dialog -->
+    <Dialog
+      v-model:visible="showSaveDialog"
+      modal
+      header="Сохранить view"
+      :style="{ width: '460px' }"
+      :draggable="false"
+    >
+      <div class="save-view-form">
+        <div class="form-field">
+          <label for="sv-name">Название <span class="req">*</span></label>
+          <InputText
+            id="sv-name"
+            v-model="newViewName"
+            maxlength="128"
+            placeholder="Например: Мои срочные"
+            fluid
+            autofocus
+          />
+        </div>
+        <div class="form-field">
+          <label for="sv-icon">Иконка</label>
+          <Select
+            id="sv-icon"
+            v-model="newViewIcon"
+            :options="iconOptions"
+            option-label="label"
+            option-value="value"
+            fluid
+          >
+            <template #value="slotProps">
+              <span v-if="slotProps.value" class="icon-select-value">
+                <i :class="slotProps.value" />
+                {{ iconOptions.find(o => o.value === slotProps.value)?.label }}
+              </span>
+              <span v-else>Выберите иконку</span>
+            </template>
+            <template #option="slotProps">
+              <span class="icon-select-value">
+                <i :class="slotProps.option.icon" />
+                {{ slotProps.option.label }}
+              </span>
+            </template>
+          </Select>
+        </div>
+        <div class="form-field-inline">
+          <Checkbox v-model="newViewShared" input-id="sv-shared" :binary="true" />
+          <label for="sv-shared">Поделиться с командой</label>
+        </div>
+
+        <div v-if="currentFiltersPreview.length" class="filters-preview">
+          <div class="filters-preview-title">Текущие фильтры</div>
+          <div class="filters-preview-chips">
+            <span v-for="(chip, i) in currentFiltersPreview" :key="i" class="filter-chip">
+              <span class="filter-chip-label">{{ chip.label }}:</span>
+              <span class="filter-chip-value">{{ chip.value }}</span>
+            </span>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <Button label="Отмена" severity="secondary" text @click="showSaveDialog = false" />
+        <Button
+          label="Сохранить"
+          icon="pi pi-check"
+          :loading="savingView"
+          :disabled="!newViewName.trim()"
+          @click="submitSaveView"
+        />
+      </template>
+    </Dialog>
+
+    <ConfirmDialog />
   </div>
 </template>
 
@@ -367,6 +610,28 @@ onMounted(() => {
 .view-tab.active .view-count { background: #3b82f6; color: white; }
 .view-tab.active.danger .view-count { background: #dc2626; }
 .view-tab.active.warn .view-count { background: #d97706; }
+
+/* Saved views */
+.views-separator {
+  display: inline-block; width: 1px; height: 20px; background: #cbd5e1; margin: 0 4px; align-self: center;
+}
+.saved-view-tab { position: relative; padding-right: 14px; }
+.saved-view-tab:hover .saved-view-delete { opacity: 1; pointer-events: auto; }
+.saved-view-delete {
+  position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 4px;
+  background: rgba(220, 38, 38, 0.1); color: #dc2626;
+  opacity: 0; pointer-events: none; transition: opacity 0.15s, background 0.15s;
+}
+.saved-view-delete:hover { background: #dc2626; color: white; }
+.saved-view-delete i { font-size: 10px; }
+.saved-view-shared { display: inline-flex; align-items: center; color: #94a3b8; }
+.saved-view-shared i { font-size: 10px; }
+.saved-view-tab.active .saved-view-shared { color: #3b82f6; }
+.saved-view-add { color: #3b82f6 !important; font-weight: 600; }
+.saved-view-add:hover { background: #dbeafe !important; color: #2563eb !important; }
+.saved-view-add i { font-size: 11px; }
 
 /* Toolbar */
 .toolbar { display: flex; gap: 10px; align-items: center; }
@@ -438,6 +703,29 @@ onMounted(() => {
 }
 
 .row-date { font-size: 11px; color: #94a3b8; }
+
+/* Save view dialog */
+.save-view-form { display: flex; flex-direction: column; gap: 14px; }
+.form-field { display: flex; flex-direction: column; gap: 6px; }
+.form-field label { font-size: 13px; font-weight: 500; color: #334155; }
+.form-field .req { color: #dc2626; }
+.form-field-inline { display: flex; align-items: center; gap: 8px; }
+.form-field-inline label { font-size: 13px; color: #334155; cursor: pointer; }
+.icon-select-value { display: inline-flex; align-items: center; gap: 8px; }
+.icon-select-value i { font-size: 13px; color: #64748b; }
+
+.filters-preview {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+}
+.filters-preview-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; }
+.filters-preview-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.filter-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 11px;
+}
+.filter-chip-label { color: #94a3b8; font-weight: 500; }
+.filter-chip-value { color: #0f172a; font-weight: 600; }
 
 /* Responsive */
 @media (max-width: 768px) {

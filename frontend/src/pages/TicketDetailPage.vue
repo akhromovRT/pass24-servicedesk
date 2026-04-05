@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed } from 'vue'
+import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Card from 'primevue/card'
 import Tag from 'primevue/tag'
 import Timeline from 'primevue/timeline'
 import Button from 'primevue/button'
 import Textarea from 'primevue/textarea'
+import InputText from 'primevue/inputtext'
 import Checkbox from 'primevue/checkbox'
 import Divider from 'primevue/divider'
 import Dialog from 'primevue/dialog'
@@ -15,7 +16,8 @@ import TicketStatusBadge from '../components/TicketStatusBadge.vue'
 import TicketPriorityBadge from '../components/TicketPriorityBadge.vue'
 import { useTicketsStore } from '../stores/tickets'
 import { useAuthStore } from '../stores/auth'
-import type { TicketStatus, Attachment } from '../types'
+import { api } from '../api/client'
+import type { TicketStatus, Attachment, TicketPriority, PaginatedResponse, Ticket } from '../types'
 
 const route = useRoute()
 const router = useRouter()
@@ -198,6 +200,9 @@ async function loadTicket() {
   const id = route.params.id as string
   try {
     await store.fetchTicket(id)
+    if (isStaff.value) {
+      await Promise.all([loadArticleLinks(), loadChildren(), loadParent()])
+    }
   } catch (e: any) {
     toast.add({
       severity: 'error',
@@ -343,8 +348,264 @@ function goBack() {
   router.push('/')
 }
 
+// ---------- KB Article Links ----------
+type RelationType = 'helped' | 'related' | 'created_from'
+
+interface ArticleLink {
+  id: string
+  ticket_id: string
+  article_id: string
+  article_title: string
+  article_slug: string
+  relation_type: RelationType
+  linked_by: string
+  created_at: string
+}
+
+interface ArticleSearchResult {
+  id: string
+  title: string
+  slug: string
+  category: string
+}
+
+const articleLinks = ref<ArticleLink[]>([])
+const articleDialogVisible = ref(false)
+const articleSearchQuery = ref('')
+const articleSearchResults = ref<ArticleSearchResult[]>([])
+const articleSearchLoading = ref(false)
+const selectedRelationType = ref<RelationType>('helped')
+
+const relationLabels: Record<RelationType, string> = {
+  helped: 'Помогла решить',
+  related: 'Связана',
+  created_from: 'Создана из тикета',
+}
+
+const relationSeverities: Record<RelationType, string> = {
+  helped: 'success',
+  related: 'info',
+  created_from: 'warn',
+}
+
+let articleSearchDebounce: ReturnType<typeof setTimeout> | null = null
+
+async function loadArticleLinks() {
+  if (!ticket.value || !isStaff.value) return
+  try {
+    articleLinks.value = await api.get<ArticleLink[]>(`/tickets/${ticket.value.id}/articles`)
+  } catch {
+    // тихо
+  }
+}
+
+function openArticleDialog() {
+  articleSearchQuery.value = ''
+  articleSearchResults.value = []
+  selectedRelationType.value = 'helped'
+  articleDialogVisible.value = true
+}
+
+function onArticleSearchInput() {
+  if (articleSearchDebounce) clearTimeout(articleSearchDebounce)
+  const q = articleSearchQuery.value.trim()
+  if (!q) {
+    articleSearchResults.value = []
+    return
+  }
+  articleSearchDebounce = setTimeout(async () => {
+    articleSearchLoading.value = true
+    try {
+      const data = await api.get<{ items: ArticleSearchResult[] }>(
+        `/knowledge/search?query=${encodeURIComponent(q)}&per_page=5`,
+      )
+      articleSearchResults.value = data.items || []
+    } catch {
+      articleSearchResults.value = []
+    } finally {
+      articleSearchLoading.value = false
+    }
+  }, 300)
+}
+
+async function linkArticle(articleId: string) {
+  if (!ticket.value) return
+  try {
+    await api.post(`/tickets/${ticket.value.id}/articles`, {
+      article_id: articleId,
+      relation_type: selectedRelationType.value,
+    })
+    articleDialogVisible.value = false
+    await loadArticleLinks()
+    toast.add({ severity: 'success', summary: 'Статья привязана', life: 2000 })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+  }
+}
+
+async function unlinkArticle(linkId: string) {
+  if (!ticket.value) return
+  try {
+    await api.delete(`/tickets/${ticket.value.id}/articles/${linkId}`)
+    await loadArticleLinks()
+    toast.add({ severity: 'success', summary: 'Статья отвязана', life: 2000 })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+  }
+}
+
+function goToArticle(slug: string) {
+  router.push(`/knowledge/${slug}`)
+}
+
+// ---------- Parent-Child (Problem → Incidents) ----------
+interface ChildTicket {
+  id: string
+  title: string
+  status: TicketStatus
+  priority: TicketPriority
+  created_at: string
+}
+
+interface ChildrenResponse {
+  count: number
+  items: ChildTicket[]
+}
+
+const childTickets = ref<ChildTicket[]>([])
+const childrenCount = ref(0)
+const parentTicket = ref<{ id: string; title: string } | null>(null)
+const parentDialogVisible = ref(false)
+const parentSearchQuery = ref('')
+const parentSearchResults = ref<Ticket[]>([])
+const parentSearchLoading = ref(false)
+
+let parentSearchDebounce: ReturnType<typeof setTimeout> | null = null
+
+async function loadChildren() {
+  if (!ticket.value || !isStaff.value) return
+  try {
+    const data = await api.get<ChildrenResponse>(`/tickets/${ticket.value.id}/children`)
+    childTickets.value = data.items || []
+    childrenCount.value = data.count || 0
+  } catch {
+    childTickets.value = []
+    childrenCount.value = 0
+  }
+}
+
+async function loadParent() {
+  if (!ticket.value || !isStaff.value || !ticket.value.parent_ticket_id) {
+    parentTicket.value = null
+    return
+  }
+  try {
+    const data = await api.get<Ticket>(`/tickets/${ticket.value.parent_ticket_id}`)
+    parentTicket.value = { id: data.id, title: data.title }
+  } catch {
+    parentTicket.value = null
+  }
+}
+
+function openParentDialog() {
+  parentSearchQuery.value = ''
+  parentSearchResults.value = []
+  parentDialogVisible.value = true
+}
+
+function onParentSearchInput() {
+  if (parentSearchDebounce) clearTimeout(parentSearchDebounce)
+  const q = parentSearchQuery.value.trim()
+  if (!q) {
+    parentSearchResults.value = []
+    return
+  }
+  parentSearchDebounce = setTimeout(async () => {
+    parentSearchLoading.value = true
+    try {
+      const data = await api.get<PaginatedResponse<Ticket>>(
+        `/tickets/?q=${encodeURIComponent(q)}&per_page=10&page=1`,
+      )
+      parentSearchResults.value = (data.items || []).filter(t => t.id !== ticket.value?.id)
+    } catch {
+      parentSearchResults.value = []
+    } finally {
+      parentSearchLoading.value = false
+    }
+  }, 300)
+}
+
+async function linkToParent(parentId: string) {
+  if (!ticket.value) return
+  try {
+    await api.put(`/tickets/${ticket.value.id}/parent`, { parent_ticket_id: parentId })
+    parentDialogVisible.value = false
+    await loadTicket()
+    await loadParent()
+    toast.add({ severity: 'success', summary: 'Привязано к Problem', life: 2000 })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+  }
+}
+
+async function unlinkFromParent() {
+  if (!ticket.value) return
+  try {
+    await api.delete(`/tickets/${ticket.value.id}/parent`)
+    await loadTicket()
+    parentTicket.value = null
+    toast.add({ severity: 'success', summary: 'Отвязано от Problem', life: 2000 })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+  }
+}
+
+function goToTicket(id: string) {
+  router.push(`/tickets/${id}`)
+}
+
+function shortId(id: string): string {
+  return id.replace(/-/g, '').slice(0, 8).toUpperCase()
+}
+
+const statusLabels: Record<TicketStatus, string> = {
+  new: 'Новая',
+  in_progress: 'В работе',
+  waiting_for_user: 'Ждёт ответа',
+  resolved: 'Решена',
+  closed: 'Закрыта',
+}
+
+const priorityLabels: Record<TicketPriority, string> = {
+  low: 'Низкий',
+  normal: 'Обычный',
+  high: 'Высокий',
+  critical: 'Критический',
+}
+
+const statusSeverities: Record<TicketStatus, string> = {
+  new: 'info',
+  in_progress: 'warn',
+  waiting_for_user: 'secondary',
+  resolved: 'success',
+  closed: 'contrast',
+}
+
+const prioritySeverities: Record<TicketPriority, string> = {
+  low: 'secondary',
+  normal: 'info',
+  high: 'warn',
+  critical: 'danger',
+}
+
 // Polling для обновления комментариев (каждые 15 сек)
 let pollInterval: ReturnType<typeof setInterval> | null = null
+
+watch(() => route.params.id, (newId, oldId) => {
+  if (newId && newId !== oldId) {
+    loadTicket()
+  }
+})
 
 onMounted(() => {
   loadTicket()
@@ -680,6 +941,131 @@ onUnmounted(() => {
         </template>
       </Card>
 
+      <!-- Связанные статьи (KB) — только для staff -->
+      <Card v-if="isStaff" class="section-card">
+        <template #title>
+          <div class="card-title-row"><i class="pi pi-book" /> Связанные статьи</div>
+        </template>
+        <template #content>
+          <div v-if="articleLinks.length" class="linked-articles-list">
+            <div
+              v-for="link in articleLinks"
+              :key="link.id"
+              class="linked-article-item"
+            >
+              <button
+                type="button"
+                class="linked-article-title"
+                @click="goToArticle(link.article_slug)"
+              >
+                <i class="pi pi-file" />
+                <span>{{ link.article_title }}</span>
+              </button>
+              <Tag
+                :value="relationLabels[link.relation_type]"
+                :severity="relationSeverities[link.relation_type] as any"
+                class="relation-tag"
+              />
+              <Button
+                icon="pi pi-trash"
+                severity="danger"
+                text
+                rounded
+                size="small"
+                aria-label="Отвязать"
+                @click="unlinkArticle(link.id)"
+              />
+            </div>
+          </div>
+          <p v-else class="no-comments">Статьи не привязаны</p>
+          <Divider />
+          <Button
+            label="Привязать статью"
+            icon="pi pi-plus"
+            size="small"
+            severity="secondary"
+            outlined
+            @click="openArticleDialog"
+          />
+        </template>
+      </Card>
+
+      <!-- Связь с Problem — только для staff -->
+      <Card v-if="isStaff" class="section-card">
+        <template #title>
+          <div class="card-title-row"><i class="pi pi-sitemap" /> Связь с Problem</div>
+        </template>
+        <template #content>
+          <!-- Ticket linked to a parent -->
+          <template v-if="ticket.parent_ticket_id">
+            <div class="parent-banner">
+              <i class="pi pi-link parent-banner-icon" />
+              <div class="parent-banner-content">
+                <div class="parent-banner-label">Связан с Problem</div>
+                <button
+                  type="button"
+                  class="parent-banner-link"
+                  @click="goToTicket(ticket.parent_ticket_id!)"
+                >
+                  #{{ shortId(ticket.parent_ticket_id) }}<template v-if="parentTicket"> — {{ parentTicket.title }}</template>
+                </button>
+              </div>
+              <Button
+                label="Отвязать"
+                icon="pi pi-times"
+                severity="secondary"
+                outlined
+                size="small"
+                @click="unlinkFromParent"
+              />
+            </div>
+          </template>
+
+          <!-- Ticket has children (is a Problem) -->
+          <template v-else-if="childrenCount > 0">
+            <div class="children-header">
+              Связанные инциденты ({{ childrenCount }})
+            </div>
+            <div class="children-list">
+              <button
+                v-for="child in childTickets"
+                :key="child.id"
+                type="button"
+                class="child-item"
+                @click="goToTicket(child.id)"
+              >
+                <span class="child-id">#{{ shortId(child.id) }}</span>
+                <span class="child-title">{{ child.title }}</span>
+                <Tag
+                  :value="statusLabels[child.status]"
+                  :severity="statusSeverities[child.status] as any"
+                  class="child-tag"
+                />
+                <Tag
+                  :value="priorityLabels[child.priority]"
+                  :severity="prioritySeverities[child.priority] as any"
+                  class="child-tag"
+                />
+              </button>
+            </div>
+          </template>
+
+          <!-- Regular ticket, not linked -->
+          <template v-else>
+            <p class="no-comments">Заявка не связана с Problem</p>
+            <Divider />
+            <Button
+              label="Привязать к Problem"
+              icon="pi pi-link"
+              size="small"
+              severity="secondary"
+              outlined
+              @click="openParentDialog"
+            />
+          </template>
+        </template>
+      </Card>
+
       <!-- Комментарии -->
       <Card class="section-card">
         <template #title>
@@ -785,6 +1171,89 @@ onUnmounted(() => {
         <Button label="Скачать" icon="pi pi-download" severity="secondary" outlined @click="downloadAttachment" />
         <Button label="Закрыть" icon="pi pi-times" @click="closePreview" />
       </template>
+    </Dialog>
+
+    <!-- Диалог поиска статей KB -->
+    <Dialog
+      v-model:visible="articleDialogVisible"
+      modal
+      header="Привязать статью"
+      :style="{ width: '560px' }"
+      :breakpoints="{ '640px': '95vw' }"
+    >
+      <div class="search-dialog">
+        <div class="search-relation-row">
+          <label class="search-relation-label">Тип связи:</label>
+          <select v-model="selectedRelationType" class="search-relation-select">
+            <option value="helped">Помогла решить</option>
+            <option value="related">Связана</option>
+            <option value="created_from">Создана из тикета</option>
+          </select>
+        </div>
+        <InputText
+          v-model="articleSearchQuery"
+          placeholder="Поиск по базе знаний..."
+          fluid
+          autofocus
+          @input="onArticleSearchInput"
+        />
+        <div v-if="articleSearchLoading" class="search-loading">
+          <i class="pi pi-spin pi-spinner" /> Поиск...
+        </div>
+        <div v-else-if="articleSearchResults.length" class="search-results">
+          <button
+            v-for="r in articleSearchResults"
+            :key="r.id"
+            type="button"
+            class="search-result-item"
+            @click="linkArticle(r.id)"
+          >
+            <span class="search-result-title">{{ r.title }}</span>
+            <span class="search-result-meta">{{ r.category }}</span>
+          </button>
+        </div>
+        <p v-else-if="articleSearchQuery" class="search-empty">Ничего не найдено</p>
+      </div>
+    </Dialog>
+
+    <!-- Диалог поиска родительского тикета -->
+    <Dialog
+      v-model:visible="parentDialogVisible"
+      modal
+      header="Привязать к Problem"
+      :style="{ width: '560px' }"
+      :breakpoints="{ '640px': '95vw' }"
+    >
+      <div class="search-dialog">
+        <InputText
+          v-model="parentSearchQuery"
+          placeholder="Поиск заявки по названию или номеру..."
+          fluid
+          autofocus
+          @input="onParentSearchInput"
+        />
+        <div v-if="parentSearchLoading" class="search-loading">
+          <i class="pi pi-spin pi-spinner" /> Поиск...
+        </div>
+        <div v-else-if="parentSearchResults.length" class="search-results">
+          <button
+            v-for="t in parentSearchResults"
+            :key="t.id"
+            type="button"
+            class="search-result-item"
+            @click="linkToParent(t.id)"
+          >
+            <span class="search-result-id">#{{ shortId(t.id) }}</span>
+            <span class="search-result-title">{{ t.title }}</span>
+            <Tag
+              :value="statusLabels[t.status]"
+              :severity="statusSeverities[t.status] as any"
+              class="search-result-tag"
+            />
+          </button>
+        </div>
+        <p v-else-if="parentSearchQuery" class="search-empty">Ничего не найдено</p>
+      </div>
     </Dialog>
   </div>
 </template>
@@ -1264,5 +1733,246 @@ onUnmounted(() => {
 .internal-check label {
   cursor: pointer;
   color: #64748b;
+}
+
+/* Связанные статьи (KB) */
+.linked-articles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.linked-article-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.linked-article-title {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  font-family: inherit;
+  font-size: 14px;
+  color: #1e293b;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.linked-article-title:hover { color: #3b82f6; text-decoration: underline; }
+.linked-article-title i { color: #94a3b8; font-size: 14px; }
+
+.relation-tag {
+  flex-shrink: 0;
+}
+
+/* Связь с Problem */
+.parent-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #eff6ff, #f0f9ff);
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+}
+
+.parent-banner-icon {
+  color: #3b82f6;
+  font-size: 18px;
+}
+
+.parent-banner-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.parent-banner-label {
+  font-size: 11px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+}
+
+.parent-banner-link {
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e40af;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.parent-banner-link:hover { text-decoration: underline; }
+
+.children-header {
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+}
+
+.children-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.child-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+.child-item:hover { background: #f1f5f9; border-color: #cbd5e1; }
+
+.child-id {
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  background: #e2e8f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.child-title {
+  flex: 1;
+  font-size: 14px;
+  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.child-tag {
+  flex-shrink: 0;
+}
+
+/* Поисковые диалоги */
+.search-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.search-relation-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.search-relation-label {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.search-relation-select {
+  flex: 1;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  background: white;
+  color: #1e293b;
+  font-family: inherit;
+}
+
+.search-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #94a3b8;
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+.search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+.search-result-item:hover { background: #e0f2fe; border-color: #7dd3fc; }
+
+.search-result-id {
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  background: #e2e8f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.search-result-title {
+  flex: 1;
+  font-size: 14px;
+  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-result-meta {
+  font-size: 12px;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.search-result-tag {
+  flex-shrink: 0;
+}
+
+.search-empty {
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
+  padding: 1rem 0;
+  margin: 0;
 }
 </style>
