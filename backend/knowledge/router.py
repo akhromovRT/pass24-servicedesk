@@ -117,7 +117,7 @@ async def list_articles(
         count_query = count_query.where(Article.category == category)
     if tag:
         # JSONB containment: tags @> '["sms"]'::jsonb
-        tag_filter = sa_text("tags @> :tag_arr").bindparams(tag_arr=f'["{tag}"]')
+        tag_filter = sa_text("tags @> CAST(:tag_arr AS jsonb)").bindparams(tag_arr=f'["{tag}"]')
         query = query.where(tag_filter)
         count_query = count_query.where(tag_filter)
 
@@ -193,7 +193,7 @@ async def search_articles(
         stmt = stmt.where(Article.category == category)
         count_stmt = count_stmt.where(Article.category == category)
     if tag:
-        tag_filter = sa_text("tags @> :tag_arr").bindparams(tag_arr=f'["{tag}"]')
+        tag_filter = sa_text("tags @> CAST(:tag_arr AS jsonb)").bindparams(tag_arr=f'["{tag}"]')
         stmt = stmt.where(tag_filter)
         count_stmt = count_stmt.where(tag_filter)
 
@@ -217,7 +217,7 @@ async def search_articles(
             stmt = stmt.where(Article.category == category)
             count_stmt = count_stmt.where(Article.category == category)
         if tag:
-            tag_filter = sa_text("tags @> :tag_arr").bindparams(tag_arr=f'["{tag}"]')
+            tag_filter = sa_text("tags @> CAST(:tag_arr AS jsonb)").bindparams(tag_arr=f'["{tag}"]')
             stmt = stmt.where(tag_filter)
             count_stmt = count_stmt.where(tag_filter)
         total_result = await session.execute(count_stmt)
@@ -431,7 +431,7 @@ async def get_article(
 
     # 2. Fallback: поиск в slug_aliases (JSONB containment)
     if article is None:
-        alias_filter = sa_text("slug_aliases @> :alias_arr").bindparams(alias_arr=f'["{slug}"]')
+        alias_filter = sa_text("slug_aliases @> CAST(:alias_arr AS jsonb)").bindparams(alias_arr=f'["{slug}"]')
         result = await session.execute(
             select(Article).where(alias_filter, Article.is_published == True)  # noqa: E712
         )
