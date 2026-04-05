@@ -30,6 +30,7 @@ from sqlalchemy.orm import sessionmaker
 pytestmark = pytest.mark.asyncio
 
 BASE_URL = "http://localhost:8000"
+TEST_EMAIL_DOMAIN = "@example.com"  # Все тестовые email
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -40,6 +41,95 @@ def event_loop():
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()
+
+
+async def _cleanup_test_data_async() -> int:
+    """Удаляет всех тестовых пользователей и их данные.
+
+    Тестовые пользователи — с email @example.com (все тесты
+    используют этот домен).
+    """
+    import asyncpg
+    from backend.config import settings
+
+    # asyncpg нужен чистый URL без "+asyncpg"
+    url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+    conn = await asyncpg.connect(url)
+    try:
+        pattern = f"%{TEST_EMAIL_DOMAIN}"
+        # Удаляем статьи где автор — тестовый юзер
+        await conn.execute("""
+            DELETE FROM articles WHERE author_id IN (
+                SELECT id FROM users WHERE email LIKE $1
+            )
+        """, pattern)
+        await conn.execute("""
+            DELETE FROM attachments WHERE ticket_id IN (
+                SELECT id FROM tickets WHERE creator_id IN (
+                    SELECT id::text FROM users WHERE email LIKE $1
+                )
+            )
+        """, pattern)
+        await conn.execute("""
+            DELETE FROM ticket_comments WHERE ticket_id IN (
+                SELECT id FROM tickets WHERE creator_id IN (
+                    SELECT id::text FROM users WHERE email LIKE $1
+                )
+            )
+        """, pattern)
+        await conn.execute("""
+            DELETE FROM ticket_events WHERE ticket_id IN (
+                SELECT id FROM tickets WHERE creator_id IN (
+                    SELECT id::text FROM users WHERE email LIKE $1
+                )
+            )
+        """, pattern)
+        await conn.execute("""
+            DELETE FROM tickets WHERE creator_id IN (
+                SELECT id::text FROM users WHERE email LIKE $1
+            )
+        """, pattern)
+        await conn.execute("""
+            DELETE FROM ticket_comments WHERE author_id IN (
+                SELECT id::text FROM users WHERE email LIKE $1
+            )
+        """, pattern)
+        result = await conn.execute("DELETE FROM users WHERE email LIKE $1", pattern)
+        # result формата "DELETE N"
+        try:
+            deleted = int(result.split()[-1])
+        except Exception:
+            deleted = 0
+        return deleted
+    finally:
+        await conn.close()
+
+
+def _cleanup_test_data_sync() -> int:
+    """Запускает async cleanup в отдельном потоке (новый event loop)."""
+    import concurrent.futures
+
+    def _runner():
+        return asyncio.new_event_loop().run_until_complete(_cleanup_test_data_async())
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(_runner).result(timeout=30)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def cleanup_test_data():
+    """Удаляет тестовые данные в начале и в конце сессии."""
+    try:
+        removed = _cleanup_test_data_sync()
+        print(f"\n[cleanup] Removed {removed} test users before session")
+    except Exception as e:
+        print(f"\n[cleanup] Pre-cleanup failed: {e}")
+    yield
+    try:
+        removed = _cleanup_test_data_sync()
+        print(f"\n[cleanup] Removed {removed} test users after session")
+    except Exception as e:
+        print(f"\n[cleanup] Post-cleanup failed: {e}")
 
 
 @pytest.fixture(autouse=True)
