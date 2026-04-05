@@ -294,6 +294,7 @@ async def list_tickets(
     creator_id: Optional[str] = Query(default=None, description="Фильтр по создателю"),
     my: Optional[bool] = Query(default=None, description="Только мои тикеты"),
     q: Optional[str] = Query(default=None, description="Поиск по теме, описанию, email, объекту"),
+    view: Optional[str] = Query(default=None, description="Saved view: open/overdue/urgent/waiting/closed"),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> TicketListResponse:
@@ -353,6 +354,40 @@ async def list_tickets(
         query = query.where(Ticket.creator_id == str(current_user.id))
         count_query = count_query.where(Ticket.creator_id == str(current_user.id))
 
+    # Saved views (пресеты)
+    from datetime import timedelta
+    now = datetime.utcnow()
+    if view == "open":
+        open_statuses = ["new", "in_progress", "waiting_for_user"]
+        query = query.where(Ticket.status.in_(open_statuses))
+        count_query = count_query.where(Ticket.status.in_(open_statuses))
+    elif view == "urgent":
+        open_statuses = ["new", "in_progress", "waiting_for_user"]
+        query = query.where(
+            Ticket.status.in_(open_statuses)
+            & ((Ticket.priority == "critical") | (Ticket.priority == "CRITICAL") | (Ticket.urgent == True))  # noqa: E712
+        )
+        count_query = count_query.where(
+            Ticket.status.in_(open_statuses)
+            & ((Ticket.priority == "critical") | (Ticket.priority == "CRITICAL") | (Ticket.urgent == True))  # noqa: E712
+        )
+    elif view == "overdue":
+        # Просроченные: open + (first_response_at IS NULL AND created_at + sla_response_hours < now)
+        # упрощённо: статус открыт и с даты создания прошло больше sla_resolve_hours часов
+        open_statuses = ["new", "in_progress", "waiting_for_user"]
+        query = query.where(
+            Ticket.status.in_(open_statuses) & (Ticket.sla_breached == True)  # noqa: E712
+        )
+        count_query = count_query.where(
+            Ticket.status.in_(open_statuses) & (Ticket.sla_breached == True)  # noqa: E712
+        )
+    elif view == "waiting":
+        query = query.where(Ticket.status == "waiting_for_user")
+        count_query = count_query.where(Ticket.status == "waiting_for_user")
+    elif view == "closed":
+        query = query.where(Ticket.status.in_(["resolved", "closed"]))
+        count_query = count_query.where(Ticket.status.in_(["resolved", "closed"]))
+
     # Поиск по тексту
     if q and q.strip():
         pattern = f"%{q.strip()}%"
@@ -370,10 +405,37 @@ async def list_tickets(
     total_result = await session.execute(count_query)
     total = total_result.scalar_one()
 
+    # Умная сортировка: SLA breach → critical → urgent → по дате
+    from sqlalchemy import case
+    priority_order = case(
+        (Ticket.priority == "critical", 0),
+        (Ticket.priority == "CRITICAL", 0),
+        (Ticket.priority == "high", 1),
+        (Ticket.priority == "HIGH", 1),
+        (Ticket.priority == "normal", 2),
+        (Ticket.priority == "NORMAL", 2),
+        (Ticket.priority == "low", 3),
+        (Ticket.priority == "LOW", 3),
+        else_=4,
+    )
+    status_order = case(
+        (Ticket.status == TicketStatus.NEW, 0),
+        (Ticket.status == TicketStatus.IN_PROGRESS, 1),
+        (Ticket.status == TicketStatus.WAITING_FOR_USER, 2),
+        (Ticket.status == TicketStatus.RESOLVED, 3),
+        (Ticket.status == TicketStatus.CLOSED, 4),
+        else_=5,
+    )
+
     # Пагинация и сортировка
     offset = (page - 1) * per_page
     query = (
-        query.order_by(Ticket.created_at.desc())  # type: ignore[union-attr]
+        query.order_by(
+            Ticket.sla_breached.desc(),  # просроченные первыми
+            status_order,                 # открытые первыми
+            priority_order,               # critical → low
+            Ticket.created_at.desc(),     # свежие первыми
+        )
         .offset(offset)
         .limit(per_page)
         .options(*_ticket_load_options())
@@ -388,6 +450,72 @@ async def list_tickets(
         page=page,
         per_page=per_page,
     )
+
+
+@router.get("/stats")
+async def get_ticket_stats(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Статистика по заявкам для dashboard-карточек."""
+    from backend.auth.models import UserRole
+
+    open_statuses = ["new", "in_progress", "waiting_for_user"]
+
+    # Базовый фильтр: резиденты/УК видят только свои
+    base_filter = None
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        base_filter = Ticket.creator_id == str(current_user.id)
+
+    def count_where(*conditions):
+        q = select(func.count()).select_from(Ticket)
+        if base_filter is not None:
+            q = q.where(base_filter)
+        for c in conditions:
+            q = q.where(c)
+        return q
+
+    # Открытые
+    r = await session.execute(count_where(Ticket.status.in_(open_statuses)))
+    open_count = r.scalar_one()
+
+    # Просроченные
+    r = await session.execute(count_where(
+        Ticket.status.in_(open_statuses),
+        Ticket.sla_breached == True,  # noqa: E712
+    ))
+    overdue_count = r.scalar_one()
+
+    # Ждут ответа клиента
+    r = await session.execute(count_where(Ticket.status == "waiting_for_user"))
+    waiting_count = r.scalar_one()
+
+    # Срочные (critical или urgent)
+    r = await session.execute(count_where(
+        Ticket.status.in_(open_statuses),
+        ((Ticket.priority == "critical") | (Ticket.priority == "CRITICAL") | (Ticket.urgent == True)),  # noqa: E712
+    ))
+    urgent_count = r.scalar_one()
+
+    # Новые (без первого ответа)
+    r = await session.execute(count_where(
+        Ticket.status == "new",
+        Ticket.first_response_at == None,  # noqa: E711
+    ))
+    new_count = r.scalar_one()
+
+    # Всего
+    r = await session.execute(count_where())
+    total_count = r.scalar_one()
+
+    return {
+        "total": total_count,
+        "open": open_count,
+        "overdue": overdue_count,
+        "waiting": waiting_count,
+        "urgent": urgent_count,
+        "new": new_count,
+    }
 
 
 @router.get("/notifications/unread")
@@ -794,6 +922,113 @@ async def update_assignment(
         await session.refresh(ticket)
 
     return TicketRead.model_validate(ticket)
+
+
+@router.get("/{ticket_id}/rate", include_in_schema=False)
+async def rate_via_link(
+    ticket_id: str,
+    r: int = Query(..., ge=1, le=5, description="Оценка 1-5"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Один клик оценки из письма — возвращает HTML-страницу с благодарностью.
+
+    Если оценка уже стоит — показываем её без изменений (без ошибки).
+    """
+    from fastapi.responses import HTMLResponse
+
+    EMOJI_MAP = {1: "😞", 2: "😐", 3: "🙂", 4: "😀", 5: "🤩"}
+    RATING_LABELS = {1: "Плохо", 2: "Так себе", 3: "Нормально", 4: "Хорошо", 5: "Отлично"}
+
+    result = await session.execute(select(Ticket).where(Ticket.id == ticket_id))
+    ticket = result.scalar_one_or_none()
+
+    emoji = EMOJI_MAP.get(r, "⭐")
+    label = RATING_LABELS.get(r, "")
+
+    if ticket is None:
+        message_title = "Заявка не найдена"
+        message_body = "Возможно, ссылка устарела или заявка была удалена."
+        success = False
+    elif ticket.satisfaction_submitted_at is not None:
+        # Уже оценено — показываем текущую оценку
+        already_emoji = EMOJI_MAP.get(ticket.satisfaction_rating or 0, "⭐")
+        message_title = "Спасибо, оценка уже сохранена"
+        message_body = f"Вы оценили эту заявку: {already_emoji}"
+        success = True
+    else:
+        ticket.satisfaction_rating = r
+        ticket.satisfaction_submitted_at = datetime.utcnow()
+        session.add(ticket)
+        await session.commit()
+        message_title = "Спасибо за обратную связь!"
+        message_body = f"Ваша оценка: {emoji} {label}. Она поможет нам стать лучше."
+        success = True
+
+    color = "#10b981" if success else "#ef4444"
+
+    html = f"""<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PASS24 Service Desk — оценка</title>
+    <style>
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }}
+        .card {{
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(15, 23, 42, 0.1);
+            padding: 40px 32px;
+            max-width: 480px;
+            width: 100%;
+            text-align: center;
+        }}
+        .brand {{
+            background: linear-gradient(135deg, #ef4444, #991b1b);
+            color: white;
+            font-weight: 700;
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            display: inline-block;
+            margin-bottom: 24px;
+            letter-spacing: 0.5px;
+        }}
+        .big-emoji {{ font-size: 72px; line-height: 1; margin-bottom: 16px; animation: pop 0.4s ease-out; }}
+        @keyframes pop {{
+            0% {{ transform: scale(0.5); opacity: 0; }}
+            60% {{ transform: scale(1.1); opacity: 1; }}
+            100% {{ transform: scale(1); }}
+        }}
+        h1 {{ font-size: 22px; font-weight: 600; color: {color}; margin-bottom: 12px; }}
+        p {{ color: #475569; font-size: 15px; line-height: 1.6; }}
+        .footer {{ margin-top: 28px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #94a3b8; }}
+        .footer a {{ color: #3b82f6; text-decoration: none; font-weight: 500; }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <span class="brand">PASS24 SERVICE DESK</span>
+        <div class="big-emoji">{emoji}</div>
+        <h1>{message_title}</h1>
+        <p>{message_body}</p>
+        <div class="footer">
+            Можете закрыть эту страницу или <a href="https://support.pass24pro.ru/">перейти к заявкам</a>
+        </div>
+    </div>
+</body>
+</html>"""
+
+    return HTMLResponse(content=html, status_code=200)
 
 
 @router.post("/{ticket_id}/satisfaction", response_model=TicketRead)
