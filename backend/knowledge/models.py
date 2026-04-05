@@ -47,6 +47,28 @@ class Article(SQLModel, table=True):
     content: str = Field(description="Содержимое статьи в формате Markdown")
     is_published: bool = Field(default=True, index=True)
     views_count: int = Field(default=0)
+    helpful_count: int = Field(default=0, description="Количество 👍 feedback")
+    not_helpful_count: int = Field(default=0, description="Количество 👎 feedback")
     author_id: uuid.UUID = Field(foreign_key="users.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ArticleFeedback(SQLModel, table=True):
+    """Фидбэк пользователя по статье: помогла / не помогла.
+
+    Уникальный индекс по (session_id, article_id) гарантирует один отзыв
+    с одной сессии на статью. Для user'ов без аккаунта session_id —
+    UUID из localStorage браузера.
+    """
+
+    __tablename__ = "article_feedback"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    article_id: str = Field(index=True)
+    session_id: str = Field(max_length=64, description="UUID сессии из localStorage")
+    user_id: str | None = Field(default=None, description="User.id если авторизован")
+    helpful: bool = Field(description="True = помогла, False = не помогла")
+    comment: str | None = Field(default=None, max_length=500)
+    source: str = Field(default="web", max_length=16, description="web / email / telegram")
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)

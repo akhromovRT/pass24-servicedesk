@@ -3,9 +3,11 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
+import Textarea from 'primevue/textarea'
 import Divider from 'primevue/divider'
 import { useToast } from 'primevue/usetoast'
 import { useKnowledgeStore } from '../stores/knowledge'
+import { getSessionId } from '../utils/session'
 import type { Article } from '../types'
 
 const route = useRoute()
@@ -15,6 +17,13 @@ const store = useKnowledgeStore()
 
 const loading = ref(true)
 const relatedArticles = ref<Article[]>([])
+
+// Feedback widget state
+const feedbackChoice = ref<'helpful' | 'not_helpful' | null>(null)
+const feedbackComment = ref('')
+const feedbackSubmitting = ref(false)
+const feedbackDone = ref(false)
+const feedbackAlreadyGiven = ref<'helpful' | 'not_helpful' | null>(null)
 
 const categoryLabels: Record<string, string> = {
   access: 'Доступ и вход',
@@ -117,14 +126,67 @@ function renderMarkdown(md: string): string {
 
 async function loadArticle(slug: string) {
   loading.value = true
+  // Сбрасываем feedback state при переходе между статьями
+  feedbackChoice.value = null
+  feedbackComment.value = ''
+  feedbackDone.value = false
+  feedbackAlreadyGiven.value = null
   try {
     await store.fetchArticle(slug)
     await loadRelated()
+    // Проверяем, оставлял ли пользователь feedback по этой статье
+    if (store.currentArticle) {
+      const key = `pass24_feedback_${store.currentArticle.id}`
+      try {
+        const prev = localStorage.getItem(key)
+        if (prev === 'helpful' || prev === 'not_helpful') {
+          feedbackAlreadyGiven.value = prev
+        }
+      } catch {
+        // ignore storage errors
+      }
+    }
   } catch {
     toast.add({ severity: 'error', summary: 'Статья не найдена', life: 3000 })
     router.push('/knowledge')
   } finally {
     loading.value = false
+  }
+}
+
+async function submitFeedback(helpful: boolean) {
+  if (!store.currentArticle) return
+  // Если это 👎 и комментарий ещё не раскрыт — раскрываем форму
+  if (!helpful && feedbackChoice.value !== 'not_helpful') {
+    feedbackChoice.value = 'not_helpful'
+    return
+  }
+  // Если это 👍 — сразу отправляем
+  feedbackSubmitting.value = true
+  try {
+    const resp = await store.submitFeedback(store.currentArticle.id, {
+      helpful,
+      comment: feedbackComment.value.trim() || undefined,
+      session_id: getSessionId(),
+      source: 'web',
+    })
+    feedbackDone.value = true
+    // Сохраняем выбор в localStorage
+    try {
+      const key = `pass24_feedback_${store.currentArticle.id}`
+      localStorage.setItem(key, helpful ? 'helpful' : 'not_helpful')
+    } catch {
+      // ignore
+    }
+    if (!resp.recorded) {
+      toast.add({ severity: 'info', summary: 'Вы уже оценивали эту статью', life: 3000 })
+    } else {
+      toast.add({ severity: 'success', summary: 'Спасибо за отзыв!', life: 2500 })
+    }
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Не удалось отправить', detail: e.message, life: 3000 })
+  } finally {
+    feedbackSubmitting.value = false
   }
 }
 
@@ -220,6 +282,64 @@ watch(
 
     <!-- Content -->
     <article class="article-content" v-html="renderMarkdown(store.currentArticle.content)" />
+
+    <!-- Feedback widget: «Помогла ли статья?» -->
+    <div class="feedback">
+      <Divider />
+      <!-- Уже оставлял отзыв -->
+      <div v-if="feedbackAlreadyGiven && !feedbackDone" class="feedback-done">
+        <i :class="feedbackAlreadyGiven === 'helpful' ? 'pi pi-thumbs-up-fill helpful' : 'pi pi-thumbs-down-fill not-helpful'" />
+        <span>Вы уже оценили эту статью как «{{ feedbackAlreadyGiven === 'helpful' ? 'помогла' : 'не помогла' }}»</span>
+      </div>
+      <!-- Только что отправил -->
+      <div v-else-if="feedbackDone" class="feedback-done success">
+        <i class="pi pi-check-circle" />
+        <span>Спасибо! Ваш отзыв поможет улучшить статью.</span>
+      </div>
+      <!-- Открытый виджет -->
+      <div v-else class="feedback-widget">
+        <div class="feedback-question">Помогла ли статья решить ваш вопрос?</div>
+        <div class="feedback-buttons">
+          <button
+            type="button"
+            class="feedback-btn helpful"
+            :disabled="feedbackSubmitting"
+            @click="submitFeedback(true)"
+          >
+            <i class="pi pi-thumbs-up" />
+            Да, помогла
+          </button>
+          <button
+            type="button"
+            class="feedback-btn not-helpful"
+            :class="{ active: feedbackChoice === 'not_helpful' }"
+            :disabled="feedbackSubmitting"
+            @click="submitFeedback(false)"
+          >
+            <i class="pi pi-thumbs-down" />
+            Нет, не помогла
+          </button>
+        </div>
+        <!-- Форма комментария при 👎 -->
+        <div v-if="feedbackChoice === 'not_helpful'" class="feedback-comment">
+          <Textarea
+            v-model="feedbackComment"
+            rows="2"
+            placeholder="Что именно не помогло? (необязательно, но поможет нам улучшить статью)"
+            :maxlength="500"
+            class="feedback-textarea"
+          />
+          <div class="feedback-comment-actions">
+            <Button
+              label="Отправить отзыв"
+              size="small"
+              :loading="feedbackSubmitting"
+              @click="submitFeedback(false)"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Related articles -->
     <div v-if="relatedArticles.length > 0" class="related">
@@ -543,6 +663,127 @@ watch(
 
 .article-content :deep(tr:hover td) {
   background: #fafbfc;
+}
+
+/* Feedback widget */
+.feedback {
+  margin-top: 24px;
+}
+
+.feedback-widget {
+  padding: 16px 20px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.feedback-question {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 12px;
+}
+
+.feedback-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.feedback-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: white;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.feedback-btn i {
+  font-size: 15px;
+}
+
+.feedback-btn:hover:not(:disabled) {
+  border-color: #cbd5e1;
+  background: #fafbfc;
+}
+
+.feedback-btn.helpful:hover:not(:disabled) {
+  border-color: #22c55e;
+  color: #16a34a;
+}
+
+.feedback-btn.not-helpful:hover:not(:disabled),
+.feedback-btn.not-helpful.active {
+  border-color: #ef4444;
+  color: #dc2626;
+  background: #fef2f2;
+}
+
+.feedback-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.feedback-comment {
+  margin-top: 12px;
+}
+
+.feedback-textarea {
+  width: 100%;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.feedback-textarea :deep(textarea) {
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.feedback-comment-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.feedback-done {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 14px;
+  color: #64748b;
+}
+
+.feedback-done i {
+  font-size: 16px;
+}
+
+.feedback-done i.helpful {
+  color: #22c55e;
+}
+
+.feedback-done i.not-helpful {
+  color: #ef4444;
+}
+
+.feedback-done.success {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
+.feedback-done.success i {
+  color: #22c55e;
 }
 
 /* Related */

@@ -15,8 +15,15 @@ from backend.auth.dependencies import get_current_user, require_role
 from backend.auth.models import User, UserRole
 from backend.database import get_session
 
-from .models import Article, ArticleCategory, ArticleType
-from .schemas import ArticleCreate, ArticleListResponse, ArticleRead, ArticleUpdate
+from .models import Article, ArticleCategory, ArticleFeedback, ArticleType
+from .schemas import (
+    ArticleCreate,
+    ArticleListResponse,
+    ArticleRead,
+    ArticleUpdate,
+    FeedbackCreate,
+    FeedbackResponse,
+)
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
@@ -75,6 +82,8 @@ async def _build_article_read(article: Article, session: AsyncSession) -> Articl
         content=article.content,
         is_published=article.is_published,
         views_count=article.views_count,
+        helpful_count=article.helpful_count,
+        not_helpful_count=article.not_helpful_count,
         author_id=article.author_id,
         author_name=author_name,
         created_at=article.created_at,
@@ -192,6 +201,163 @@ async def search_articles(
         total=total,
         page=page,
         per_page=per_page,
+    )
+
+
+@router.get("/stats/deflection")
+async def deflection_stats(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Статистика deflection: топ статей по helpful, underperforming, created_from.
+
+    Доступна только support_agent и admin.
+    """
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Только для агентов")
+
+    from backend.tickets.templates import TicketArticleLink
+
+    # Топ статей по helpful_ratio (минимум 3 feedback для релевантности)
+    top_helpful_result = await session.execute(
+        select(Article)
+        .where(Article.is_published == True, (Article.helpful_count + Article.not_helpful_count) >= 3)  # noqa: E712
+        .order_by(
+            (Article.helpful_count * 1.0 / func.nullif(Article.helpful_count + Article.not_helpful_count, 0)).desc(),
+            Article.helpful_count.desc(),
+        )
+        .limit(10)
+    )
+    top_helpful = top_helpful_result.scalars().all()
+
+    # Underperforming: много просмотров + низкий helpful_ratio + много created_from
+    created_from_counts = await session.execute(
+        select(
+            TicketArticleLink.article_id,
+            func.count(TicketArticleLink.id).label("ticket_anyway_count"),
+        )
+        .where(TicketArticleLink.relation_type == "created_from")
+        .group_by(TicketArticleLink.article_id)
+        .order_by(func.count(TicketArticleLink.id).desc())
+        .limit(10)
+    )
+    underperforming = []
+    for row in created_from_counts.all():
+        art_res = await session.execute(select(Article).where(Article.id == row.article_id))
+        art = art_res.scalar_one_or_none()
+        if art:
+            total_fb = art.helpful_count + art.not_helpful_count
+            ratio = art.helpful_count / total_fb if total_fb > 0 else None
+            underperforming.append({
+                "article_id": str(art.id),
+                "title": art.title,
+                "slug": art.slug,
+                "views_count": art.views_count,
+                "helpful_count": art.helpful_count,
+                "not_helpful_count": art.not_helpful_count,
+                "helpful_ratio": round(ratio, 2) if ratio is not None else None,
+                "ticket_anyway_count": row.ticket_anyway_count,
+            })
+
+    # Totals
+    totals_result = await session.execute(
+        select(
+            func.coalesce(func.sum(Article.helpful_count), 0).label("helpful"),
+            func.coalesce(func.sum(Article.not_helpful_count), 0).label("not_helpful"),
+            func.coalesce(func.sum(Article.views_count), 0).label("views"),
+        ).where(Article.is_published == True)  # noqa: E712
+    )
+    totals_row = totals_result.one()
+
+    created_from_total_result = await session.execute(
+        select(func.count(TicketArticleLink.id)).where(TicketArticleLink.relation_type == "created_from")
+    )
+    created_from_total = created_from_total_result.scalar_one()
+
+    return {
+        "totals": {
+            "views": totals_row.views,
+            "helpful_count": totals_row.helpful,
+            "not_helpful_count": totals_row.not_helpful,
+            "helpful_ratio": round(
+                totals_row.helpful / (totals_row.helpful + totals_row.not_helpful), 2
+            ) if (totals_row.helpful + totals_row.not_helpful) > 0 else None,
+            "ticket_created_from_article": created_from_total,
+        },
+        "top_helpful": [
+            {
+                "article_id": str(a.id),
+                "title": a.title,
+                "slug": a.slug,
+                "helpful_count": a.helpful_count,
+                "not_helpful_count": a.not_helpful_count,
+                "helpful_ratio": round(
+                    a.helpful_count / (a.helpful_count + a.not_helpful_count), 2
+                ) if (a.helpful_count + a.not_helpful_count) > 0 else None,
+            }
+            for a in top_helpful
+        ],
+        "underperforming": underperforming,
+    }
+
+
+@router.post("/{article_id}/feedback", response_model=FeedbackResponse)
+async def submit_feedback(
+    article_id: uuid.UUID,
+    payload: FeedbackCreate,
+    session: AsyncSession = Depends(get_session),
+) -> FeedbackResponse:
+    """Отправка feedback по статье (помогла/не помогла + опциональный комментарий).
+
+    Не требует авторизации. Ограничение: один отзыв с одной сессии (session_id
+    из localStorage) на статью. При повторной попытке возвращает recorded=False.
+    """
+    # Проверяем статью
+    result = await session.execute(select(Article).where(Article.id == article_id))
+    article = result.scalar_one_or_none()
+    if article is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Статья не найдена")
+
+    # Проверяем уникальность session_id + article_id
+    existing_result = await session.execute(
+        select(ArticleFeedback).where(
+            ArticleFeedback.session_id == payload.session_id,
+            ArticleFeedback.article_id == str(article.id),
+        )
+    )
+    existing = existing_result.scalar_one_or_none()
+    if existing is not None:
+        return FeedbackResponse(
+            article_id=article.id,
+            helpful_count=article.helpful_count,
+            not_helpful_count=article.not_helpful_count,
+            recorded=False,
+        )
+
+    # Создаём feedback + инкрементим денормализованный counter
+    feedback = ArticleFeedback(
+        article_id=str(article.id),
+        session_id=payload.session_id,
+        user_id=None,  # опционально: прокинуть из auth dep в будущем
+        helpful=payload.helpful,
+        comment=payload.comment,
+        source=payload.source,
+    )
+    if payload.helpful:
+        article.helpful_count += 1
+    else:
+        article.not_helpful_count += 1
+
+    session.add(feedback)
+    session.add(article)
+    await session.commit()
+    await session.refresh(article)
+
+    return FeedbackResponse(
+        article_id=article.id,
+        helpful_count=article.helpful_count,
+        not_helpful_count=article.not_helpful_count,
+        recorded=True,
     )
 
 

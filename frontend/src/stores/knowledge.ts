@@ -61,6 +61,29 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     total.value = Math.max(0, total.value - 1)
   }
 
+  async function submitFeedback(
+    articleId: string,
+    payload: { helpful: boolean; comment?: string; session_id: string; source?: string },
+  ) {
+    const response = await api.post<{
+      article_id: string
+      helpful_count: number
+      not_helpful_count: number
+      recorded: boolean
+    }>(`/knowledge/${articleId}/feedback`, {
+      helpful: payload.helpful,
+      comment: payload.comment,
+      session_id: payload.session_id,
+      source: payload.source || 'web',
+    })
+    // Обновляем counters в currentArticle если это она
+    if (currentArticle.value && currentArticle.value.id === articleId) {
+      currentArticle.value.helpful_count = response.helpful_count
+      currentArticle.value.not_helpful_count = response.not_helpful_count
+    }
+    return response
+  }
+
   return {
     articles,
     currentArticle,
@@ -73,5 +96,6 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     fetchArticle,
     createArticle,
     deleteArticle,
+    submitFeedback,
   }
 })

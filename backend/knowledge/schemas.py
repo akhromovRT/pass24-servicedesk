@@ -39,12 +39,32 @@ class ArticleRead(BaseModel):
     content: str
     is_published: bool
     views_count: int
+    helpful_count: int = 0
+    not_helpful_count: int = 0
     author_id: uuid.UUID
     author_name: str = Field(description="Имя автора статьи")
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class FeedbackCreate(BaseModel):
+    """Схема отправки feedback по статье."""
+
+    helpful: bool = Field(..., description="True = помогла, False = не помогла")
+    comment: Optional[str] = Field(default=None, max_length=500)
+    session_id: str = Field(..., max_length=64, description="UUID сессии из localStorage")
+    source: str = Field(default="web", max_length=16, description="web / email / telegram")
+
+
+class FeedbackResponse(BaseModel):
+    """Ответ после отправки feedback."""
+
+    article_id: uuid.UUID
+    helpful_count: int
+    not_helpful_count: int
+    recorded: bool = Field(description="False если в этой сессии уже был feedback")
 
 
 class ArticleListResponse(BaseModel):

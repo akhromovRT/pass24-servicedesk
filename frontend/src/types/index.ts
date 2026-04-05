@@ -139,6 +139,8 @@ export interface Article {
   content: string
   is_published: boolean
   views_count: number
+  helpful_count: number
+  not_helpful_count: number
   author_id: string
   author_name: string
   created_at: string
