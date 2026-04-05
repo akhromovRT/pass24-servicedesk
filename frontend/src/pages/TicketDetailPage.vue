@@ -59,6 +59,75 @@ const isStaff = computed(() =>
   auth.user?.role === 'support_agent' || auth.user?.role === 'admin'
 )
 
+// Агентские инструменты
+interface Agent { id: string; full_name: string; email: string }
+interface ResponseTemplate { id: string; name: string; body: string; usage_count: number }
+interface MacroActions { status?: string; comment?: string; is_internal_comment?: boolean; assign_self?: boolean; assignment_group?: string }
+interface MacroItem { id: string; name: string; icon?: string; actions: MacroActions }
+
+const agents = ref<Agent[]>([])
+const templates = ref<ResponseTemplate[]>([])
+const macros = ref<MacroItem[]>([])
+
+async function loadAgentTools() {
+  if (!isStaff.value) return
+  try {
+    const [a, t, m] = await Promise.all([
+      (await import('../api/client')).api.get<Agent[]>('/tickets/agents/list'),
+      (await import('../api/client')).api.get<ResponseTemplate[]>('/tickets/templates'),
+      (await import('../api/client')).api.get<MacroItem[]>('/tickets/macros'),
+    ])
+    agents.value = a
+    templates.value = t
+    macros.value = m
+  } catch {}
+}
+
+async function assignToMe() {
+  if (!ticket.value || !auth.user) return
+  try {
+    await store.assignTicket(ticket.value.id, auth.user.id)
+    await loadTicket()
+    toast.add({ severity: 'success', summary: 'Назначено вам', life: 2000 })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+  }
+}
+
+async function assignToAgent(agent_id: string | null) {
+  if (!ticket.value) return
+  try {
+    await store.assignTicket(ticket.value.id, agent_id)
+    await loadTicket()
+    toast.add({ severity: 'success', summary: agent_id ? 'Назначен агент' : 'Снят', life: 2000 })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+  }
+}
+
+function insertTemplate(t: ResponseTemplate) {
+  commentText.value = (commentText.value ? commentText.value + '\n\n' : '') + t.body
+  // fire-and-forget usage counter
+  import('../api/client').then(({ api }) => api.post(`/tickets/templates/${t.id}/use`))
+}
+
+async function runMacro(m: MacroItem) {
+  if (!ticket.value) return
+  try {
+    await store.applyMacro(ticket.value.id, m.id)
+    await loadTicket()
+    toast.add({ severity: 'success', summary: `Применён: ${m.name}`, life: 2000 })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+  }
+}
+
+const agentName = computed(() => {
+  if (!ticket.value?.assignee_id) return null
+  const a = agents.value.find(x => x.id === ticket.value!.assignee_id)
+  return a?.full_name || 'Неизвестный'
+})
+
 const categoryLabels: Record<string, string> = {
   access: 'Доступ',
   pass: 'Пропуска',
@@ -279,6 +348,7 @@ let pollInterval: ReturnType<typeof setInterval> | null = null
 
 onMounted(() => {
   loadTicket()
+  loadAgentTools()
 
   // Auto-refresh для агентов — показывать новые комментарии
   pollInterval = setInterval(async () => {
@@ -564,6 +634,52 @@ onUnmounted(() => {
         </template>
       </Card>
 
+      <!-- Агентская панель (только для staff) -->
+      <Card v-if="isStaff" class="section-card agent-panel">
+        <template #title>Управление заявкой</template>
+        <template #content>
+          <div class="agent-panel-grid">
+            <!-- Назначение -->
+            <div class="panel-block">
+              <div class="panel-label">Назначено:</div>
+              <div class="panel-row">
+                <span v-if="agentName" class="assignee-name">{{ agentName }}</span>
+                <span v-else class="assignee-none">не назначен</span>
+                <div class="panel-actions">
+                  <Button
+                    v-if="ticket.assignee_id !== auth.user?.id"
+                    label="Взять себе" icon="pi pi-user-plus"
+                    size="small" severity="secondary" outlined
+                    @click="assignToMe"
+                  />
+                  <select
+                    v-model="ticket.assignee_id"
+                    class="agent-select"
+                    @change="assignToAgent(($event.target as HTMLSelectElement).value || null)"
+                  >
+                    <option value="">— не назначен —</option>
+                    <option v-for="a in agents" :key="a.id" :value="a.id">{{ a.full_name }}</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Макросы -->
+            <div v-if="macros.length" class="panel-block">
+              <div class="panel-label">Быстрые действия:</div>
+              <div class="macros-row">
+                <Button
+                  v-for="m in macros" :key="m.id"
+                  :label="m.name" :icon="m.icon || 'pi pi-bolt'"
+                  size="small" severity="secondary" outlined
+                  @click="runMacro(m)"
+                />
+              </div>
+            </div>
+          </div>
+        </template>
+      </Card>
+
       <!-- Комментарии -->
       <Card class="section-card">
         <template #title>
@@ -592,6 +708,20 @@ onUnmounted(() => {
           <Divider />
 
           <div class="add-comment">
+            <!-- Templates (для агентов) -->
+            <div v-if="isStaff && templates.length" class="templates-row">
+              <span class="templates-label">Шаблоны:</span>
+              <button
+                v-for="t in templates" :key="t.id"
+                type="button"
+                class="template-chip"
+                :title="t.body"
+                @click="insertTemplate(t)"
+              >
+                {{ t.name }}
+              </button>
+            </div>
+
             <Textarea
               v-model="commentText"
               placeholder="Напишите комментарий..."
@@ -1092,6 +1222,31 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 10px;
 }
+
+/* Templates */
+.templates-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.templates-label { font-size: 12px; color: #94a3b8; }
+.template-chip {
+  background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 14px;
+  padding: 4px 10px; font-size: 12px; color: #475569; cursor: pointer;
+  transition: background 0.15s, border-color 0.15s; font-family: inherit;
+}
+.template-chip:hover { background: #e0f2fe; border-color: #7dd3fc; color: #0369a1; }
+
+/* Agent panel */
+.agent-panel { border-left: 3px solid #3b82f6; background: #f0f9ff; }
+.agent-panel-grid { display: flex; flex-direction: column; gap: 16px; }
+.panel-block { display: flex; flex-direction: column; gap: 6px; }
+.panel-label { font-size: 12px; color: #64748b; font-weight: 600; }
+.panel-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.assignee-name { font-weight: 600; color: #1e293b; }
+.assignee-none { color: #94a3b8; font-style: italic; }
+.panel-actions { display: flex; gap: 8px; align-items: center; margin-left: auto; flex-wrap: wrap; }
+.agent-select {
+  border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 8px;
+  font-size: 13px; background: white; color: #1e293b;
+}
+.macros-row { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .comment-actions {
   display: flex;

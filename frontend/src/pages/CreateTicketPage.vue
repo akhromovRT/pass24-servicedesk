@@ -137,6 +137,31 @@ const selectedCardId = ref<string | null>(null)
 // Form fields
 const title = ref('')
 const description = ref('')
+
+// KB suggestions — статьи базы знаний, релевантные теме заявки
+interface KbSuggestion { title: string; slug: string; category: string }
+const kbSuggestions = ref<KbSuggestion[]>([])
+let kbDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+async function searchKb(query: string) {
+  if (query.trim().length < 4) { kbSuggestions.value = []; return }
+  try {
+    const data = await api.get<{ items: KbSuggestion[] }>(
+      `/knowledge/search?query=${encodeURIComponent(query)}&per_page=3`
+    )
+    kbSuggestions.value = data.items || []
+  } catch { kbSuggestions.value = [] }
+}
+
+import { watch as watchRef } from 'vue'
+watchRef(title, (q) => {
+  if (kbDebounceTimer) clearTimeout(kbDebounceTimer)
+  kbDebounceTimer = setTimeout(() => searchKb(q), 400)
+})
+
+function openArticle(slug: string) {
+  window.open(`/knowledge/${slug}`, '_blank')
+}
 const product = ref<TicketProduct | undefined>(undefined)
 const category = ref<TicketCategory | undefined>(undefined)
 const ticketType = ref<TicketType | undefined>(undefined)
@@ -426,6 +451,19 @@ async function onSubmit() {
                 :invalid="titleInvalid"
                 fluid
               />
+              <div v-if="kbSuggestions.length" class="kb-suggestions">
+                <div class="kb-hint">💡 Возможно, эти статьи помогут решить проблему:</div>
+                <button
+                  v-for="s in kbSuggestions" :key="s.slug"
+                  type="button"
+                  class="kb-suggestion-item"
+                  @click="openArticle(s.slug)"
+                >
+                  <i class="pi pi-book" />
+                  <span>{{ s.title }}</span>
+                  <i class="pi pi-external-link" />
+                </button>
+              </div>
               <small class="field-help">Кратко опишите суть проблемы — например: «Не открывается дверь в подъезд 3»</small>
               <small v-if="titleInvalid" class="field-error">Укажите тему — без неё не получится создать заявку</small>
             </div>
@@ -603,6 +641,23 @@ async function onSubmit() {
 .required { color: #ef4444; }
 
 .field-help { font-size: 12px; color: #94a3b8; line-height: 1.4; }
+
+/* KB suggestions */
+.kb-suggestions {
+  margin-top: 8px; display: flex; flex-direction: column; gap: 4px;
+  padding: 10px 12px; background: #f0f9ff;
+  border: 1px solid #bae6fd; border-radius: 8px;
+}
+.kb-hint { font-size: 12px; color: #0369a1; font-weight: 600; margin-bottom: 4px; }
+.kb-suggestion-item {
+  display: flex; align-items: center; gap: 8px;
+  background: white; border: 1px solid #e0f2fe; border-radius: 6px;
+  padding: 6px 10px; font-size: 13px; color: #075985;
+  cursor: pointer; font-family: inherit; text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+}
+.kb-suggestion-item:hover { background: #e0f2fe; border-color: #7dd3fc; }
+.kb-suggestion-item .pi-external-link { margin-left: auto; font-size: 11px; }
 .field-error { font-size: 12px; color: #ef4444; }
 
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
