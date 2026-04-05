@@ -73,6 +73,12 @@ const router = createRouter({
       meta: { auth: true },
     },
     {
+      path: '/dashboard',
+      name: 'dashboard',
+      component: () => import('../pages/AgentDashboardPage.vue'),
+      meta: { auth: true },
+    },
+    {
       path: '/settings',
       name: 'settings',
       component: () => import('../pages/SettingsPage.vue'),

@@ -1,0 +1,23 @@
+- main [ref=e4]:
+  - generic [ref=e7]:
+    - generic [ref=e10]:
+      - generic [ref=e11]: P24
+      - generic [ref=e12]: Вход в Service Desk
+    - generic [ref=e14]:
+      - generic [ref=e15]:
+        - generic [ref=e16]: Email
+        - textbox "Email" [ref=e17]:
+          - /placeholder: user@example.com
+      - generic [ref=e18]:
+        - generic [ref=e19]: Пароль
+        - generic [ref=e20]:
+          - textbox [ref=e21]
+          - img [ref=e22]
+          - generic: Enter a password
+      - button "Войти" [ref=e24] [cursor=pointer]:
+        - generic [ref=e25]: 
+        - generic [ref=e26]: Войти
+    - generic [ref=e28]:
+      - text: Нет аккаунта?
+      - link "Зарегистрироваться" [ref=e29] [cursor=pointer]:
+        - /url: /register

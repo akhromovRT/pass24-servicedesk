@@ -157,3 +157,76 @@ async def get_sla_stats(
             "compliance_pct": round((1 - sla_resolve_breached / max(resolve_total, 1)) * 100, 1),
         },
     }
+
+
+@router.get("/agents")
+async def get_agent_stats(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Статистика по агентам: назначено, решено, средний CSAT."""
+    from backend.auth.models import UserRole
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        return []
+
+    # Все агенты
+    r = await session.execute(
+        select(User).where(
+            User.role.in_([UserRole.SUPPORT_AGENT, UserRole.ADMIN]),
+            User.is_active == True,  # noqa: E712
+        )
+    )
+    agents = list(r.scalars())
+    result = []
+
+    for agent in agents:
+        agent_id = str(agent.id)
+
+        assigned = await session.execute(
+            select(sa_func.count()).select_from(Ticket).where(Ticket.assignee_id == agent_id)
+        )
+        assigned_total = assigned.scalar_one()
+
+        resolved = await session.execute(
+            select(sa_func.count()).select_from(Ticket).where(
+                Ticket.assignee_id == agent_id,
+                Ticket.resolved_at.is_not(None),
+            )
+        )
+        resolved_total = resolved.scalar_one()
+
+        csat_r = await session.execute(
+            select(sa_func.avg(Ticket.satisfaction_rating), sa_func.count(Ticket.satisfaction_rating))
+            .where(
+                Ticket.assignee_id == agent_id,
+                Ticket.satisfaction_rating.is_not(None),
+            )
+        )
+        csat_row = csat_r.one()
+        avg_csat = round(float(csat_row[0]), 2) if csat_row[0] else None
+        csat_count = csat_row[1] or 0
+
+        # Среднее время решения
+        avg_res = await session.execute(
+            select(sa_func.avg(extract("epoch", Ticket.resolved_at - Ticket.created_at) / 3600))
+            .where(
+                Ticket.assignee_id == agent_id,
+                Ticket.resolved_at.is_not(None),
+            )
+        )
+        avg_res_hours = round(float(avg_res.scalar_one() or 0), 1)
+
+        result.append({
+            "id": agent_id,
+            "full_name": agent.full_name,
+            "email": agent.email,
+            "assigned": assigned_total,
+            "resolved": resolved_total,
+            "avg_csat": avg_csat,
+            "csat_count": csat_count,
+            "avg_resolve_hours": avg_res_hours,
+        })
+
+    # Сортируем по резолвам
+    result.sort(key=lambda x: x["resolved"], reverse=True)
+    return result

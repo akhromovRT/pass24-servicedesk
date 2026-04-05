@@ -121,6 +121,27 @@ export const useTicketsStore = defineStore('tickets', () => {
     }
   }
 
+  async function assignTicket(id: string, assignee_id: string | null): Promise<Ticket> {
+    const ticket = await api.put<Ticket>(`/tickets/${id}/assignment`, { assignee_id })
+    if (currentTicket.value?.id === id) currentTicket.value = ticket
+    return ticket
+  }
+
+  async function bulkAction(ticket_ids: string[], action: string, value?: string): Promise<number> {
+    const r = await api.post<{ updated: number }>('/tickets/bulk', { ticket_ids, action, value })
+    return r.updated
+  }
+
+  async function mergeTicket(sourceId: string, targetId: string): Promise<Ticket> {
+    return await api.post<Ticket>(`/tickets/${sourceId}/merge`, { target_ticket_id: targetId })
+  }
+
+  async function applyMacro(ticketId: string, macroId: string): Promise<Ticket> {
+    const ticket = await api.post<Ticket>(`/tickets/${ticketId}/apply-macro`, { macro_id: macroId })
+    if (currentTicket.value?.id === ticketId) currentTicket.value = ticket
+    return ticket
+  }
+
   return {
     tickets,
     currentTicket,
@@ -136,5 +157,9 @@ export const useTicketsStore = defineStore('tickets', () => {
     updateStatus,
     addComment,
     deleteTicket,
+    assignTicket,
+    bulkAction,
+    mergeTicket,
+    applyMacro,
   }
 })

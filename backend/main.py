@@ -25,6 +25,9 @@ from .notifications.inbound import email_polling_loop
 from .assistant.router import router as assistant_router
 from .stats.router import router as stats_router
 from .tickets.router import router as tickets_router
+from .tickets.templates_router import router as templates_router
+from .tickets.sla_watcher import sla_watcher_loop
+from .notifications.telegram import router as telegram_router
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
@@ -37,9 +40,12 @@ async def lifespan(app: FastAPI):
     """Запуск фоновых задач. Миграции запускаются вручную через alembic upgrade."""
     logger.info("Lifespan: starting email polling")
     poll_task = asyncio.create_task(email_polling_loop())
+    logger.info("Lifespan: starting SLA watcher")
+    sla_task = asyncio.create_task(sla_watcher_loop())
     logger.info("Lifespan: startup complete")
     yield
     poll_task.cancel()
+    sla_task.cancel()
 
 
 def create_app() -> FastAPI:
@@ -77,9 +83,11 @@ def create_app() -> FastAPI:
     # API роутеры
     app.include_router(auth_router)
     app.include_router(tickets_router)
+    app.include_router(templates_router)
     app.include_router(knowledge_router)
     app.include_router(stats_router)
     app.include_router(assistant_router)
+    app.include_router(telegram_router)
 
     @app.get("/health")
     async def health():

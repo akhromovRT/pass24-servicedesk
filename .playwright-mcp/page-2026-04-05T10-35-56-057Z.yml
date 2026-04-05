@@ -1,0 +1,64 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e6] [cursor=pointer]:
+      - generic [ref=e7]: P24
+      - generic [ref=e8]: Service Desk
+    - menubar [ref=e9]:
+      - menuitem "Инструкции" [ref=e10]:
+        - generic [ref=e12] [cursor=pointer]:
+          - generic [ref=e13]: 
+          - generic [ref=e14]: Инструкции
+      - menuitem "База знаний" [ref=e15]:
+        - generic [ref=e17] [cursor=pointer]:
+          - generic [ref=e18]: 
+          - generic [ref=e19]: База знаний
+    - button "Войти" [ref=e21] [cursor=pointer]:
+      - generic [ref=e22]: 
+      - generic [ref=e23]: Войти
+  - main [ref=e24]:
+    - generic [ref=e25]:
+      - button "На главную" [ref=e26] [cursor=pointer]:
+        - generic [ref=e27]: 
+        - generic [ref=e28]: На главную
+      - generic [ref=e29]:
+        - heading "Что случилось?" [level=2] [ref=e30]
+        - paragraph [ref=e31]: Выберите тему — мы подберём нужную категорию автоматически
+        - generic [ref=e32]:
+          - button " Не могу попасть / проехать Дверь или шлагбаум не открывается" [ref=e33] [cursor=pointer]:
+            - generic [ref=e34]: 
+            - generic [ref=e35]: Не могу попасть / проехать
+            - generic [ref=e36]: Дверь или шлагбаум не открывается
+          - button " Проблема с приложением Вылетает, не загружается, ошибка" [ref=e37] [cursor=pointer]:
+            - generic [ref=e38]: 
+            - generic [ref=e39]: Проблема с приложением
+            - generic [ref=e40]: Вылетает, не загружается, ошибка
+          - button " Мобильный ключ BLE-ключ не работает, не активируется" [ref=e41] [cursor=pointer]:
+            - generic [ref=e42]: 
+            - generic [ref=e43]: Мобильный ключ
+            - generic [ref=e44]: BLE-ключ не работает, не активируется
+          - button " Шлагбаум / номера Камера не распознаёт, шлагбаум не поднимается" [ref=e45] [cursor=pointer]:
+            - generic [ref=e46]: 
+            - generic [ref=e47]: Шлагбаум / номера
+            - generic [ref=e48]: Камера не распознаёт, шлагбаум не поднимается
+          - button " Проблема с пропуском Не создаётся, не работает, отклонён" [ref=e49] [cursor=pointer]:
+            - generic [ref=e50]: 
+            - generic [ref=e51]: Проблема с пропуском
+            - generic [ref=e52]: Не создаётся, не работает, отклонён
+          - button " Оборудование Считыватель, контроллер, камера" [ref=e53] [cursor=pointer]:
+            - generic [ref=e54]: 
+            - generic [ref=e55]: Оборудование
+            - generic [ref=e56]: Считыватель, контроллер, камера
+          - button " Вопрос / консультация Как настроить, как работает" [ref=e57] [cursor=pointer]:
+            - generic [ref=e58]: 
+            - generic [ref=e59]: Вопрос / консультация
+            - generic [ref=e60]: Как настроить, как работает
+          - button " Предложение Идея по улучшению системы" [ref=e61] [cursor=pointer]:
+            - generic [ref=e62]: 
+            - generic [ref=e63]: Предложение
+            - generic [ref=e64]: Идея по улучшению системы
+          - button " Другое Не нашли нужную тему" [ref=e65] [cursor=pointer]:
+            - generic [ref=e66]: 
+            - generic [ref=e67]: Другое
+            - generic [ref=e68]: Не нашли нужную тему
+  - button "AI-помощник" [ref=e69] [cursor=pointer]:
+    - generic [ref=e70]: 

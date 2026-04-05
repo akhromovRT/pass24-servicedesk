@@ -1,0 +1,46 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e6] [cursor=pointer]:
+      - generic [ref=e7]: P24
+      - generic [ref=e8]: Service Desk
+    - menubar [ref=e9]:
+      - menuitem "Инструкции" [ref=e10]:
+        - generic [ref=e12] [cursor=pointer]:
+          - generic [ref=e13]: 
+          - generic [ref=e14]: Инструкции
+      - menuitem "База знаний" [ref=e15]:
+        - generic [ref=e17] [cursor=pointer]:
+          - generic [ref=e18]: 
+          - generic [ref=e19]: База знаний
+    - button "Войти" [ref=e21] [cursor=pointer]:
+      - generic [ref=e22]: 
+      - generic [ref=e23]: Войти
+  - main [ref=e24]:
+    - generic [ref=e25]:
+      - generic [ref=e27]:
+        - generic [ref=e30]:
+          - generic [ref=e31]: P24
+          - generic [ref=e32]: Вход в Service Desk
+        - generic [ref=e34]:
+          - generic [ref=e35]:
+            - generic [ref=e36]: Email
+            - textbox "Email" [ref=e37]:
+              - /placeholder: user@example.com
+          - generic [ref=e38]:
+            - generic [ref=e39]: Пароль
+            - generic [ref=e40]:
+              - textbox [ref=e41]
+              - img [ref=e42]
+              - generic: Enter a password
+          - button "Войти" [ref=e44] [cursor=pointer]:
+            - generic [ref=e45]: 
+            - generic [ref=e46]: Войти
+        - generic [ref=e48]:
+          - text: Нет аккаунта?
+          - link "Зарегистрироваться" [ref=e49] [cursor=pointer]:
+            - /url: /register
+      - button "Вход для агентов техподдержки" [ref=e51] [cursor=pointer]:
+        - generic [ref=e52]: 
+        - generic [ref=e53]: Вход для агентов техподдержки
+  - button "AI-помощник" [ref=e54] [cursor=pointer]:
+    - generic [ref=e55]: 

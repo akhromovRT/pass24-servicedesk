@@ -201,6 +201,10 @@ class Ticket(SQLModel, table=True):
 
     # Уведомления для агентов: клиент ответил → True; агент открыл/ответил → False
     has_unread_reply: bool = Field(default=False, index=True)
+    # SLA: уведомление о приближающемся нарушении уже отправлено
+    sla_breach_warned: bool = Field(default=False)
+    # Merge: если тикет слит с другим — ссылка на тикет-приёмник
+    merged_into_ticket_id: Optional[str] = Field(default=None, index=True)
 
     # CSAT (Customer Satisfaction)
     satisfaction_rating: Optional[int] = Field(default=None, description="Оценка 1-5")

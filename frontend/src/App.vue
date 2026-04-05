@@ -45,6 +45,12 @@ const menuItems = computed(() => {
 
   if (isStaff.value) {
     items.push({
+      label: 'Мой дашборд',
+      icon: 'pi pi-th-large',
+      command: () => router.push('/dashboard'),
+      class: route.path === '/dashboard' ? 'p-menuitem-active' : '',
+    })
+    items.push({
       label: 'Аналитика',
       icon: 'pi pi-chart-bar',
       command: () => router.push('/analytics'),

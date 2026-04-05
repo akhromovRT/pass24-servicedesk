@@ -22,6 +22,8 @@ ALLOWED_TYPES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
+from pydantic import BaseModel
+
 from backend.auth.dependencies import get_current_user
 from backend.auth.models import User
 from backend.database import get_session
@@ -1029,6 +1031,327 @@ async def rate_via_link(
 </html>"""
 
     return HTMLResponse(content=html, status_code=200)
+
+
+# =====================================================================
+# Agents list, Bulk actions, CSV export, Dashboard, Merge, Macros
+# =====================================================================
+
+@router.get("/agents/list")
+async def list_agents(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Список агентов поддержки (для назначения)."""
+    from backend.auth.models import UserRole
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        raise HTTPException(status_code=403, detail="Только для агентов")
+    r = await session.execute(
+        select(User).where(
+            User.role.in_([UserRole.SUPPORT_AGENT, UserRole.ADMIN]),
+            User.is_active == True,  # noqa: E712
+        ).order_by(User.full_name)
+    )
+    return [
+        {"id": str(u.id), "full_name": u.full_name, "email": u.email, "role": u.role.value if hasattr(u.role, 'value') else str(u.role)}
+        for u in r.scalars()
+    ]
+
+
+class BulkActionPayload(BaseModel):
+    ticket_ids: list[str]
+    action: str  # "status" | "assign" | "delete"
+    value: Optional[str] = None  # новый статус / id агента
+
+
+@router.post("/bulk")
+async def bulk_action(
+    payload: BulkActionPayload,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Массовые действия на выбранных тикетах (агент/админ)."""
+    from backend.auth.models import UserRole
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        raise HTTPException(status_code=403, detail="Только для агентов")
+    if not payload.ticket_ids:
+        return {"updated": 0}
+
+    r = await session.execute(select(Ticket).where(Ticket.id.in_(payload.ticket_ids)))
+    tickets = list(r.scalars())
+    updated = 0
+    now = datetime.utcnow()
+
+    for t in tickets:
+        if payload.action == "status" and payload.value:
+            try:
+                new_status = TicketStatus(payload.value)
+                event = t.transition(actor_id=str(current_user.id), new_status=new_status)
+                session.add(event)
+                updated += 1
+            except (ValueError, Exception):
+                pass
+        elif payload.action == "assign":
+            t.assignee_id = payload.value or None
+            t.updated_at = now
+            event = TicketEvent(
+                ticket_id=t.id,
+                actor_id=str(current_user.id),
+                description=f"Массовое назначение: {payload.value or 'снят'}",
+            )
+            session.add(event)
+            session.add(t)
+            updated += 1
+        elif payload.action == "delete" and current_user.role == UserRole.ADMIN:
+            from sqlalchemy import delete as sa_delete
+            await session.execute(sa_delete(Attachment).where(Attachment.ticket_id == t.id))
+            await session.execute(sa_delete(TicketComment).where(TicketComment.ticket_id == t.id))
+            await session.execute(sa_delete(TicketEvent).where(TicketEvent.ticket_id == t.id))
+            await session.delete(t)
+            updated += 1
+
+    await session.commit()
+    return {"updated": updated}
+
+
+@router.get("/export.csv", include_in_schema=False)
+async def export_tickets_csv(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Экспорт тикетов в CSV (агент/админ)."""
+    from backend.auth.models import UserRole
+    from fastapi.responses import StreamingResponse
+    import csv
+    import io
+
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        raise HTTPException(status_code=403, detail="Только для агентов")
+
+    r = await session.execute(
+        select(Ticket).order_by(Ticket.created_at.desc()).limit(10000)
+    )
+    tickets = list(r.scalars())
+
+    buf = io.StringIO()
+    buf.write("\ufeff")  # BOM для Excel
+    w = csv.writer(buf, delimiter=";")
+    w.writerow([
+        "ID", "Создано", "Статус", "Приоритет", "Тема", "Клиент email",
+        "Клиент имя", "Продукт", "Категория", "Объект", "SLA нарушен",
+        "Первый ответ", "Решено", "Оценка",
+    ])
+    for t in tickets:
+        w.writerow([
+            t.id[:8],
+            t.created_at.strftime("%Y-%m-%d %H:%M") if t.created_at else "",
+            t.status.value if hasattr(t.status, 'value') else str(t.status),
+            t.priority.value if hasattr(t.priority, 'value') else str(t.priority),
+            t.title,
+            t.contact_email or "",
+            t.contact_name or "",
+            t.product or "",
+            t.category or "",
+            t.object_name or "",
+            "да" if t.sla_breached else "",
+            t.first_response_at.strftime("%Y-%m-%d %H:%M") if t.first_response_at else "",
+            t.resolved_at.strftime("%Y-%m-%d %H:%M") if t.resolved_at else "",
+            t.satisfaction_rating or "",
+        ])
+
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename=tickets-{datetime.utcnow().strftime('%Y%m%d')}.csv"},
+    )
+
+
+@router.get("/dashboard/me")
+async def agent_dashboard(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Персональный дашборд агента."""
+    from backend.auth.models import UserRole
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        raise HTTPException(status_code=403, detail="Только для агентов")
+
+    agent_id = str(current_user.id)
+    # Мои назначенные
+    assigned = await session.execute(
+        select(func.count()).select_from(Ticket).where(Ticket.assignee_id == agent_id)
+    )
+    assigned_total = assigned.scalar_one()
+
+    # По статусам
+    open_st = await session.execute(
+        select(func.count()).select_from(Ticket)
+        .where(Ticket.assignee_id == agent_id, Ticket.status.in_([TicketStatus.NEW, TicketStatus.IN_PROGRESS, TicketStatus.WAITING_FOR_USER]))
+    )
+    open_count = open_st.scalar_one()
+
+    # Решённые мной за последние 30 дней
+    from datetime import timedelta
+    since = datetime.utcnow() - timedelta(days=30)
+    resolved_r = await session.execute(
+        select(func.count()).select_from(Ticket)
+        .where(Ticket.assignee_id == agent_id, Ticket.resolved_at.is_not(None), Ticket.resolved_at >= since)
+    )
+    resolved_30d = resolved_r.scalar_one()
+
+    # Среднее CSAT
+    csat_r = await session.execute(
+        select(func.avg(Ticket.satisfaction_rating)).where(
+            Ticket.assignee_id == agent_id,
+            Ticket.satisfaction_rating.is_not(None),
+        )
+    )
+    avg_csat = csat_r.scalar_one()
+
+    return {
+        "assigned_total": assigned_total,
+        "open": open_count,
+        "resolved_30d": resolved_30d,
+        "avg_csat": round(float(avg_csat), 2) if avg_csat else None,
+    }
+
+
+class MergePayload(BaseModel):
+    target_ticket_id: str  # тикет, в который сливаем
+
+
+@router.post("/{ticket_id}/merge", response_model=TicketRead)
+async def merge_ticket(
+    ticket_id: str,
+    payload: MergePayload,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> TicketRead:
+    """Сливает тикет в другой (current → target). Агент/админ."""
+    from backend.auth.models import UserRole
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        raise HTTPException(status_code=403, detail="Только для агентов")
+    if ticket_id == payload.target_ticket_id:
+        raise HTTPException(status_code=400, detail="Нельзя слить тикет сам в себя")
+
+    r = await session.execute(select(Ticket).where(Ticket.id == ticket_id))
+    source = r.scalar_one_or_none()
+    r2 = await session.execute(select(Ticket).where(Ticket.id == payload.target_ticket_id).options(*_ticket_load_options()))
+    target = r2.scalar_one_or_none()
+    if not source or not target:
+        raise HTTPException(status_code=404, detail="Тикет не найден")
+
+    # Переносим комментарии, вложения, события
+    from sqlalchemy import update as sa_update
+    await session.execute(
+        sa_update(TicketComment).where(TicketComment.ticket_id == source.id).values(ticket_id=target.id)
+    )
+    await session.execute(
+        sa_update(Attachment).where(Attachment.ticket_id == source.id).values(ticket_id=target.id)
+    )
+
+    # Закрываем source с пометкой
+    source.merged_into_ticket_id = target.id
+    source.status = TicketStatus.CLOSED
+    source.updated_at = datetime.utcnow()
+    session.add(source)
+
+    # Событие в target
+    merge_event = TicketEvent(
+        ticket_id=target.id,
+        actor_id=str(current_user.id),
+        description=f"В тикет слит дубликат #{source.id[:8]} ({source.title})",
+    )
+    session.add(merge_event)
+    close_event = TicketEvent(
+        ticket_id=source.id,
+        actor_id=str(current_user.id),
+        description=f"Слит в #{target.id[:8]}",
+    )
+    session.add(close_event)
+
+    await session.commit()
+    await session.refresh(target)
+
+    # Перечитываем target со связями
+    r3 = await session.execute(select(Ticket).where(Ticket.id == target.id).options(*_ticket_load_options()))
+    return TicketRead.model_validate(r3.scalar_one())
+
+
+class ApplyMacroPayload(BaseModel):
+    macro_id: str
+
+
+@router.post("/{ticket_id}/apply-macro", response_model=TicketRead)
+async def apply_macro(
+    ticket_id: str,
+    payload: ApplyMacroPayload,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Применяет макрос к тикету: статус + комментарий + назначение."""
+    from backend.auth.models import UserRole
+    from backend.tickets.templates import Macro
+    import json as json_mod
+
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        raise HTTPException(status_code=403, detail="Только для агентов")
+
+    # Загружаем макрос
+    mr = await session.execute(select(Macro).where(Macro.id == payload.macro_id))
+    macro = mr.scalar_one_or_none()
+    if not macro:
+        raise HTTPException(status_code=404, detail="Макрос не найден")
+    actions = json_mod.loads(macro.actions)
+
+    # Загружаем тикет
+    r = await session.execute(select(Ticket).where(Ticket.id == ticket_id).options(*_ticket_load_options()))
+    ticket = r.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Тикет не найден")
+
+    # Применяем действия
+    if actions.get("comment"):
+        comment = TicketComment(
+            ticket_id=ticket.id,
+            author_id=str(current_user.id),
+            author_name=current_user.full_name or "",
+            text=actions["comment"],
+            is_internal=bool(actions.get("is_internal_comment")),
+        )
+        session.add(comment)
+
+    if actions.get("assign_self"):
+        ticket.assignee_id = str(current_user.id)
+        event = TicketEvent(
+            ticket_id=ticket.id,
+            actor_id=str(current_user.id),
+            description="Назначен себе (макрос)",
+        )
+        session.add(event)
+
+    if actions.get("assignment_group"):
+        ticket.assignment_group = actions["assignment_group"]
+
+    if actions.get("status"):
+        try:
+            event = ticket.transition(
+                actor_id=str(current_user.id),
+                new_status=TicketStatus(actions["status"]),
+            )
+            session.add(event)
+        except (ValueError, Exception):
+            pass
+
+    session.add(ticket)
+    await session.commit()
+    await session.refresh(ticket)
+
+    # Перечитываем со связями
+    r = await session.execute(select(Ticket).where(Ticket.id == ticket.id).options(*_ticket_load_options()))
+    return TicketRead.model_validate(r.scalar_one())
 
 
 @router.post("/{ticket_id}/satisfaction", response_model=TicketRead)

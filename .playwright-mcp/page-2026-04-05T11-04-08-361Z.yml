@@ -1,0 +1,9 @@
+- generic [ref=e2]:
+  - generic [ref=e3]: PASS24 SERVICE DESK
+  - generic [ref=e4]: 🤩
+  - heading "Спасибо за обратную связь!" [level=1] [ref=e5]
+  - paragraph [ref=e6]: "Ваша оценка: 🤩 Отлично. Она поможет нам стать лучше."
+  - generic [ref=e7]:
+    - text: Можете закрыть эту страницу или
+    - link "перейти к заявкам" [ref=e8] [cursor=pointer]:
+      - /url: https://support.pass24pro.ru/

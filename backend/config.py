@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     qdrant_api_key: str = ""
     qdrant_collection: str = "pass24_knowledge"
 
+    # Telegram bot
+    telegram_bot_token: str = ""
+    telegram_webhook_secret: str = ""
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
