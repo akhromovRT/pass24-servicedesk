@@ -30,6 +30,12 @@ const email = ref(auth.user?.email || '')
 const contactName = ref(auth.user?.full_name || '')
 const contactPhone = ref('')
 
+// Агент/админ может создать заявку от имени клиента
+const isStaff = computed(() =>
+  auth.user?.role === 'support_agent' || auth.user?.role === 'admin'
+)
+const onBehalfOfMode = ref(false)  // режим "от имени клиента"
+
 interface QuickCard {
   id: string
   icon: string
@@ -173,6 +179,10 @@ async function onSubmit() {
 
   // Авторизован
   try {
+    // Агент/админ создаёт от имени клиента — если email или имя отличаются
+    const creatingOnBehalf = isStaff.value && onBehalfOfMode.value &&
+      email.value.trim() && email.value.trim().toLowerCase() !== auth.user?.email.toLowerCase()
+
     const ticket = await store.createTicket({
       title: title.value.trim(),
       description: description.value.trim(),
@@ -182,9 +192,12 @@ async function onSubmit() {
       object_name: objectName.value.trim() || undefined,
       access_point: accessPoint.value.trim() || undefined,
       contact_phone: contactPhone.value.trim() || undefined,
+      contact_name: creatingOnBehalf ? contactName.value.trim() || undefined : undefined,
       company: company.value.trim() || undefined,
       device_type: showDeviceType.value ? deviceType.value : undefined,
       urgent: urgent.value,
+      on_behalf_of_email: creatingOnBehalf ? email.value.trim() : undefined,
+      on_behalf_of_name: creatingOnBehalf ? contactName.value.trim() || undefined : undefined,
     })
     toast.add({ severity: 'success', summary: 'Заявка создана', life: 3000 })
     router.push(`/tickets/${ticket.id}`)
@@ -244,38 +257,53 @@ async function onSubmit() {
 
           <form v-else class="ticket-form" @submit.prevent="onSubmit">
             <!-- Email — обязательно для всех -->
-            <div class="form-section-title"><i class="pi pi-envelope section-icon" /> Контактные данные</div>
+            <div class="form-section-title">
+              <i class="pi pi-envelope section-icon" /> Контактные данные
+              <Button
+                v-if="isStaff"
+                :label="onBehalfOfMode ? 'От своего имени' : 'От имени клиента'"
+                :icon="onBehalfOfMode ? 'pi pi-user' : 'pi pi-users'"
+                size="small"
+                severity="secondary"
+                :outlined="!onBehalfOfMode"
+                class="behalf-toggle"
+                type="button"
+                @click="onBehalfOfMode = !onBehalfOfMode; if (!onBehalfOfMode) { email = auth.user?.email || ''; contactName = auth.user?.full_name || '' } else { email = ''; contactName = ''; contactPhone = '' }"
+              />
+            </div>
+
+            <div v-if="onBehalfOfMode && isStaff" class="behalf-hint">
+              Укажите контактные данные клиента — на этот email придут уведомления о заявке.
+            </div>
 
             <div class="field">
-              <label for="email">Электронная почта <span class="required">*</span></label>
+              <label for="email">Электронная почта клиента <span class="required">*</span></label>
               <InputText
                 id="email"
                 v-model="email"
-                placeholder="ivan@example.com"
                 type="email"
                 :invalid="emailInvalid"
-                :disabled="!!auth.user"
+                :disabled="!!auth.user && !onBehalfOfMode"
                 fluid
               />
-              <small class="field-help">На этот адрес придёт подтверждение и все обновления по заявке. Вы сможете отвечать на письма.</small>
+              <small class="field-help">На этот адрес придёт подтверждение и все обновления по заявке. Можно отвечать прямо на письма.</small>
               <small v-if="emailInvalid" class="field-error">Укажите корректный email — это обязательное поле</small>
             </div>
 
             <div class="form-row">
               <div class="field">
-                <label for="contactName">Ваше имя</label>
+                <label for="contactName">Имя клиента</label>
                 <InputText
                   id="contactName"
                   v-model="contactName"
-                  placeholder="Иван Петров"
-                  :disabled="!!auth.user"
+                  :disabled="!!auth.user && !onBehalfOfMode"
                   fluid
                 />
-                <small class="field-help">Как к вам обращаться в переписке</small>
+                <small class="field-help">Как обращаться в переписке</small>
               </div>
               <div class="field">
                 <label for="contactPhone">Телефон</label>
-                <InputText id="contactPhone" v-model="contactPhone" placeholder="+7 (999) 123-45-67" fluid />
+                <InputText id="contactPhone" v-model="contactPhone" fluid />
                 <small class="field-help">Для срочной связи — если проблема критичная</small>
               </div>
             </div>
@@ -290,11 +318,10 @@ async function onSubmit() {
               <InputText
                 id="title"
                 v-model="title"
-                placeholder="Например: Не открывается дверь в подъезд 3"
                 :invalid="titleInvalid"
                 fluid
               />
-              <small class="field-help">Кратко опишите суть проблемы — это будет заголовок заявки</small>
+              <small class="field-help">Кратко опишите суть проблемы — например: «Не открывается дверь в подъезд 3»</small>
               <small v-if="titleInvalid" class="field-error">Укажите тему — без неё не получится создать заявку</small>
             </div>
 
@@ -303,13 +330,12 @@ async function onSubmit() {
               <Textarea
                 id="description"
                 v-model="description"
-                placeholder="Что произошло? Когда? Что вы уже пробовали? Какую ошибку видите?"
                 :invalid="descriptionInvalid"
                 rows="4"
                 auto-resize
                 fluid
               />
-              <small class="field-help">Чем подробнее — тем быстрее решим. Укажите: что делали, что ожидали, что получили</small>
+              <small class="field-help">Что произошло? Когда? Что уже пробовали? Какую ошибку видите?</small>
               <small v-if="descriptionInvalid" class="field-error">Опишите проблему подробнее</small>
             </div>
 
@@ -321,13 +347,13 @@ async function onSubmit() {
             <div class="form-row">
               <div class="field">
                 <label for="objectName">Название объекта</label>
-                <InputText id="objectName" v-model="objectName" placeholder="ЖК Солнечный, БЦ Меридиан, КП Трувиль" fluid />
-                <small class="field-help">Жилой комплекс, бизнес-центр или коттеджный посёлок</small>
+                <InputText id="objectName" v-model="objectName" fluid />
+                <small class="field-help">Жилой комплекс, бизнес-центр или коттеджный посёлок — например: ЖК Солнечный</small>
               </div>
               <div class="field">
                 <label for="accessPoint">Точка доступа</label>
-                <InputText id="accessPoint" v-model="accessPoint" placeholder="КПП-1, подъезд 3, парковка B2" fluid />
-                <small class="field-help">Конкретная дверь, шлагбаум или КПП</small>
+                <InputText id="accessPoint" v-model="accessPoint" fluid />
+                <small class="field-help">Конкретная дверь, шлагбаум или КПП — например: КПП-1, подъезд 3</small>
               </div>
             </div>
 
@@ -339,31 +365,31 @@ async function onSubmit() {
             <div class="form-row">
               <div class="field">
                 <label for="product">Продукт</label>
-                <Select id="product" v-model="product" :options="productOptions" option-label="label" option-value="value" placeholder="Какой продукт затронут?" fluid />
-                <small class="field-help">Если не уверены — оставьте пустым, мы определим сами</small>
+                <Select id="product" v-model="product" :options="productOptions" option-label="label" option-value="value" fluid />
+                <small class="field-help">Какой продукт затронут. Если не уверены — оставьте пустым, определим сами</small>
               </div>
               <div class="field">
                 <label for="category">Категория</label>
-                <Select id="category" v-model="category" :options="categoryOptions" option-label="label" option-value="value" placeholder="Тип проблемы" fluid />
-                <small class="field-help">Помогает нам быстрее направить заявку нужному специалисту</small>
+                <Select id="category" v-model="category" :options="categoryOptions" option-label="label" option-value="value" fluid />
+                <small class="field-help">Тип проблемы — помогает направить заявку нужному специалисту</small>
               </div>
             </div>
 
             <div class="form-row">
               <div class="field">
                 <label for="ticketType">Тип обращения</label>
-                <Select id="ticketType" v-model="ticketType" :options="ticketTypeOptions" option-label="label" option-value="value" placeholder="Что нужно?" fluid />
-                <small class="field-help">Инцидент = срочно, всё сломалось. Вопрос = нужна консультация</small>
+                <Select id="ticketType" v-model="ticketType" :options="ticketTypeOptions" option-label="label" option-value="value" fluid />
+                <small class="field-help">Инцидент — срочно, всё сломалось. Вопрос — нужна консультация</small>
               </div>
               <div class="field" v-if="showDeviceType">
                 <label for="deviceType">Устройство</label>
-                <Select id="deviceType" v-model="deviceType" :options="deviceTypeOptions" option-label="label" option-value="value" placeholder="На каком устройстве?" fluid />
-                <small class="field-help">Поможет воспроизвести проблему на аналогичном устройстве</small>
+                <Select id="deviceType" v-model="deviceType" :options="deviceTypeOptions" option-label="label" option-value="value" fluid />
+                <small class="field-help">На каком устройстве проблема — поможет воспроизвести</small>
               </div>
               <div class="field" v-if="!showDeviceType">
                 <label for="company">Компания / УК</label>
-                <InputText id="company" v-model="company" placeholder="ООО «Управляющая компания»" fluid />
-                <small class="field-help">Название вашей управляющей компании, если актуально</small>
+                <InputText id="company" v-model="company" fluid />
+                <small class="field-help">Название управляющей компании — например: ООО «Управляющая компания»</small>
               </div>
             </div>
 
@@ -440,6 +466,11 @@ async function onSubmit() {
   display: flex; align-items: center; gap: 8px; margin-bottom: -4px;
 }
 .section-icon { font-size: 16px; color: #3b82f6; }
+.behalf-toggle { margin-left: auto; }
+.behalf-hint {
+  font-size: 13px; color: #0369a1; background: #f0f9ff;
+  border: 1px solid #bae6fd; border-radius: 8px; padding: 10px 12px;
+}
 
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field label { font-weight: 500; font-size: 14px; color: #334155; }

@@ -170,9 +170,40 @@ async def create_ticket(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> TicketRead:
-    """Создать новый тикет. Автор определяется по JWT-токену."""
+    """Создать новый тикет.
+
+    Автор определяется по JWT-токену. Агенты/админы могут указать
+    on_behalf_of_email — в этом случае creator_id подставляется
+    от имени клиента (создаётся пользователь если его нет).
+    """
+    from backend.auth.models import UserRole
+    from backend.auth.utils import hash_password
+    import uuid as uuid_mod
+
+    # Кто реальный заявитель тикета
+    creator_user = current_user
+    creator_email_for_notify = current_user.email
+
+    # Создание от имени клиента (только для агентов/админов)
+    if payload.on_behalf_of_email and current_user.role in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        target_email = payload.on_behalf_of_email.strip().lower()
+        r = await session.execute(select(User).where(User.email == target_email))
+        target = r.scalar_one_or_none()
+        if target is None:
+            target = User(
+                email=target_email,
+                hashed_password=hash_password(uuid_mod.uuid4().hex[:16]),
+                full_name=(payload.on_behalf_of_name or target_email.split("@")[0]).strip(),
+                role=UserRole.RESIDENT,
+            )
+            session.add(target)
+            await session.commit()
+            await session.refresh(target)
+        creator_user = target
+        creator_email_for_notify = target.email
+
     ticket = Ticket(
-        creator_id=str(current_user.id),
+        creator_id=str(creator_user.id),
         title=payload.title,
         description=payload.description,
         product=payload.product or "pass24_online",
@@ -182,8 +213,8 @@ async def create_ticket(
         object_name=payload.object_name,
         object_address=payload.object_address,
         access_point=payload.access_point,
-        contact_name=payload.contact_name or current_user.full_name,
-        contact_email=current_user.email,
+        contact_name=payload.contact_name or payload.on_behalf_of_name or creator_user.full_name,
+        contact_email=creator_user.email,
         contact_phone=payload.contact_phone,
         company=payload.company,
         device_type=payload.device_type,
@@ -194,11 +225,14 @@ async def create_ticket(
     ticket.auto_detect_category()
     ticket.assign_priority_based_on_context()
 
-    # Событие создания
+    # Событие создания (actor — тот, кто реально создал через UI)
+    actor_desc = "Тикет создан"
+    if creator_user.id != current_user.id:
+        actor_desc = f"Тикет создан агентом {current_user.full_name or current_user.email} от имени клиента"
     event = TicketEvent(
         ticket_id=ticket.id,
         actor_id=str(current_user.id),
-        description="Тикет создан",
+        description=actor_desc,
     )
 
     session.add(ticket)
@@ -206,10 +240,10 @@ async def create_ticket(
     await session.commit()
     await session.refresh(ticket)
 
-    # Email-уведомление
+    # Email-уведомление заявителю
     background_tasks.add_task(
         notify_ticket_created,
-        creator_email=current_user.email,
+        creator_email=creator_email_for_notify,
         ticket_id=ticket.id,
         title=ticket.title,
         priority=ticket.priority.value if hasattr(ticket.priority, 'value') else str(ticket.priority),

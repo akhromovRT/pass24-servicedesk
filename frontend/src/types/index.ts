@@ -103,6 +103,8 @@ export interface TicketCreate {
   app_version?: string
   error_message?: string
   urgent?: boolean
+  on_behalf_of_email?: string
+  on_behalf_of_name?: string
 }
 
 export interface PaginatedResponse<T> {

@@ -37,6 +37,16 @@ class TicketCreate(BaseModel):
 
     urgent: bool = Field(default=False)
 
+    # Создание от имени другого пользователя (только для агентов/админов)
+    on_behalf_of_email: Optional[str] = Field(
+        default=None, max_length=320,
+        description="Email заявителя (если агент создаёт за клиента)"
+    )
+    on_behalf_of_name: Optional[str] = Field(
+        default=None, max_length=256,
+        description="Имя заявителя (если агент создаёт за клиента)"
+    )
+
 
 class GuestTicketCreate(BaseModel):
     """Создание тикета без авторизации — только email."""
