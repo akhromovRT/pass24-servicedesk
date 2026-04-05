@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -17,6 +17,9 @@ class ArticleCreate(BaseModel):
     content: str = Field(..., description="Содержимое статьи (Markdown)")
     article_type: ArticleType = Field(default=ArticleType.FAQ, description="Тип: faq или guide")
     is_published: bool = Field(default=True, description="Опубликована ли статья")
+    tags: List[str] = Field(default_factory=list, description="Теги: ['sms', 'registration']")
+    synonyms: List[str] = Field(default_factory=list, description="Альтернативные формулировки")
+    slug_aliases: List[str] = Field(default_factory=list, description="Старые slug для редиректа")
 
 
 class ArticleUpdate(BaseModel):
@@ -26,6 +29,9 @@ class ArticleUpdate(BaseModel):
     category: Optional[ArticleCategory] = Field(default=None, description="Категория статьи")
     content: Optional[str] = Field(default=None, description="Содержимое статьи (Markdown)")
     is_published: Optional[bool] = Field(default=None, description="Опубликована ли статья")
+    tags: Optional[List[str]] = Field(default=None, description="Теги")
+    synonyms: Optional[List[str]] = Field(default=None, description="Альтернативные формулировки")
+    slug_aliases: Optional[List[str]] = Field(default=None, description="Старые slug для редиректа")
 
 
 class ArticleRead(BaseModel):
@@ -41,6 +47,9 @@ class ArticleRead(BaseModel):
     views_count: int
     helpful_count: int = 0
     not_helpful_count: int = 0
+    tags: List[str] = Field(default_factory=list)
+    synonyms: List[str] = Field(default_factory=list)
+    slug_aliases: List[str] = Field(default_factory=list)
     author_id: uuid.UUID
     author_name: str = Field(description="Имя автора статьи")
     created_at: datetime

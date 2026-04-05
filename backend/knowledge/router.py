@@ -24,6 +24,7 @@ from .schemas import (
     FeedbackCreate,
     FeedbackResponse,
 )
+from .synonyms import expand_query
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
@@ -84,6 +85,9 @@ async def _build_article_read(article: Article, session: AsyncSession) -> Articl
         views_count=article.views_count,
         helpful_count=article.helpful_count,
         not_helpful_count=article.not_helpful_count,
+        tags=list(article.tags or []),
+        synonyms=list(article.synonyms or []),
+        slug_aliases=list(article.slug_aliases or []),
         author_id=article.author_id,
         author_name=author_name,
         created_at=article.created_at,
@@ -97,6 +101,7 @@ async def list_articles(
     per_page: int = Query(default=20, ge=1, le=100, description="Статей на страницу"),
     category: Optional[ArticleCategory] = Query(default=None, description="Фильтр по категории"),
     article_type: Optional[ArticleType] = Query(default=None, alias="type", description="Тип: faq или guide"),
+    tag: Optional[str] = Query(default=None, description="Фильтр по тегу"),
     session: AsyncSession = Depends(get_session),
 ) -> ArticleListResponse:
     """Список опубликованных статей с пагинацией и фильтрацией."""
@@ -110,6 +115,11 @@ async def list_articles(
     if category is not None:
         query = query.where(Article.category == category)
         count_query = count_query.where(Article.category == category)
+    if tag:
+        # JSONB containment: tags @> '["sms"]'::jsonb
+        tag_filter = sa_text("tags @> :tag_arr").bindparams(tag_arr=f'["{tag}"]')
+        query = query.where(tag_filter)
+        count_query = count_query.where(tag_filter)
 
     # Общее количество
     total_result = await session.execute(count_query)
@@ -137,6 +147,7 @@ async def search_articles(
     query: str = Query(..., min_length=1, description="Поисковый запрос"),
     category: Optional[ArticleCategory] = Query(default=None, description="Фильтр по категории"),
     article_type: Optional[ArticleType] = Query(default=None, alias="type", description="Тип: faq или guide"),
+    tag: Optional[str] = Query(default=None, description="Фильтр по тегу"),
     page: int = Query(default=1, ge=1, description="Номер страницы"),
     per_page: int = Query(default=20, ge=1, le=100, description="Статей на страницу"),
     session: AsyncSession = Depends(get_session),
@@ -144,14 +155,31 @@ async def search_articles(
     """
     Полнотекстовый поиск по статьям базы знаний.
 
-    Использует PostgreSQL FTS (to_tsvector/to_tsquery) с ранжированием.
-    Fallback на ILIKE если FTS не даёт результатов.
+    Пайплайн:
+    1. Query expansion: раскрываем синонимы ("смс" → "смс SMS код")
+    2. FTS search по title (вес A) + synonyms (A) + tags (B) + content (C)
+    3. Ранжирование через ts_rank_cd
+    4. Fallback на ILIKE если FTS пустой
     """
-    # FTS-фильтр
-    fts_condition = sa_text(
-        "to_tsvector('russian', coalesce(title, '') || ' ' || coalesce(content, '')) "
-        "@@ plainto_tsquery('russian', :query)"
-    ).bindparams(query=query)
+    # 1. Query expansion через словарь синонимов
+    expanded_query = expand_query(query)
+
+    # 2. FTS с весами по полям: title (A), synonyms (A), tags (B), content (C)
+    #    JSONB tags/synonyms конвертируем в текст через jsonb_array_elements_text
+    fts_condition = sa_text("""
+        (
+            setweight(to_tsvector('russian', coalesce(title, '')), 'A') ||
+            setweight(to_tsvector('russian', coalesce(
+                (SELECT string_agg(value, ' ') FROM jsonb_array_elements_text(synonyms) AS value),
+                ''
+            )), 'A') ||
+            setweight(to_tsvector('russian', coalesce(
+                (SELECT string_agg(value, ' ') FROM jsonb_array_elements_text(tags) AS value),
+                ''
+            )), 'B') ||
+            setweight(to_tsvector('russian', coalesce(content, '')), 'C')
+        ) @@ plainto_tsquery('russian', :query)
+    """).bindparams(query=expanded_query)
 
     base_filter = (Article.is_published == True) & fts_condition  # noqa: E712
 
@@ -164,12 +192,16 @@ async def search_articles(
     if category is not None:
         stmt = stmt.where(Article.category == category)
         count_stmt = count_stmt.where(Article.category == category)
+    if tag:
+        tag_filter = sa_text("tags @> :tag_arr").bindparams(tag_arr=f'["{tag}"]')
+        stmt = stmt.where(tag_filter)
+        count_stmt = count_stmt.where(tag_filter)
 
     # Общее количество
     total_result = await session.execute(count_stmt)
     total = total_result.scalar_one()
 
-    # Если FTS не дал результатов — fallback на ILIKE
+    # Если FTS не дал результатов — fallback на ILIKE (по оригинальному запросу)
     if total == 0:
         search_pattern = f"%{query}%"
         ilike_filter = (
@@ -184,12 +216,32 @@ async def search_articles(
         if category is not None:
             stmt = stmt.where(Article.category == category)
             count_stmt = count_stmt.where(Article.category == category)
+        if tag:
+            tag_filter = sa_text("tags @> :tag_arr").bindparams(tag_arr=f'["{tag}"]')
+            stmt = stmt.where(tag_filter)
+            count_stmt = count_stmt.where(tag_filter)
         total_result = await session.execute(count_stmt)
         total = total_result.scalar_one()
 
-    # Пагинация и ранжирование
+    # Ранжирование по релевантности FTS (ts_rank_cd), fallback на created_at
+    rank_expr = sa_text("""
+        ts_rank_cd(
+            setweight(to_tsvector('russian', coalesce(title, '')), 'A') ||
+            setweight(to_tsvector('russian', coalesce(
+                (SELECT string_agg(value, ' ') FROM jsonb_array_elements_text(synonyms) AS value),
+                ''
+            )), 'A') ||
+            setweight(to_tsvector('russian', coalesce(
+                (SELECT string_agg(value, ' ') FROM jsonb_array_elements_text(tags) AS value),
+                ''
+            )), 'B') ||
+            setweight(to_tsvector('russian', coalesce(content, '')), 'C'),
+            plainto_tsquery('russian', :query)
+        )
+    """).bindparams(query=expanded_query)
+
     offset = (page - 1) * per_page
-    stmt = stmt.order_by(Article.created_at.desc()).offset(offset).limit(per_page)
+    stmt = stmt.order_by(rank_expr.desc(), Article.created_at.desc()).offset(offset).limit(per_page)
 
     result = await session.execute(stmt)
     articles = result.scalars().all()
@@ -366,11 +418,24 @@ async def get_article(
     slug: str,
     session: AsyncSession = Depends(get_session),
 ) -> ArticleRead:
-    """Получение статьи по slug. Увеличивает счётчик просмотров."""
+    """Получение статьи по slug. Увеличивает счётчик просмотров.
+
+    Если slug не найден напрямую — пробуем найти в slug_aliases
+    (для редиректов после декомпозиции статей).
+    """
+    # 1. Прямой поиск по slug
     result = await session.execute(
         select(Article).where(Article.slug == slug, Article.is_published == True)  # noqa: E712
     )
     article = result.scalar_one_or_none()
+
+    # 2. Fallback: поиск в slug_aliases (JSONB containment)
+    if article is None:
+        alias_filter = sa_text("slug_aliases @> :alias_arr").bindparams(alias_arr=f'["{slug}"]')
+        result = await session.execute(
+            select(Article).where(alias_filter, Article.is_published == True)  # noqa: E712
+        )
+        article = result.scalar_one_or_none()
 
     if article is None:
         raise HTTPException(
@@ -408,6 +473,9 @@ async def create_article(
         article_type=payload.article_type,
         content=payload.content,
         is_published=payload.is_published,
+        tags=payload.tags,
+        synonyms=payload.synonyms,
+        slug_aliases=payload.slug_aliases,
         author_id=current_user.id,
     )
 
@@ -446,6 +514,15 @@ async def update_article(
         )
         if existing.scalar_one_or_none() is not None:
             new_slug = f"{new_slug}-{uuid.uuid4().hex[:8]}"
+
+        # Автоматически сохраняем старый slug в slug_aliases (для 301 redirect)
+        if new_slug != article.slug:
+            existing_aliases = list(article.slug_aliases or [])
+            explicit_aliases = update_data.get("slug_aliases")
+            merged_aliases = list(explicit_aliases) if explicit_aliases is not None else existing_aliases
+            if article.slug not in merged_aliases:
+                merged_aliases.append(article.slug)
+            update_data["slug_aliases"] = merged_aliases
         update_data["slug"] = new_slug
 
     for field_name, value in update_data.items():

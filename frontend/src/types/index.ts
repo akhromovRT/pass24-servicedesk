@@ -141,6 +141,9 @@ export interface Article {
   views_count: number
   helpful_count: number
   not_helpful_count: number
+  tags: string[]
+  synonyms: string[]
+  slug_aliases: string[]
   author_id: string
   author_name: string
   created_at: string

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import InputText from 'primevue/inputtext'
 import IconField from 'primevue/iconfield'
 import InputIcon from 'primevue/inputicon'
@@ -12,12 +12,14 @@ import { useAuthStore } from '../stores/auth'
 import type { Article } from '../types'
 
 const router = useRouter()
+const route = useRoute()
 const toast = useToast()
 const knowledge = useKnowledgeStore()
 const auth = useAuthStore()
 
 const searchInput = ref('')
 const selectedType = ref<'all' | 'guide' | 'faq'>('all')
+const selectedTag = ref<string | null>(null)
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
 interface CategoryMeta {
@@ -88,22 +90,63 @@ const canCreate = computed(
   () => auth.user?.role === 'support_agent' || auth.user?.role === 'admin',
 )
 
-// Фильтрация по типу + поисковому запросу (клиентская, т.к. статей немного)
+// Топ-теги: считаем частоту тегов по всем статьям, берём топ-8
+const topTags = computed(() => {
+  const counts = new Map<string, number>()
+  for (const article of allArticles.value) {
+    for (const tag of article.tags || []) {
+      counts.set(tag, (counts.get(tag) || 0) + 1)
+    }
+  }
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([tag, count]) => ({ tag, count }))
+})
+
+// Переводы ключевых тегов на русский для отображения
+const tagLabels: Record<string, string> = {
+  sms: 'SMS-коды',
+  registration: 'Регистрация',
+  login: 'Вход',
+  password: 'Пароль',
+  recovery: 'Восстановление',
+  onboarding: 'Первый вход',
+  crash: 'Вылеты',
+  app: 'Приложение',
+  account: 'Аккаунт',
+  duplicate: 'Дубликаты',
+  authentication: 'Аутентификация',
+  stability: 'Стабильность',
+  troubleshooting: 'Диагностика',
+  hub: 'Общее',
+}
+
+// Фильтрация по типу + тегу + поисковому запросу (клиентская, т.к. статей немного)
 const filteredArticles = computed(() => {
   let list = allArticles.value
   if (selectedType.value !== 'all') {
     list = list.filter((a) => a.article_type === selectedType.value)
+  }
+  if (selectedTag.value) {
+    list = list.filter((a) => (a.tags || []).includes(selectedTag.value!))
   }
   const q = searchInput.value.trim().toLowerCase()
   if (q) {
     list = list.filter(
       (a) =>
         a.title.toLowerCase().includes(q) ||
-        a.content.toLowerCase().includes(q),
+        a.content.toLowerCase().includes(q) ||
+        (a.tags || []).some((t) => t.includes(q)) ||
+        (a.synonyms || []).some((s) => s.toLowerCase().includes(q)),
     )
   }
   return list
 })
+
+function toggleTag(tag: string) {
+  selectedTag.value = selectedTag.value === tag ? null : tag
+}
 
 // Группировка статей по категории (для секций)
 const articlesByCategory = computed(() => {
@@ -173,8 +216,19 @@ function openArticle(slug: string) {
   router.push(`/knowledge/${slug}`)
 }
 
-onMounted(loadAll)
+onMounted(async () => {
+  await loadAll()
+  // Применяем tag из query ?tag=sms
+  const tagFromQuery = route.query.tag
+  if (tagFromQuery && typeof tagFromQuery === 'string') {
+    selectedTag.value = tagFromQuery
+  }
+})
 watch(searchInput, onSearchInput)
+// Синхронизируем selectedTag ↔ URL (чтобы можно было шарить ссылки)
+watch(selectedTag, (newTag) => {
+  router.replace({ query: newTag ? { ...route.query, tag: newTag } : {} })
+})
 </script>
 
 <template>
@@ -219,6 +273,30 @@ watch(searchInput, onSearchInput)
         >
           <i class="pi pi-question-circle" />
           FAQ
+        </button>
+      </div>
+
+      <!-- Топ-теги: быстрый фильтр по темам -->
+      <div v-if="topTags.length > 0" class="tag-chips">
+        <button
+          v-for="{ tag, count } in topTags"
+          :key="tag"
+          type="button"
+          :class="['tag-chip', { active: selectedTag === tag }]"
+          @click="toggleTag(tag)"
+        >
+          <i class="pi pi-tag" />
+          {{ tagLabels[tag] || tag }}
+          <span class="tag-count">{{ count }}</span>
+        </button>
+        <button
+          v-if="selectedTag"
+          type="button"
+          class="tag-chip clear"
+          @click="selectedTag = null"
+        >
+          <i class="pi pi-times" />
+          Сбросить
         </button>
       </div>
 
@@ -413,6 +491,66 @@ watch(searchInput, onSearchInput)
   gap: 8px;
   justify-content: center;
   flex-wrap: wrap;
+}
+
+/* Tag chips */
+.tag-chips {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding: 0 20px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  font-size: 13px;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tag-chip i {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.tag-chip:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.tag-chip.active {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: white;
+}
+
+.tag-chip.active i {
+  color: white;
+}
+
+.tag-chip.clear {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.tag-count {
+  font-weight: 600;
+  font-size: 11px;
+  color: #94a3b8;
+  padding-left: 2px;
+}
+
+.tag-chip.active .tag-count {
+  color: rgba(255, 255, 255, 0.85);
 }
 
 /* Loading / empty */

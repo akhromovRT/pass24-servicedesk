@@ -256,6 +256,18 @@ watch(
         <Tag :value="typeMeta.label" :severity="typeMeta.severity" />
       </div>
       <h1 class="article-title">{{ store.currentArticle.title }}</h1>
+      <!-- Tags (если есть) -->
+      <div v-if="store.currentArticle.tags && store.currentArticle.tags.length > 0" class="article-tags">
+        <span
+          v-for="tag in store.currentArticle.tags"
+          :key="tag"
+          class="article-tag"
+          @click="router.push(`/knowledge?tag=${tag}`)"
+        >
+          <i class="pi pi-tag" />
+          {{ tag }}
+        </span>
+      </div>
       <div class="article-info">
         <span><i class="pi pi-calendar" /> Обновлено {{ formattedDate }}</span>
         <span><i class="pi pi-eye" /> {{ store.currentArticle.views_count }} просмотров</span>
@@ -469,6 +481,36 @@ watch(
   line-height: 1.25;
   margin: 0 0 12px;
   letter-spacing: -0.02em;
+}
+
+.article-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+
+.article-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  background: #f1f5f9;
+  border-radius: 12px;
+  font-size: 12px;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.article-tag:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+.article-tag i {
+  font-size: 10px;
+  color: #94a3b8;
 }
 
 .article-info {

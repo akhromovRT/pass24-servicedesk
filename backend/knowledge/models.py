@@ -3,7 +3,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from enum import Enum
+from typing import List
 
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Column, Field, Index, SQLModel, String
 
 
@@ -49,6 +51,21 @@ class Article(SQLModel, table=True):
     views_count: int = Field(default=0)
     helpful_count: int = Field(default=0, description="Количество 👍 feedback")
     not_helpful_count: int = Field(default=0, description="Количество 👎 feedback")
+    # Теги для группировки/фильтра: ["sms", "registration"]
+    tags: List[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSONB, nullable=False, server_default="[]"),
+    )
+    # Альтернативные формулировки ("смс не приходит", "нет кода") для FTS boost
+    synonyms: List[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSONB, nullable=False, server_default="[]"),
+    )
+    # Старые slug для 301 redirect после декомпозиции статей
+    slug_aliases: List[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSONB, nullable=False, server_default="[]"),
+    )
     author_id: uuid.UUID = Field(foreign_key="users.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
