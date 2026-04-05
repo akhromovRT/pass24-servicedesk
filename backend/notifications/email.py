@@ -57,30 +57,174 @@ def ticket_subject_tag(ticket_id: str) -> str:
     return f"[PASS24-{ticket_id[:8]}]"
 
 
+PRODUCT_LABELS = {
+    "pass24_online": "PASS24.online (веб-портал)",
+    "mobile_app": "Мобильное приложение PASS24",
+    "pass24_key": "PASS24.Key (BLE-ключи)",
+    "pass24_control": "PASS24.control (СКУД)",
+    "pass24_auto": "PASS24.auto (распознавание номеров)",
+    "equipment": "Оборудование",
+    "integration": "Интеграция",
+    "other": "Другое",
+}
+
+TYPE_LABELS = {
+    "incident": "Инцидент (нарушение работы)",
+    "problem": "Проблема",
+    "service_request": "Стандартный запрос",
+    "change_request": "Запрос на изменение",
+    "question": "Вопрос / консультация",
+    "feature_request": "Предложение",
+}
+
+
 async def notify_ticket_created(
     creator_email: str,
     ticket_id: str,
     title: str,
     priority: str,
+    description: str = "",
+    product: str = "",
+    ticket_type: str = "",
+    object_name: str = "",
+    access_point: str = "",
+    contact_phone: str = "",
+    sla_response_hours: int = 4,
+    sla_resolve_hours: int = 24,
 ) -> None:
-    """Уведомление о создании тикета."""
+    """Уведомление о создании тикета с полным контекстом."""
     priority_label = PRIORITY_LABELS.get(priority, priority)
+    product_label = PRODUCT_LABELS.get(product, product) if product else ""
+    type_label = TYPE_LABELS.get(ticket_type, ticket_type) if ticket_type else ""
     tag = ticket_subject_tag(ticket_id)
+    portal_url = "https://support.pass24pro.ru"
+
+    # Цвет приоритета
+    priority_color = {
+        "critical": "#dc2626",
+        "high": "#ea580c",
+        "normal": "#2563eb",
+        "low": "#64748b",
+    }.get(priority, "#2563eb")
+
+    # Блок классификации
+    classification_rows = []
+    if product_label:
+        classification_rows.append(f'<tr><td style="padding:4px 0;color:#64748b;width:40%;">Продукт</td><td style="padding:4px 0;color:#1e293b;font-weight:500;">{product_label}</td></tr>')
+    if type_label:
+        classification_rows.append(f'<tr><td style="padding:4px 0;color:#64748b;">Тип обращения</td><td style="padding:4px 0;color:#1e293b;font-weight:500;">{type_label}</td></tr>')
+    classification_html = f'<table style="width:100%;font-size:14px;border-collapse:collapse;">{"".join(classification_rows)}</table>' if classification_rows else ""
+
+    # Блок объекта
+    object_block = ""
+    if object_name or access_point:
+        object_rows = []
+        if object_name:
+            object_rows.append(f'<tr><td style="padding:4px 0;color:#64748b;width:40%;">Объект</td><td style="padding:4px 0;color:#1e293b;font-weight:500;">{object_name}</td></tr>')
+        if access_point:
+            object_rows.append(f'<tr><td style="padding:4px 0;color:#64748b;">Точка доступа</td><td style="padding:4px 0;color:#1e293b;font-weight:500;">{access_point}</td></tr>')
+        object_block = f"""
+        <div style="margin-top:16px;">
+            <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Где проблема</div>
+            <table style="width:100%;font-size:14px;border-collapse:collapse;">{"".join(object_rows)}</table>
+        </div>
+        """
+
+    # Блок контакта
+    contact_block = ""
+    if contact_phone:
+        contact_block = f"""
+        <div style="margin-top:16px;">
+            <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Контакт для связи</div>
+            <p style="color:#1e293b;font-weight:500;margin:0;font-size:14px;">📞 {contact_phone}</p>
+        </div>
+        """
+
+    # Описание
+    description_block = ""
+    if description:
+        # Ограничиваем 1000 символов чтобы письмо не было гигантским
+        desc_trim = description[:1000] + ('…' if len(description) > 1000 else '')
+        description_block = f"""
+        <div style="margin-top:16px;">
+            <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Описание проблемы</div>
+            <div style="background:#f8fafc;border-left:3px solid #3b82f6;padding:12px 14px;border-radius:0 6px 6px 0;color:#334155;font-size:14px;line-height:1.6;white-space:pre-wrap;">{desc_trim}</div>
+        </div>
+        """
+
     await _send_email(
         to=creator_email,
-        subject=f"{tag} Заявка создана: {title}",
+        subject=f"{tag} Заявка принята: {title}",
         html_body=f"""
-        <div style="font-family: -apple-system, Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <div style="background: #0f172a; color: #f8fafc; padding: 16px 24px; border-radius: 8px 8px 0 0;">
-                <strong>PASS24 Service Desk</strong>
+        <div style="font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; max-width: 640px; margin: 0 auto; background: #f8fafc;">
+            <div style="background: linear-gradient(135deg, #0f172a, #1e293b); color: #f8fafc; padding: 18px 24px; border-radius: 10px 10px 0 0;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <div style="background: linear-gradient(135deg, #ef4444, #991b1b); padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 12px;">PASS24</div>
+                    <strong style="font-size:15px;">Service Desk</strong>
+                </div>
             </div>
-            <div style="padding: 24px; background: #fff; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px;">
-                <h2 style="margin: 0 0 16px; color: #1e293b;">Заявка создана</h2>
-                <p style="color: #475569; margin: 0 0 12px;"><strong>Тема:</strong> {title}</p>
-                <p style="color: #475569; margin: 0 0 12px;"><strong>Приоритет:</strong> {priority_label}</p>
-                <p style="color: #475569; margin: 0 0 12px;"><strong>ID:</strong> {ticket_id[:8]}...</p>
-                <p style="color: #64748b; font-size: 14px; margin: 16px 0 0;">
-                    Мы получили вашу заявку и приступим к её рассмотрению в ближайшее время.
+
+            <div style="padding: 24px; background: #fff; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 10px 10px;">
+                <!-- Статус принятия -->
+                <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:14px 16px;margin-bottom:20px;display:flex;align-items:center;gap:10px;">
+                    <div style="font-size:24px;">✓</div>
+                    <div>
+                        <div style="color:#065f46;font-weight:600;font-size:15px;">Заявка принята</div>
+                        <div style="color:#047857;font-size:13px;">Мы начали работу над вашим обращением</div>
+                    </div>
+                </div>
+
+                <!-- Тема и ID -->
+                <h2 style="margin: 0 0 8px; color: #0f172a; font-size: 18px; line-height: 1.4;">{title}</h2>
+                <p style="color:#94a3b8;font-size:13px;margin:0 0 20px;font-family:monospace;">#{ticket_id[:8].upper()}</p>
+
+                <!-- Приоритет карточкой -->
+                <div style="display:inline-block;background:{priority_color}15;border:1px solid {priority_color}40;color:{priority_color};padding:8px 14px;border-radius:8px;font-weight:600;font-size:13px;margin-bottom:16px;">
+                    ● Приоритет: {priority_label}
+                </div>
+
+                {description_block}
+
+                <div style="margin-top:16px;">
+                    <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Классификация</div>
+                    {classification_html}
+                </div>
+
+                {object_block}
+                {contact_block}
+
+                <!-- SLA -->
+                <div style="background:#f8fafc;border-radius:8px;padding:14px 16px;margin-top:20px;">
+                    <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:10px;">⏱ Сроки (SLA)</div>
+                    <div style="display:flex;gap:16px;font-size:13px;">
+                        <div>
+                            <div style="color:#94a3b8;font-size:11px;">Первый ответ</div>
+                            <div style="color:#1e293b;font-weight:600;">в течение {sla_response_hours} ч</div>
+                        </div>
+                        <div>
+                            <div style="color:#94a3b8;font-size:11px;">Решение</div>
+                            <div style="color:#1e293b;font-weight:600;">в течение {sla_resolve_hours} ч</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Что дальше -->
+                <div style="margin-top:20px;padding:14px 16px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;">
+                    <div style="color:#1e40af;font-weight:600;font-size:14px;margin-bottom:6px;">Что дальше?</div>
+                    <ul style="color:#1e40af;font-size:13px;line-height:1.6;margin:0;padding-left:20px;">
+                        <li>Агент поддержки свяжется с вами в течение {sla_response_hours} часов</li>
+                        <li>Все обновления будут приходить на этот email</li>
+                        <li>Вы можете отвечать на письма — ваш ответ будет добавлен к заявке</li>
+                    </ul>
+                </div>
+
+                <!-- CTA -->
+                <div style="margin-top:20px;text-align:center;">
+                    <a href="{portal_url}" style="display:inline-block;background:#0f172a;color:#ffffff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:500;font-size:14px;">Открыть портал поддержки</a>
+                </div>
+
+                <p style="color: #94a3b8; font-size: 12px; margin: 24px 0 0; text-align:center;">
+                    PASS24 Service Desk · support@pass24online.ru
                 </p>
             </div>
         </div>

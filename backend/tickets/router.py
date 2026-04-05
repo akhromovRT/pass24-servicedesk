@@ -126,13 +126,21 @@ async def create_guest_ticket(
     await session.commit()
     await session.refresh(ticket)
 
-    # Email: уведомление о тикете
+    # Email: уведомление о тикете с полным контекстом
     background_tasks.add_task(
         notify_ticket_created,
         creator_email=email,
         ticket_id=ticket.id,
         title=ticket.title,
         priority=ticket.priority.value if hasattr(ticket.priority, 'value') else str(ticket.priority),
+        description=ticket.description or "",
+        product=ticket.product or "",
+        ticket_type=ticket.ticket_type or "",
+        object_name=ticket.object_name or "",
+        access_point=ticket.access_point or "",
+        contact_phone=ticket.contact_phone or "",
+        sla_response_hours=ticket.sla_response_hours or 4,
+        sla_resolve_hours=ticket.sla_resolve_hours or 24,
     )
 
     # Если новый пользователь — приветственное письмо
@@ -246,13 +254,21 @@ async def create_ticket(
     await session.commit()
     await session.refresh(ticket)
 
-    # Email-уведомление заявителю
+    # Email-уведомление заявителю с полным контекстом
     background_tasks.add_task(
         notify_ticket_created,
         creator_email=creator_email_for_notify,
         ticket_id=ticket.id,
         title=ticket.title,
         priority=ticket.priority.value if hasattr(ticket.priority, 'value') else str(ticket.priority),
+        description=ticket.description or "",
+        product=ticket.product or "",
+        ticket_type=ticket.ticket_type or "",
+        object_name=ticket.object_name or "",
+        access_point=ticket.access_point or "",
+        contact_phone=ticket.contact_phone or "",
+        sla_response_hours=ticket.sla_response_hours or 4,
+        sla_resolve_hours=ticket.sla_resolve_hours or 24,
     )
 
     # Загрузка связей для ответа
