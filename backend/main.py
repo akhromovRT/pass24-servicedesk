@@ -20,7 +20,6 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .auth.router import router as auth_router
-from .database import run_migrations
 from .knowledge.router import router as knowledge_router
 from .notifications.inbound import email_polling_loop
 from .assistant.router import router as assistant_router
@@ -35,10 +34,8 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Запуск миграций БД и фоновых задач."""
-    logger.info("Lifespan: starting migrations")
-    await run_migrations()
-    logger.info("Lifespan: migrations done, starting email polling")
+    """Запуск фоновых задач. Миграции запускаются вручную через alembic upgrade."""
+    logger.info("Lifespan: starting email polling")
     poll_task = asyncio.create_task(email_polling_loop())
     logger.info("Lifespan: startup complete")
     yield
