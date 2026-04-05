@@ -376,6 +376,33 @@ const articleSearchResults = ref<ArticleSearchResult[]>([])
 const articleSearchLoading = ref(false)
 const selectedRelationType = ref<RelationType>('helped')
 
+// KB improvement: если клиент пришёл из статьи БЗ
+const createdFromArticle = computed(() =>
+  articleLinks.value.find(l => l.relation_type === 'created_from')
+)
+const improvementText = ref('')
+const submittingImprovement = ref(false)
+const improvementSubmitted = ref(false)
+
+async function submitImprovement() {
+  if (!ticket.value || !createdFromArticle.value) return
+  submittingImprovement.value = true
+  try {
+    const { api } = await import('../api/client')
+    await api.post(`/tickets/${ticket.value.id}/kb-improvement`, {
+      article_id: createdFromArticle.value.article_id,
+      suggestion: improvementText.value.trim(),
+    })
+    improvementSubmitted.value = true
+    improvementText.value = ''
+    toast.add({ severity: 'success', summary: 'Предложение отправлено', life: 3000 })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+  } finally {
+    submittingImprovement.value = false
+  }
+}
+
 const relationLabels: Record<RelationType, string> = {
   helped: 'Помогла решить',
   related: 'Связана',
@@ -987,6 +1014,39 @@ onUnmounted(() => {
             outlined
             @click="openArticleDialog"
           />
+
+          <!-- Блок: клиент пришёл из статьи БЗ → предложение улучшить -->
+          <div v-if="createdFromArticle" class="improve-article-block">
+            <Divider />
+            <div class="improve-hint">
+              <i class="pi pi-info-circle" />
+              <div>
+                <b>Клиент пришёл из этой статьи</b> и не нашёл ответа.
+                После решения тикета предложите улучшение — чтобы такие вопросы
+                больше не возникали.
+              </div>
+            </div>
+            <Textarea
+              v-model="improvementText"
+              placeholder="Что стоит добавить/изменить в статье? Например: 'Добавить шаг про сброс приложения', 'Описать кейс на iOS 17', 'Привести скриншот кнопки'"
+              rows="3"
+              auto-resize
+              fluid
+              class="improve-input"
+            />
+            <Button
+              label="Отправить предложение"
+              icon="pi pi-send"
+              size="small"
+              :disabled="improvementText.trim().length < 10"
+              :loading="submittingImprovement"
+              class="improve-submit"
+              @click="submitImprovement"
+            />
+            <p v-if="improvementSubmitted" class="improve-success">
+              <i class="pi pi-check-circle" /> Спасибо! Предложение отправлено администратору.
+            </p>
+          </div>
         </template>
       </Card>
 
@@ -1740,6 +1800,20 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* KB improvement block */
+.improve-article-block { display: flex; flex-direction: column; gap: 10px; }
+.improve-hint {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px;
+  padding: 10px 12px; font-size: 13px; color: #78350f; line-height: 1.5;
+}
+.improve-hint .pi-info-circle { font-size: 16px; color: #d97706; flex-shrink: 0; margin-top: 2px; }
+.improve-input { font-size: 13px; }
+.improve-submit { align-self: flex-end; }
+.improve-success {
+  color: #059669; font-size: 13px; display: flex; align-items: center; gap: 6px; margin: 0;
 }
 
 .linked-article-item {

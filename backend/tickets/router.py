@@ -128,6 +128,28 @@ async def create_guest_ticket(
     await session.commit()
     await session.refresh(ticket)
 
+    # Автопривязка к статье БЗ, если клиент пришёл из неё
+    if payload.source_article_slug:
+        from backend.knowledge.models import Article
+        from backend.tickets.templates import TicketArticleLink
+        ar = await session.execute(select(Article).where(Article.slug == payload.source_article_slug))
+        article = ar.scalar_one_or_none()
+        if article:
+            link = TicketArticleLink(
+                ticket_id=ticket.id,
+                article_id=str(article.id),
+                relation_type="created_from",
+                linked_by=str(user.id),
+            )
+            session.add(link)
+            link_event = TicketEvent(
+                ticket_id=ticket.id,
+                actor_id=str(user.id),
+                description=f"Клиент пришёл из статьи БЗ: «{article.title}» (не нашёл ответа)",
+            )
+            session.add(link_event)
+            await session.commit()
+
     # Email: уведомление о тикете с полным контекстом
     background_tasks.add_task(
         notify_ticket_created,
@@ -255,6 +277,29 @@ async def create_ticket(
     session.add(event)
     await session.commit()
     await session.refresh(ticket)
+
+    # Если тикет создан ИЗ статьи БЗ — автопривязываем (relation_type='created_from')
+    if payload.source_article_slug:
+        from backend.knowledge.models import Article
+        from backend.tickets.templates import TicketArticleLink
+        ar = await session.execute(select(Article).where(Article.slug == payload.source_article_slug))
+        article = ar.scalar_one_or_none()
+        if article:
+            link = TicketArticleLink(
+                ticket_id=ticket.id,
+                article_id=str(article.id),
+                relation_type="created_from",
+                linked_by=str(creator_user.id),
+            )
+            session.add(link)
+            # Событие в историю
+            link_event = TicketEvent(
+                ticket_id=ticket.id,
+                actor_id=str(creator_user.id),
+                description=f"Клиент пришёл из статьи БЗ: «{article.title}» (не нашёл ответа)",
+            )
+            session.add(link_event)
+            await session.commit()
 
     # Email-уведомление заявителю с полным контекстом
     background_tasks.add_task(

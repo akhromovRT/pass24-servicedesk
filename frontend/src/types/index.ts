@@ -118,6 +118,7 @@ export interface TicketCreate {
   urgent?: boolean
   on_behalf_of_email?: string
   on_behalf_of_name?: string
+  source_article_slug?: string
 }
 
 export interface PaginatedResponse<T> {

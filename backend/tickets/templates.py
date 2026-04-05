@@ -67,3 +67,24 @@ class TicketArticleLink(SQLModel, table=True):
     relation_type: str = Field(default="helped", max_length=32)
     linked_by: str = Field(description="user_id того кто привязал")
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class KbImprovementSuggestion(SQLModel, table=True):
+    """Предложение по улучшению статьи БЗ — создаётся агентом на основе тикета.
+
+    Когда клиент пришёл из статьи БЗ и задал вопрос, ответ на который
+    должен был быть в этой статье, — агент после решения тикета может
+    предложить улучшение. Коллективная доработка базы знаний.
+    """
+
+    __tablename__ = "kb_improvement_suggestions"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    article_id: str = Field(index=True)
+    ticket_id: str
+    suggestion: str = Field(max_length=4000)
+    suggested_by: str
+    status: str = Field(default="pending", max_length=32, index=True)
+    # pending — ждёт review; applied — применено; rejected — отклонено
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    resolved_at: Optional[datetime] = None

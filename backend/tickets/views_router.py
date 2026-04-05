@@ -15,7 +15,7 @@ from backend.auth.models import User, UserRole
 from backend.database import get_session
 
 from .models import Ticket
-from .templates import SavedView, TicketArticleLink
+from .templates import KbImprovementSuggestion, SavedView, TicketArticleLink
 
 router = APIRouter(prefix="/tickets", tags=["views"])
 
@@ -421,3 +421,106 @@ async def list_children(
             for c in children
         ],
     }
+
+
+# ========================================================================
+# KB Improvement Suggestions
+# ========================================================================
+
+
+class ImprovementCreate(BaseModel):
+    article_id: str
+    suggestion: str = Field(..., min_length=10, max_length=4000)
+
+
+class ImprovementStatusUpdate(BaseModel):
+    status: str = Field(..., pattern=r"^(applied|rejected|pending)$")
+
+
+@router.post("/{ticket_id}/kb-improvement", status_code=status.HTTP_201_CREATED)
+async def suggest_kb_improvement(
+    ticket_id: str,
+    payload: ImprovementCreate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Предложить улучшение статьи БЗ на основе тикета."""
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+
+    t_res = await session.execute(select(Ticket).where(Ticket.id == ticket_id))
+    if not t_res.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Тикет не найден")
+
+    sug = KbImprovementSuggestion(
+        ticket_id=ticket_id,
+        article_id=payload.article_id,
+        suggestion=payload.suggestion,
+        suggested_by=str(current_user.id),
+    )
+    session.add(sug)
+    await session.commit()
+    await session.refresh(sug)
+
+    return {
+        "id": sug.id,
+        "status": sug.status,
+        "created_at": sug.created_at.isoformat(),
+    }
+
+
+@router.get("/kb-improvements/pending")
+async def list_pending_improvements(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Список предложений по улучшению БЗ в статусе pending (для агентов/админов)."""
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+
+    from backend.knowledge.models import Article
+
+    res = await session.execute(
+        select(KbImprovementSuggestion)
+        .where(KbImprovementSuggestion.status == "pending")
+        .order_by(KbImprovementSuggestion.created_at.desc())
+    )
+    items = []
+    for sug in res.scalars():
+        art_res = await session.execute(select(Article).where(Article.id == sug.article_id))
+        art = art_res.scalar_one_or_none()
+        items.append({
+            "id": sug.id,
+            "article_id": sug.article_id,
+            "article_title": art.title if art else "(удалена)",
+            "article_slug": art.slug if art else None,
+            "ticket_id": sug.ticket_id,
+            "suggestion": sug.suggestion,
+            "suggested_by": sug.suggested_by,
+            "created_at": sug.created_at.isoformat(),
+        })
+    return {"count": len(items), "items": items}
+
+
+@router.put("/kb-improvements/{suggestion_id}/status")
+async def update_improvement_status(
+    suggestion_id: str,
+    payload: ImprovementStatusUpdate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Обновить статус предложения (admin)."""
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Только admin")
+
+    r = await session.execute(select(KbImprovementSuggestion).where(KbImprovementSuggestion.id == suggestion_id))
+    sug = r.scalar_one_or_none()
+    if not sug:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    sug.status = payload.status
+    if payload.status in ("applied", "rejected"):
+        sug.resolved_at = datetime.utcnow()
+    session.add(sug)
+    await session.commit()
+    return {"id": sug.id, "status": sug.status}

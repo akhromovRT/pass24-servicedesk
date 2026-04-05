@@ -259,9 +259,17 @@ watch(
             @click="router.push('/knowledge')"
           />
           <Button
-            label="Создать заявку"
+            label="Не помогло — создать заявку"
             icon="pi pi-plus"
-            @click="router.push('/tickets/create')"
+            @click="router.push({
+              path: '/tickets/create',
+              query: {
+                from_article: store.currentArticle?.slug,
+                title: `По статье: ${store.currentArticle?.title}`,
+                description: `Клиент пришёл из статьи «${store.currentArticle?.title}» (${store.currentArticle?.category}) и не нашёл там ответа на свой вопрос.\n\nСуть вопроса: `,
+                category: store.currentArticle?.category,
+              }
+            })"
           />
         </div>
       </div>

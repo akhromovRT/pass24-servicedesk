@@ -47,6 +47,12 @@ class TicketCreate(BaseModel):
         description="Имя заявителя (если агент создаёт за клиента)"
     )
 
+    # Клиент пришёл из конкретной статьи БЗ — не нашёл ответ
+    source_article_slug: Optional[str] = Field(
+        default=None, max_length=512,
+        description="Slug статьи БЗ, из которой создан тикет (клиент не нашёл ответа)"
+    )
+
 
 class GuestTicketCreate(BaseModel):
     """Создание тикета без авторизации — только email."""
@@ -61,6 +67,7 @@ class GuestTicketCreate(BaseModel):
     object_name: Optional[str] = Field(default=None, max_length=256)
     contact_phone: Optional[str] = Field(default=None, max_length=20)
     urgent: bool = Field(default=False)
+    source_article_slug: Optional[str] = Field(default=None, max_length=512)
 
 
 class GuestTicketResponse(BaseModel):

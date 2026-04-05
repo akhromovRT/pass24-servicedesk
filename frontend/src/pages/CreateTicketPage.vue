@@ -234,8 +234,21 @@ function goBackToStep1() {
   submitted.value = false
 }
 
+// Если пришёл из статьи БЗ — фиксируем это
+const fromArticleSlug = ref<string | null>(null)
+const fromArticleTitle = ref<string | null>(null)
+
 onMounted(() => {
   const q = route.query
+  if (q.from_article) {
+    fromArticleSlug.value = q.from_article as string
+    // title может содержать "По статье: XXX" — достанем из него название
+    const articleTitle = (q.title as string) || ''
+    const match = articleTitle.match(/^По статье:\s*(.+)$/)
+    fromArticleTitle.value = match ? match[1] : articleTitle
+    // Скипаем Step 1 — мы знаем контекст
+    step.value = 2
+  }
   if (q.title || q.description) {
     title.value = (q.title as string) || ''
     description.value = (q.description as string) || ''
@@ -269,7 +282,8 @@ async function onSubmit() {
         object_name: objectName.value.trim() || undefined,
         contact_phone: normalizePhone() || undefined,
         urgent: urgent.value,
-      })
+        source_article_slug: fromArticleSlug.value || undefined,
+      } as any)
       ticketCreated.value = true
       createdTicketId.value = resp.ticket_id.slice(0, 8)
       toast.add({ severity: 'success', summary: 'Заявка создана', detail: `Обновления на ${email.value}`, life: 5000 })
@@ -300,6 +314,7 @@ async function onSubmit() {
       urgent: urgent.value,
       on_behalf_of_email: creatingOnBehalf ? email.value.trim() : undefined,
       on_behalf_of_name: creatingOnBehalf ? contactName.value.trim() || undefined : undefined,
+      source_article_slug: fromArticleSlug.value || undefined,
     })
     toast.add({ severity: 'success', summary: 'Заявка создана', life: 3000 })
     router.push(`/tickets/${ticket.id}`)
@@ -339,7 +354,29 @@ async function onSubmit() {
 
     <!-- Step 2: Form -->
     <div v-if="step === 2" class="step-2">
-      <Button label="Назад к выбору темы" icon="pi pi-arrow-left" severity="secondary" text class="back-to-step1" @click="goBackToStep1" />
+      <Button
+        v-if="!fromArticleSlug"
+        label="Назад к выбору темы" icon="pi pi-arrow-left"
+        severity="secondary" text class="back-to-step1"
+        @click="goBackToStep1"
+      />
+
+      <!-- Баннер: пришёл из статьи БЗ -->
+      <div v-if="fromArticleSlug" class="from-article-banner">
+        <i class="pi pi-book banner-icon" />
+        <div class="banner-content">
+          <div class="banner-title">Вы пишете по статье базы знаний</div>
+          <div class="banner-subtitle">
+            «{{ fromArticleTitle }}» — если статья не помогла,
+            опишите подробнее вопрос и мы улучшим материал
+          </div>
+        </div>
+        <a
+          :href="`/knowledge/${fromArticleSlug}`"
+          target="_blank"
+          class="banner-link"
+        >Открыть статью</a>
+      </div>
 
       <Card class="create-card">
         <template #title>Новая заявка</template>
@@ -591,6 +628,25 @@ async function onSubmit() {
 
 /* Step 2 */
 .back-to-step1 { align-self: flex-start; margin-bottom: -8px; }
+
+/* Баннер "из статьи БЗ" */
+.from-article-banner {
+  display: flex; align-items: center; gap: 12px;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  border: 1px solid #93c5fd; border-radius: 10px;
+  padding: 12px 16px; margin-bottom: 4px;
+}
+.banner-icon { font-size: 22px; color: #2563eb; flex-shrink: 0; }
+.banner-content { flex: 1; min-width: 0; }
+.banner-title { font-weight: 600; font-size: 14px; color: #1e293b; }
+.banner-subtitle { font-size: 12px; color: #475569; margin-top: 2px; line-height: 1.4; }
+.banner-link {
+  font-size: 12px; font-weight: 500; color: #2563eb;
+  text-decoration: none; padding: 6px 10px;
+  border: 1px solid #93c5fd; border-radius: 6px; background: white;
+  white-space: nowrap; transition: background 0.15s;
+}
+.banner-link:hover { background: #dbeafe; }
 
 /* Success */
 .ticket-success { text-align: center; padding: 24px 0; }
