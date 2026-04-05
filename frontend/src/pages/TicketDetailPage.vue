@@ -8,6 +8,7 @@ import Button from 'primevue/button'
 import Textarea from 'primevue/textarea'
 import Checkbox from 'primevue/checkbox'
 import Divider from 'primevue/divider'
+import Dialog from 'primevue/dialog'
 import FileUpload from 'primevue/fileupload'
 import { useToast } from 'primevue/usetoast'
 import TicketStatusBadge from '../components/TicketStatusBadge.vue'
@@ -215,9 +216,59 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} МБ`
 }
 
-function getAttachmentUrl(att: Attachment): string {
-  return `/tickets/${att.ticket_id}/attachments/${att.id}`
+// ---------- Preview вложений ----------
+const previewVisible = ref(false)
+const previewUrl = ref<string>('')         // blob: URL для отображения
+const previewFile = ref<Attachment | null>(null)
+const previewLoading = ref(false)
+
+async function openAttachment(att: Attachment) {
+  // Закрываем предыдущий blob URL чтобы не течь память
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+    previewUrl.value = ''
+  }
+  previewFile.value = att
+  previewVisible.value = true
+  previewLoading.value = true
+  try {
+    const token = localStorage.getItem('access_token')
+    const resp = await fetch(`/tickets/${att.ticket_id}/attachments/${att.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const blob = await resp.blob()
+    previewUrl.value = URL.createObjectURL(blob)
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+    previewVisible.value = false
+  } finally {
+    previewLoading.value = false
+  }
 }
+
+function closePreview() {
+  previewVisible.value = false
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+    previewUrl.value = ''
+  }
+  previewFile.value = null
+}
+
+function downloadAttachment() {
+  if (!previewUrl.value || !previewFile.value) return
+  const a = document.createElement('a')
+  a.href = previewUrl.value
+  a.download = previewFile.value.filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
+const isImage = computed(() => previewFile.value?.content_type.startsWith('image/') ?? false)
+const isPdf = computed(() => previewFile.value?.content_type === 'application/pdf')
+const isText = computed(() => previewFile.value?.content_type.startsWith('text/') ?? false)
 
 function goBack() {
   router.push('/')
@@ -472,17 +523,17 @@ onUnmounted(() => {
         </template>
         <template #content>
           <div v-if="ticket.attachments.length" class="attachments-list">
-            <a
+            <button
               v-for="att in ticket.attachments"
               :key="att.id"
-              :href="getAttachmentUrl(att)"
-              target="_blank"
+              type="button"
               class="attachment-item"
+              @click="openAttachment(att)"
             >
               <i :class="att.content_type.startsWith('image/') ? 'pi pi-image' : 'pi pi-file'" />
               <span class="att-name">{{ att.filename }}</span>
               <span class="att-size">{{ formatFileSize(att.size) }}</span>
-            </a>
+            </button>
           </div>
           <p v-else class="no-comments">Вложений нет</p>
           <Divider />
@@ -565,6 +616,46 @@ onUnmounted(() => {
         </template>
       </Card>
     </template>
+
+    <!-- Preview модальное окно -->
+    <Dialog
+      v-model:visible="previewVisible"
+      modal
+      :header="previewFile?.filename || 'Вложение'"
+      :style="{ width: '80vw', maxWidth: '1000px' }"
+      :breakpoints="{ '960px': '95vw' }"
+      @hide="closePreview"
+    >
+      <div class="preview-container">
+        <div v-if="previewLoading" class="preview-loading">
+          <i class="pi pi-spin pi-spinner" style="font-size: 2rem" />
+        </div>
+        <template v-else-if="previewUrl">
+          <img v-if="isImage" :src="previewUrl" :alt="previewFile?.filename" class="preview-image" />
+          <iframe
+            v-else-if="isPdf"
+            :src="previewUrl"
+            class="preview-pdf"
+            :title="previewFile?.filename"
+          />
+          <iframe
+            v-else-if="isText"
+            :src="previewUrl"
+            class="preview-text"
+            :title="previewFile?.filename"
+          />
+          <div v-else class="preview-unsupported">
+            <i class="pi pi-file" style="font-size: 3rem; color: #94a3b8" />
+            <p>Предпросмотр недоступен для этого типа файла</p>
+            <p class="preview-filetype">{{ previewFile?.content_type }}</p>
+          </div>
+        </template>
+      </div>
+      <template #footer>
+        <Button label="Скачать" icon="pi pi-download" severity="secondary" outlined @click="downloadAttachment" />
+        <Button label="Закрыть" icon="pi pi-times" @click="closePreview" />
+      </template>
+    </Dialog>
   </div>
 </template>
 
@@ -911,11 +1002,71 @@ onUnmounted(() => {
   text-decoration: none;
   color: #1e293b;
   font-size: 0.875rem;
-  transition: background 0.15s;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .attachment-item:hover {
   background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.attachment-item:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Preview модальное окно */
+.preview-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+  max-height: 75vh;
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.preview-loading {
+  color: #94a3b8;
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.preview-pdf,
+.preview-text {
+  width: 100%;
+  height: 70vh;
+  border: none;
+  background: white;
+  border-radius: 4px;
+}
+
+.preview-unsupported {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: #64748b;
+  text-align: center;
+}
+
+.preview-filetype {
+  font-family: 'SF Mono', 'Monaco', monospace;
+  font-size: 12px;
+  color: #94a3b8;
+  background: #fff;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
 }
 
 .att-name {
