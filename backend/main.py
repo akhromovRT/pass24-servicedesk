@@ -1,8 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+# Настраиваем логирование наших модулей на INFO уровень
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+)
+# backend.* видны, но sqlalchemy.engine слишком болтливый
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
