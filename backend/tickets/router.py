@@ -237,6 +237,7 @@ async def list_tickets(
     ticket_type: Optional[str] = Query(default=None, alias="type", description="Фильтр по типу (через запятую)"),
     creator_id: Optional[str] = Query(default=None, description="Фильтр по создателю"),
     my: Optional[bool] = Query(default=None, description="Только мои тикеты"),
+    q: Optional[str] = Query(default=None, description="Поиск по теме, описанию, email, объекту"),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> TicketListResponse:
@@ -295,6 +296,19 @@ async def list_tickets(
     if my:
         query = query.where(Ticket.creator_id == str(current_user.id))
         count_query = count_query.where(Ticket.creator_id == str(current_user.id))
+
+    # Поиск по тексту
+    if q and q.strip():
+        pattern = f"%{q.strip()}%"
+        search_cond = (
+            Ticket.title.ilike(pattern)
+            | Ticket.description.ilike(pattern)
+            | Ticket.contact_email.ilike(pattern)
+            | Ticket.contact_name.ilike(pattern)
+            | Ticket.object_name.ilike(pattern)
+        )
+        query = query.where(search_cond)
+        count_query = count_query.where(search_cond)
 
     # Общее количество
     total_result = await session.execute(count_query)

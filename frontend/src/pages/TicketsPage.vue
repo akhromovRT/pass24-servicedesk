@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
@@ -8,6 +8,9 @@ import MultiSelect from 'primevue/multiselect'
 import Toolbar from 'primevue/toolbar'
 import Paginator from 'primevue/paginator'
 import Tag from 'primevue/tag'
+import InputText from 'primevue/inputtext'
+import IconField from 'primevue/iconfield'
+import InputIcon from 'primevue/inputicon'
 import { useToast } from 'primevue/usetoast'
 import TicketStatusBadge from '../components/TicketStatusBadge.vue'
 import TicketPriorityBadge from '../components/TicketPriorityBadge.vue'
@@ -21,6 +24,8 @@ const store = useTicketsStore()
 const statusFilter = ref<string[]>([])
 const categoryFilter = ref<string[]>([])
 const myOnly = ref(false)
+const searchQuery = ref('')
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
 const statusOptions = [
   { label: 'Новый', value: 'new' },
@@ -83,6 +88,7 @@ async function loadTickets(page?: number) {
       status: statusFilter.value.length ? statusFilter.value : undefined,
       category: categoryFilter.value.length ? categoryFilter.value : undefined,
       my: myOnly.value || undefined,
+      q: searchQuery.value.trim() || undefined,
     })
   } catch (e: any) {
     toast.add({
@@ -102,6 +108,11 @@ function onFilterChange() {
   loadTickets(1)
 }
 
+watch(searchQuery, () => {
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
+  searchDebounceTimer = setTimeout(() => loadTickets(1), 300)
+})
+
 function onRowClick(event: { data: Ticket }) {
   router.push(`/tickets/${event.data.id}`)
 }
@@ -114,6 +125,14 @@ onMounted(() => loadTickets(1))
     <Toolbar class="tickets-toolbar">
       <template #start>
         <div class="toolbar-filters">
+          <IconField class="search-field">
+            <InputIcon class="pi pi-search" />
+            <InputText
+              v-model="searchQuery"
+              placeholder="Поиск по теме, описанию, email..."
+              class="search-input"
+            />
+          </IconField>
           <MultiSelect
             v-model="statusFilter"
             :options="statusOptions"
@@ -266,6 +285,15 @@ onMounted(() => loadTickets(1))
 
 .filter-select {
   min-width: 180px;
+}
+
+.search-field {
+  min-width: 280px;
+  flex: 1;
+}
+
+.search-input {
+  width: 100%;
 }
 
 .active-filters {

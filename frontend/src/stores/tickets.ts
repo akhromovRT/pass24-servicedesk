@@ -16,6 +16,7 @@ export interface TicketFilters {
   type?: string[]
   creator_id?: string
   my?: boolean
+  q?: string
 }
 
 export const useTicketsStore = defineStore('tickets', () => {
@@ -43,6 +44,7 @@ export const useTicketsStore = defineStore('tickets', () => {
       if (filters.value.type?.length) params.set('type', filters.value.type.join(','))
       if (filters.value.creator_id) params.set('creator_id', filters.value.creator_id)
       if (filters.value.my) params.set('my', 'true')
+      if (filters.value.q) params.set('q', filters.value.q)
 
       const data = await api.get<PaginatedResponse<Ticket>>(
         `/tickets/?${params.toString()}`,
