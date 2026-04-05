@@ -79,8 +79,8 @@ function logout() {
     <Menubar :model="menuItems" class="layout-header">
       <template #start>
         <span class="layout-brand" @click="router.push('/')">
-          <span class="brand-icon">P24</span>
-          <span class="brand-text">Service Desk</span>
+          <span class="brand-icon">PASS24</span>
+          <span class="brand-text">Поддержка</span>
         </span>
       </template>
       <template #end>
