@@ -9,6 +9,50 @@
 
 ## Записи
 
+### 2026-04-05 — Top-3 ROI: Saved Views, Parent-Child, KB Links + inbound HTML cleanup
+
+**Что сделано:**
+- **Saved Views / persistent filters** (`SavedView` модель): личные + shared фильтры агентов
+  - CRUD-эндпоинты `/tickets/saved-views`, счётчик `usage_count` при применении
+  - UI в TicketsPage: dropdown иконок (6 пресетов), Dialog создания, preview чипов
+  - Watcher на фильтрах сбрасывает `activeSavedViewId` при ручной правке
+- **Parent-Child связь** (`parent_ticket_id` на Ticket): Incident → Problem
+  - `PUT/DELETE /tickets/{id}/parent`, `GET /tickets/{id}/children`
+  - Массовая привязка: `POST /tickets/bulk-link-to-parent`
+  - UI: секция "Связь с Problem" в TicketDetailPage (3 состояния: has parent / has children / regular)
+- **KB Article Links** (`TicketArticleLink` модель): связь тикет ↔ статья
+  - Типы отношений: `helped` / `related` / `created_from`
+  - `GET/POST/DELETE /tickets/{id}/articles`, статистика `/tickets/articles/stats`
+  - UI: секция "Связанные статьи" + Dialog поиска (debounced 300ms)
+- **Route ordering fix**: `views_router` + `templates_router` регистрируются **ДО** `tickets_router`, потому что `GET /tickets/{ticket_id}` перехватывает все specific-пути (saved-views, templates, macros)
+- **HTML cleanup в inbound email**: Яндекс Мобильная Почта отправляет single-part `text/html` → сырой HTML попадал в `description`
+  - Добавлен `_HTMLToTextParser` (stdlib `html.parser`, без новых зависимостей)
+  - Вырезает `<style>/<script>/<head>`, блочные теги → `\n`, HTML entities декодируются автоматически
+  - Эвристика `_looks_like_html`: если text/plain содержит 3+ тегов или entities — тоже чистится
+  - Скрипт бэкофилла `cleanup_html_bodies.py` (dry-run + --apply)
+
+**Миграции:**
+- 007: `saved_views`, `ticket_article_links`, `tickets.parent_ticket_id` + индексы
+
+**Баги найденные:**
+- `GET /tickets/saved-views` возвращал 404 — перехватывался `GET /tickets/{ticket_id}` (порядок регистрации роутеров в FastAPI)
+- `_extract_text_body` в single-part ветке возвращал сырое тело без проверки content-type → HTML в description (заявка 9020)
+
+**Обновления:**
+- [x] Миграция 007 применена на prod
+- [x] Интеграционные тесты Top-3 прошли (POST/GET/DELETE = 201/200/204)
+- [x] HTML-парсер протестирован на реальных примерах Яндекс Мобильной Почты
+- [x] Документация обновлена (architecture.md: Saved Views, Parent-Child, KB Links, v0.5 в roadmap)
+
+**Коммиты:**
+- `01737db` feat: saved views + KB article links + parent-child
+- `d2e15ed` feat: saved views UI + parent-child + KB links UI
+- `9b70430` fix: route ordering — specific paths before /{ticket_id} catch-all
+- `d4dc0c8` fix: clean HTML from inbound email body
+- `8def583` feat: script to cleanup HTML in existing tickets/comments
+
+---
+
 ### 2026-04-05 — Агентские инструменты, дашборд, макросы, Telegram-бот, working-hours SLA
 
 **Что сделано:**
