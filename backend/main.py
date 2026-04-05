@@ -82,10 +82,13 @@ def create_app() -> FastAPI:
             return FileResponse(_index)
 
     # API роутеры
+    # ВАЖНО: views_router и templates_router регистрируются ДО tickets_router,
+    # потому что tickets_router содержит GET /tickets/{ticket_id} — это широкий
+    # паттерн, который перехватывает /tickets/saved-views, /tickets/templates и т.п.
     app.include_router(auth_router)
-    app.include_router(tickets_router)
-    app.include_router(templates_router)
     app.include_router(views_router)
+    app.include_router(templates_router)
+    app.include_router(tickets_router)
     app.include_router(knowledge_router)
     app.include_router(stats_router)
     app.include_router(assistant_router)
