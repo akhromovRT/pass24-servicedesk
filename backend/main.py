@@ -30,11 +30,17 @@ from .tickets.router import router as tickets_router
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 
+logger = logging.getLogger(__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Запуск миграций БД и фоновых задач."""
+    logger.info("Lifespan: starting migrations")
     await run_migrations()
+    logger.info("Lifespan: migrations done, starting email polling")
     poll_task = asyncio.create_task(email_polling_loop())
+    logger.info("Lifespan: startup complete")
     yield
     poll_task.cancel()
 
