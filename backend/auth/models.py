@@ -27,4 +27,5 @@ class User(SQLModel, table=True):
     full_name: str = Field(max_length=256)
     role: UserRole = Field(default=UserRole.RESIDENT)
     is_active: bool = Field(default=True)
+    telegram_chat_id: int | None = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)

@@ -633,20 +633,31 @@ async def update_ticket_status(
     await session.commit()
     await session.refresh(ticket)
 
-    # Email-уведомление создателю тикета
+    # Уведомление создателю тикета (Telegram или email по источнику)
     creator = await session.execute(select(User).where(User.id == ticket.creator_id))
     creator_user = creator.scalar_one_or_none()
     if creator_user:
         new_status_val = payload.new_status.value if hasattr(payload.new_status, 'value') else str(payload.new_status)
-        background_tasks.add_task(
-            notify_ticket_status_changed,
-            creator_email=creator_user.email,
-            ticket_id=ticket.id,
-            title=ticket.title,
-            old_status=old_status,
-            new_status=new_status_val,
-            actor_name=current_user.full_name or current_user.email,
-        )
+        if ticket.source == "telegram" and creator_user.telegram_chat_id:
+            from backend.notifications.telegram import notify_telegram_status
+            background_tasks.add_task(
+                notify_telegram_status,
+                chat_id=creator_user.telegram_chat_id,
+                ticket_id=ticket.id,
+                ticket_title=ticket.title,
+                old_status=old_status,
+                new_status=new_status_val,
+            )
+        else:
+            background_tasks.add_task(
+                notify_ticket_status_changed,
+                creator_email=creator_user.email,
+                ticket_id=ticket.id,
+                title=ticket.title,
+                old_status=old_status,
+                new_status=new_status_val,
+                actor_name=current_user.full_name or current_user.email,
+            )
 
     # Перезагрузка со связями
     result = await session.execute(
@@ -720,19 +731,33 @@ async def add_comment(
     await session.commit()
     await session.refresh(comment)
 
-    # Email-уведомление создателю тикета (если комментирует не он сам и не внутренний)
+    # Уведомление создателю тикета (если комментирует не он сам и не внутренний)
     if not is_internal and ticket.creator_id != str(current_user.id):
         creator = await session.execute(select(User).where(User.id == ticket.creator_id))
         creator_user = creator.scalar_one_or_none()
         if creator_user:
-            background_tasks.add_task(
-                notify_ticket_comment,
-                creator_email=creator_user.email,
-                ticket_id=ticket.id,
-                title=ticket.title,
-                comment_text=payload.text,
-                author_name=current_user.full_name or current_user.email,
-            )
+            # Telegram — если источник Telegram и есть chat_id
+            if (ticket.source == "telegram"
+                    and creator_user.telegram_chat_id):
+                from backend.notifications.telegram import notify_telegram_comment
+                background_tasks.add_task(
+                    notify_telegram_comment,
+                    chat_id=creator_user.telegram_chat_id,
+                    ticket_id=ticket.id,
+                    ticket_title=ticket.title,
+                    comment_text=payload.text,
+                    author_name=current_user.full_name or current_user.email,
+                )
+            else:
+                # Email — для всех остальных источников
+                background_tasks.add_task(
+                    notify_ticket_comment,
+                    creator_email=creator_user.email,
+                    ticket_id=ticket.id,
+                    title=ticket.title,
+                    comment_text=payload.text,
+                    author_name=current_user.full_name or current_user.email,
+                )
 
     return CommentRead.model_validate(comment)
 
