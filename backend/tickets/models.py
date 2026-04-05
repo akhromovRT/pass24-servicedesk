@@ -214,6 +214,10 @@ class Ticket(SQLModel, table=True):
     satisfaction_requested_at: Optional[datetime] = Field(default=None)
     satisfaction_submitted_at: Optional[datetime] = Field(default=None)
 
+    # Связь с проектом внедрения (опционально)
+    implementation_project_id: Optional[str] = Field(default=None, index=True)
+    is_implementation_blocker: bool = Field(default=False, index=True)
+
     # Связи
     events: List["TicketEvent"] = Relationship(back_populates="ticket")
     comments: List["TicketComment"] = Relationship(back_populates="ticket")

@@ -178,7 +178,7 @@ async def search_articles(
                 ''
             )), 'B') ||
             setweight(to_tsvector('russian', coalesce(content, '')), 'C')
-        ) @@ plainto_tsquery('russian', :query)
+        ) @@ websearch_to_tsquery('russian', :query)
     """).bindparams(query=expanded_query)
 
     base_filter = (Article.is_published == True) & fts_condition  # noqa: E712
@@ -236,7 +236,7 @@ async def search_articles(
                 ''
             )), 'B') ||
             setweight(to_tsvector('russian', coalesce(content, '')), 'C'),
-            plainto_tsquery('russian', :query)
+            websearch_to_tsquery('russian', :query)
         ) DESC
     """).bindparams(query=expanded_query)
 
