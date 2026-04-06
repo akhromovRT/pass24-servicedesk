@@ -6,8 +6,10 @@ Help Desk портал для пользователей СКУД-системы
 
 ## Что это
 
-Service Desk для команды поддержки PASS24 и клиентов (жителей ЖК, УК):
+Service Desk + управление проектами внедрения для команды PASS24 и клиентов:
 - Создание тикетов из web, email, Telegram
+- Проекты внедрения СКУД с фазами, задачами и командой
+- Интеграция с Bitrix24 CRM (компании по ИНН) и DaData (ФНС)
 - Система SLA с рабочими часами и предупреждениями
 - Аналитика, CSAT, дашборды агентов
 - AI-ассистент на базе Claude + RAG по базе знаний
@@ -16,8 +18,9 @@ Service Desk для команды поддержки PASS24 и клиентов
 
 - **Backend:** Python 3.12, FastAPI, SQLModel, PostgreSQL 16, Alembic
 - **Frontend:** Vue 3 + TypeScript + PrimeVue 4 (Aura)
-- **Auth:** JWT + bcrypt, RBAC (4 роли)
-- **Каналы:** SMTP/IMAP, Telegram webhook, AI Assistant (Claude + Qdrant)
+- **Auth:** JWT + bcrypt, RBAC (4 роли), сброс пароля через email
+- **CRM:** Bitrix24 (sync компаний/контактов по ИНН) + DaData (ФНС)
+- **Каналы:** SMTP/IMAP, Telegram webhook (@PASS24bot), AI Assistant (Claude + Qdrant)
 - **Деплой:** Docker multi-stage, GitHub Actions CI/CD, Nginx Proxy Manager
 
 ## Ключевые возможности
@@ -58,6 +61,8 @@ Service Desk для команды поддержки PASS24 и клиентов
 | **Knowledge** | `GET /knowledge/`, `GET /knowledge/search`, `GET /knowledge/{slug}`, `POST/PUT/DELETE /knowledge/` |
 | **Stats** | `GET /stats/overview`, `GET /stats/timeline`, `GET /stats/sla`, `GET /stats/agents` |
 | **Assistant** | `POST /assistant/chat` |
+| **Customers** | `GET /customers/`, `GET /customers/search`, `GET /customers/dadata-search`, `GET /customers/lookup-inn/{inn}`, `POST /customers/create-by-inn`, `POST /customers/`, `GET /customers/{id}`, `GET /customers/{id}/contacts`, `POST /customers/sync` |
+| **Projects** | `POST/GET/PATCH /projects/`, `POST /projects/{id}/transition`, phases, tasks, documents, team, events, comments |
 | **Telegram** | `POST /telegram/webhook/{secret}` |
 | **System** | `GET /health`, `GET /docs` (Swagger) |
 
@@ -73,6 +78,13 @@ backend/
 │   └── sla_watcher.py        # SLA + working-hours
 ├── knowledge/                # База знаний (FTS)
 ├── stats/                    # Аналитика
+├── customers/                # Компании-клиенты
+│   ├── models.py, router.py  # Customer CRUD + sync
+│   ├── bitrix24_sync.py      # Bitrix24 CRM sync по ИНН
+│   └── dadata.py             # DaData API (ФНС реестр)
+├── projects/                 # Проекты внедрения СКУД
+│   ├── models.py, router.py  # Project, Phase, Task CRUD
+│   └── templates.py          # 4 шаблона (ЖК, БЦ, камеры, стройка)
 ├── notifications/
 │   ├── email.py              # SMTP исходящие
 │   ├── inbound.py            # IMAP polling

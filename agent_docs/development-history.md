@@ -9,6 +9,50 @@
 
 ## Записи
 
+### 2026-04-06 — v0.7: Интеграция Bitrix24 CRM + DaData + компании-клиенты
+
+**Что сделано:**
+- **Модель `Customer`** (`customers` таблица): ИНН (уникальный), название, bitrix24_company_id, адрес, телефон, email
+- **Синхронизация с Bitrix24** (`backend/customers/bitrix24_sync.py`):
+  - ИНН берётся из `crm.requisite.list` (поле `RQ_INN`)
+  - Компании: 232 → 230 синхронизировано (2 без ИНН пропущены)
+  - Контакты: 904 → 487 создано, 26 обновлено (привязаны к компаниям как property_manager)
+  - ID-based пагинация для полной выгрузки (>50 записей)
+  - `POST /customers/sync` (admin-only, background task)
+- **DaData интеграция** (`backend/customers/dadata.py`):
+  - `lookup_by_inn()` → findById: название, КПП, ОГРН, адрес, директор, ОПФ, статус
+  - `search_by_name()` → suggest: поиск по названию, top-5 ACTIVE
+  - `GET /customers/lookup-inn/{inn}` и `GET /customers/dadata-search?q=`
+  - `POST /customers/create-by-inn?inn=` → автосоздание из DaData
+- **CustomerSelect.vue** — переиспользуемый компонент autocomplete:
+  - Двухуровневый поиск: сначала среди своих (Bitrix24), затем DaData (ФНС)
+  - Если <3 результатов из своих и query >= 3 символов → авто-подгрузка из DaData
+  - Кнопка «+» → dialog ввода ИНН → preview из DaData → создание
+  - Встроен в CreateTicketPage (секция «Компания-клиент»)
+- **Связь User↔Customer**: `users.customer_id`, `tickets.customer_id` — привязка автоматическая
+- **Колонка «Компания»** в SettingsPage → Пользователи и агенты
+- **Поиск по компании** (`GET /auth/users?q=АЛЬФА`) — ищет по ФИО, email И названию компании
+- **Route ordering fix** для `/customers/search`, `/dadata-search`, `/lookup-inn`
+- **Руководства пользователей** — role-based: «Руководство агента» vs «Руководство администратора» (3 доп. раздела для admin)
+- **Тикет из статьи БЗ**: кнопка «Не помогло → создать заявку» → skip Step 1, auto-link `created_from`, improvement suggestions при закрытии
+- **KB improvement suggestions** (таблица + CRUD): агенты предлагают улучшения статей
+
+**Миграции:**
+- 008: `kb_improvement_suggestions`
+- 009 (→012): `customers`, `users.customer_id`, `tickets.customer_id`
+- 013: `users.password_reset_token/expires_at`
+
+**Env переменные добавлены:**
+- `BITRIX24_WEBHOOK_URL` = `https://pass24pro.bitrix24.ru/rest/1/k8s07s2shaitmhmy/`
+- `DADATA_API_KEY` = подключён
+
+**Обновления:**
+- [x] Миграции 008-013 применены на prod
+- [x] Первая полная синхронизация Bitrix24 выполнена (230 компаний, 489 контактов)
+- [x] DaData проверена: Сбербанк (7707083893), Газпром (7736050003) — ОК
+
+---
+
 ### 2026-04-05 — v0.6: Модуль «Проекты внедрения клиентов»
 
 **Что сделано:**
