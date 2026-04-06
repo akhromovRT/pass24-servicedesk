@@ -1,7 +1,7 @@
 """Add customers table (Bitrix24 companies sync by INN).
 
-Revision ID: 009
-Revises: 008
+Revision ID: 012
+Revises: 011
 Create Date: 2026-04-06
 
 """

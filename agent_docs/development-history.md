@@ -9,6 +9,35 @@
 
 ## Записи
 
+### 2026-04-06 — Стабилизация v0.7: тесты + roadmap sync
+
+**Что сделано:**
+- **Roadmap** (`agent_docs/roadmap.md`): синхронизирован с реальностью — CRM = v0.7 (факт), Approvals → v0.8, Gantt → v0.9, Scale → v1.0
+- **Docstring fix** (`migrations/versions/012_customers_bitrix24.py`): исправлена копипаста Revision 009→012, Revises 008→011
+- **30 новых тестов** для `backend/customers/` (`tests/test_customers.py`):
+  - RBAC: agent видит всё, admin видит всё, PM — только свою компанию, resident — пусто, 401 без авторизации
+  - Search: по названию, по ИНН, пустой результат
+  - CRUD: создание (агент), 409 на дубликат ИНН, 403 для resident/PM
+  - Create-by-INN: реальный DaData API (Газпром), fallback без DaData, 403 для resident
+  - DaData endpoints: lookup по ИНН (Сбербанк), 404 при не найден, search по названию
+  - Contacts: получение контактов компании, пустой список
+  - Bitrix24 sync: admin-only, 403 для agent/resident
+  - Unit-тесты: _parse_suggestion (полный/минимальный), lookup/search без API-ключа
+- **14 новых тестов** для password reset (`tests/test_password_reset.py`):
+  - forgot-password: валидный email (проверка токена в БД), 404, 403 inactive, 422 invalid format
+  - reset-password: валидный токен, 400 invalid, 400 expired, 422 short password, one-time use
+  - Full cycle: token → reset → login с новым паролем, 401 со старым
+  - Unit-тесты: create_reset_token, hash_reset_token deterministic, create+hash match, uniqueness
+
+**Итого тестов в проекте:** 44 новых + существующие (test_full_suite, test_inbound_email, test_projects_models, test_tickets_models)
+
+**Обновления:**
+- [x] Все 44 тестов проходят на production
+- [x] Roadmap обновлён
+- [x] Документация обновлена
+
+---
+
 ### 2026-04-06 — v0.7: Интеграция Bitrix24 CRM + DaData + компании-клиенты
 
 **Что сделано:**

@@ -1,22 +1,24 @@
-# Roadmap: Проекты внедрения PASS24
+# Roadmap: PASS24 Service Desk
 
-## v0.6 — MVP (завершён 2026-04-05)
+## v0.6 — Проекты внедрения (завершён 2026-04-05)
 
 - Модуль `backend/projects/`: 7 таблиц, CRUD, FSM, phases/tasks, documents, team, comments, events
 - 4 шаблона проектов (ЖК 10 фаз, БЦ 9, Камеры 5, Большая стройка 12)
 - Опциональная связь тикетов с проектами
 - Email-уведомления: создание, статус, фаза, milestone
 - Frontend: список проектов, детали с 7 табами, создание, Timeline
+- v0.6.1: UX polish — autocomplete, doc upload, inline tasks, DatePicker, edit dialog
 
-## v0.6.1 — UX polish (в работе)
+## v0.7 — CRM-интеграция + Компании (завершён 2026-04-06)
 
-- Autocomplete пользователей в форме создания проекта
-- Upload документов через UI (кнопка + FileUpload в Documents tab)
-- Добавление задач через UI (inline-форма в PhaseCard)
-- Inline-редактирование дат фаз (DatePicker)
-- Редактирование проекта (Dialog на странице деталей)
+- **Модель Customer**: ИНН (уникальный), название, bitrix24_company_id, адрес, контакты
+- **Bitrix24 sync**: компании + контакты по ИНН из `crm.requisite.list`
+- **DaData**: поиск по ИНН и названию из ФНС, автосоздание компании
+- **CustomerSelect.vue**: двухуровневый autocomplete (свои → DaData)
+- **Связь User↔Customer↔Ticket**: автоматическая привязка
+- **Password reset**: сброс пароля через email-ссылку
 
-## v0.7 — Approvals & Risk Management (планируется)
+## v0.8 — Approvals & Risk Management (планируется)
 
 **Цель:** дать клиенту возможность подписывать этапы и формализовать управление рисками.
 
@@ -34,20 +36,19 @@
   - Time-to-Go-Live по типам проектов, On-Time Delivery Rate, Health Score
   - ECharts графики на отдельной странице /projects/analytics
 
-## v0.8 — Gantt & Integrations (планируется)
+## v0.9 — Gantt & Real-time (планируется)
 
 - **Gantt chart**: горизонтальная визуализация с зависимостями между фазами/задачами
   - Библиотека: frappe-gantt или кастомный SVG
   - Drag-n-drop сроков, критический путь
-- **CRM-интеграция**: Bitrix24 сделки → автосоздание проектов
+- **CRM webhook**: Bitrix24 сделки → автосоздание проектов
   - Webhook при закрытии сделки → POST /projects с данными из CRM
-  - Синхронизация контактов (client lead)
 - **WebSocket real-time**: обновления проекта в реальном времени
   - При изменении статуса задачи/фазы → push всем участникам
   - Замена polling → WS для NotificationBell и ProjectDetailPage
 - **Push-уведомления / PWA**: Service Workers, offline-доступ к dashboard проекта
 
-## v0.9 — Scale & Optimization (будущее)
+## v1.0 — Scale & Optimization (будущее)
 
 - **Multi-tenant isolation**: разделение данных по организациям
 - **Budget tracking**: бюджет проекта, затраты по фазам, BOM
