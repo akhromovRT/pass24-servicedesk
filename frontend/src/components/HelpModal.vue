@@ -8,6 +8,12 @@ const auth = useAuthStore()
 const visible = ref(false)
 
 const isAdmin = computed(() => auth.user?.role === 'admin')
+const canSeeProjects = computed(() =>
+  ['property_manager', 'support_agent', 'admin'].includes(auth.user?.role || ''),
+)
+const isStaff = computed(() =>
+  ['support_agent', 'admin'].includes(auth.user?.role || ''),
+)
 
 const title = computed(() =>
   isAdmin.value
@@ -51,6 +57,7 @@ defineExpose({ open, close })
         <a href="#sla">⏱️ SLA</a>
         <a href="#dashboard">📊 Дашборд</a>
         <a href="#ai">🤖 AI-ассистент</a>
+        <a v-if="canSeeProjects" href="#projects" class="projects-link">🏗️ Проекты внедрения</a>
         <template v-if="isAdmin">
           <a href="#users" class="admin-link">👥 Пользователи и роли</a>
           <a href="#kb-review" class="admin-link">📝 Ревью улучшений БЗ</a>
@@ -221,6 +228,80 @@ defineExpose({ open, close })
         </ul>
       </section>
 
+      <!-- ========== ПРОЕКТЫ ВНЕДРЕНИЯ ========== -->
+      <template v-if="canSeeProjects">
+        <div class="projects-divider">
+          <i class="pi pi-sitemap" />
+          <span>Проекты внедрения</span>
+        </div>
+
+        <section id="projects" class="help-section">
+          <h3>🏗️ Проекты внедрения</h3>
+          <p>Модуль управления полным циклом установки PASS24 на объекте клиента: от договора до сдачи работ.</p>
+
+          <h4>Типы проектов (шаблоны)</h4>
+          <ul>
+            <li><b>Стандартный ЖК</b> — 10 фаз, ~10 недель (КПП, подъезды, парковка)</li>
+            <li><b>Стандартный БЦ</b> — 9 фаз, ~8 недель (турникеты, шлагбаумы, 1С/AD)</li>
+            <li><b>Только камеры</b> — 5 фаз, ~4 недели (pass24.auto)</li>
+            <li><b>Большая стройка</b> — 12 фаз, ~16 недель (тендер, поэтапная сдача)</li>
+          </ul>
+
+          <h4>Статусы проекта</h4>
+          <pre class="help-code">Черновик → Планирование → В работе ⇄ На паузе → Завершён / Отменён</pre>
+
+          <template v-if="isStaff">
+            <h4>Создание проекта (только admin)</h4>
+            <ol>
+              <li><b>Проекты → Создать проект</b></li>
+              <li>Если клиента нет — кнопка <b>«+»</b> рядом с полем клиента → создание с автогенерацией пароля</li>
+              <li>Выбрать тип проекта → справа появится предпросмотр шаблона</li>
+              <li>Указать объект, даты, менеджера → <b>«Создать проект»</b></li>
+              <li>Клиенту уходит welcome-email: ссылка на портал, логин/пароль, этапы внедрения</li>
+            </ol>
+
+            <h4>Управление</h4>
+            <ul>
+              <li><b>Кнопка «Редактировать»</b> — название, даты, примечания</li>
+              <li><b>Смена статуса</b> — кнопки переходов вверху страницы проекта</li>
+              <li><b>Старт/Завершение фазы</b> — кнопки на карточке фазы</li>
+              <li><b>Выполнение задачи</b> — ✓ на строке задачи (прогресс пересчитывается автоматически)</li>
+              <li><b>Добавление задачи</b> — кнопка «Добавить задачу» внизу раскрытой фазы</li>
+              <li><b>Редактирование дат фазы</b> — кликните на даты (пунктир) → inline-календарь</li>
+            </ul>
+
+            <h4>Связь с тикетами</h4>
+            <ul>
+              <li>На странице тикета → блок <b>«Проект внедрения»</b> → выбрать проект</li>
+              <li>Отметить <b>«Блокирует проект»</b> если тикет критичен</li>
+              <li>Блокеры выделены красным на вкладке «Тикеты» проекта</li>
+            </ul>
+          </template>
+
+          <h4>Вкладки страницы проекта</h4>
+          <ul>
+            <li><b>Этапы</b> — раскрывающиеся карточки фаз с задачами</li>
+            <li><b>Timeline</b> — вертикальная визуализация этапов</li>
+            <li><b>Документы</b> — загрузка/скачивание файлов (до 20 МБ)</li>
+            <li><b>Команда</b> — участники проекта с ролями</li>
+            <li><b>Тикеты</b> — связанные заявки (блокеры выделены)</li>
+            <li><b>Комментарии</b> — публичные + внутренние (только для PASS24)</li>
+            <li><b>История</b> — все события проекта</li>
+          </ul>
+
+          <h4>Уведомления клиенту</h4>
+          <ul>
+            <li><b>Welcome-email</b> — при создании проекта с новым клиентом (портал + пароль + этапы)</li>
+            <li><b>Создание проекта</b> — код, объект, список этапов</li>
+            <li><b>Смена статуса</b> — новый статус, кто изменил</li>
+            <li><b>Завершение фазы</b> — название фазы, текущий % прогресса</li>
+            <li><b>Milestone выполнен</b> — название вехи, кто выполнил</li>
+          </ul>
+
+          <p class="help-note">💡 Прогресс считается автоматически: фаза = выполненные / активные задачи; проект = средневзвешенное по фазам.</p>
+        </section>
+      </template>
+
       <!-- ========== ADMIN-ONLY SECTIONS ========== -->
       <template v-if="isAdmin">
         <div class="admin-divider">
@@ -360,4 +441,19 @@ defineExpose({ open, close })
 .admin-divider i { font-size: 16px; }
 .admin-section h3 { color: #78350f; }
 .admin-section { border-left: 3px solid #fcd34d; padding-left: 14px; background: #fffbeb; border-radius: 0 6px 6px 0; padding-top: 8px; padding-bottom: 8px; }
+
+/* Projects section */
+.projects-link { background: #ecfdf5 !important; border-color: #6ee7b7 !important; color: #065f46 !important; }
+.projects-link:hover { background: #d1fae5 !important; }
+.projects-divider {
+  display: flex; align-items: center; gap: 10px; margin: 24px 0 16px;
+  padding: 10px 14px; background: linear-gradient(90deg, #ecfdf5, transparent);
+  border-left: 4px solid #10b981; border-radius: 4px;
+  font-size: 13px; font-weight: 600; color: #065f46; text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.projects-divider i { font-size: 16px; }
+.help-section h4 { font-size: 14px; font-weight: 600; color: #334155; margin: 14px 0 6px; }
+.help-section ol { padding-left: 20px; color: #475569; font-size: 14px; line-height: 1.7; }
+.help-section ol li { margin-bottom: 4px; }
 </style>
