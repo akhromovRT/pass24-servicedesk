@@ -12,6 +12,7 @@
 
 ## Правила и гайды
 - `agent_docs/guides/support-operations.md` — **регламент работы менеджера поддержки** (обработка заявок, email, база знаний).
+- `agent_docs/guides/implementation-projects.md` — **инструкция по проектам внедрения** (создание, управление, работа с клиентом).
 - `agent_docs/guides/knowledge-base-manual.md` — **подробное руководство по базе знаний** для менеджеров: как устроена, как писать статьи, метрики, KPI.
 - `agent_docs/guides/dod.md` — критерии завершённости (DoD): тесты, документация, линтинг.
 - `agent_docs/guides/environment-setup.md` — настройка окружения (.env, .cursorignore, .vscode).
