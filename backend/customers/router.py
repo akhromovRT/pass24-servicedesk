@@ -96,6 +96,73 @@ async def get_customer(
     return customer
 
 
+@router.get("/search")
+async def search_customers(
+    q: str = Query(..., min_length=1, description="Поиск по названию или ИНН"),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Autocomplete поиск по названию/ИНН (для dropdown)."""
+    pattern = f"%{q.strip()}%"
+    r = await session.execute(
+        select(Customer)
+        .where(Customer.is_active == True, Customer.name.ilike(pattern) | Customer.inn.ilike(pattern))  # noqa: E712
+        .order_by(Customer.name)
+        .limit(15)
+    )
+    return [
+        {"id": c.id, "inn": c.inn, "name": c.name, "address": c.address or "", "phone": c.phone or ""}
+        for c in r.scalars()
+    ]
+
+
+@router.get("/lookup-inn/{inn}")
+async def lookup_inn(
+    inn: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Поиск компании по ИНН через DaData. Не создаёт запись — только возвращает данные."""
+    from .dadata import lookup_by_inn
+    result = await lookup_by_inn(inn)
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Компания с ИНН {inn} не найдена в DaData")
+    return result
+
+
+@router.post("/create-by-inn", response_model=CustomerRead, status_code=201)
+async def create_customer_by_inn(
+    inn: str = Query(..., min_length=10, max_length=20),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Создать компанию по ИНН — данные автоматически из DaData."""
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        raise HTTPException(status_code=403, detail="Только для агентов")
+
+    # Проверяем что такой ИНН ещё нет
+    existing = await session.execute(select(Customer).where(Customer.inn == inn))
+    ex = existing.scalar_one_or_none()
+    if ex:
+        return ex  # Уже существует — возвращаем
+
+    # Подтягиваем из DaData
+    from .dadata import lookup_by_inn
+    dadata = await lookup_by_inn(inn)
+
+    customer = Customer(
+        inn=inn,
+        name=dadata["name"] if dadata else f"Компания ИНН {inn}",
+        address=dadata.get("address", "") if dadata else "",
+        phone=dadata.get("phone", "") if dadata else "",
+        email=dadata.get("email", "") if dadata else "",
+        comment=f"Директор: {dadata.get('director', '')}, ОГРН: {dadata.get('ogrn', '')}" if dadata else "",
+    )
+    session.add(customer)
+    await session.commit()
+    await session.refresh(customer)
+    return customer
+
+
 @router.post("/", response_model=CustomerRead, status_code=201)
 async def create_customer(
     payload: CustomerCreate,

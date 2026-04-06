@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     # Bitrix24 CRM
     bitrix24_webhook_url: str = ""
 
+    # DaData (поиск компаний по ИНН)
+    dadata_api_key: str = ""
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

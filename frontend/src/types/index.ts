@@ -123,6 +123,7 @@ export interface TicketCreate {
   on_behalf_of_email?: string
   on_behalf_of_name?: string
   source_article_slug?: string
+  customer_id?: string
 }
 
 export interface PaginatedResponse<T> {

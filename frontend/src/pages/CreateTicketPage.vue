@@ -12,6 +12,7 @@ import { useToast } from 'primevue/usetoast'
 import { useTicketsStore } from '../stores/tickets'
 import { api, isAuthenticated } from '../api/client'
 import { useAuthStore } from '../stores/auth'
+import CustomerSelect from '../components/CustomerSelect.vue'
 import type { TicketCreate, TicketProduct, TicketCategory, TicketType } from '../types'
 
 const router = useRouter()
@@ -137,6 +138,7 @@ const selectedCardId = ref<string | null>(null)
 // Form fields
 const title = ref('')
 const description = ref('')
+const customerId = ref<string | null>(null)
 
 // KB suggestions — статьи базы знаний, релевантные теме заявки
 interface KbSuggestion { title: string; slug: string; category: string }
@@ -315,6 +317,7 @@ async function onSubmit() {
       on_behalf_of_email: creatingOnBehalf ? email.value.trim() : undefined,
       on_behalf_of_name: creatingOnBehalf ? contactName.value.trim() || undefined : undefined,
       source_article_slug: fromArticleSlug.value || undefined,
+      customer_id: customerId.value || undefined,
     })
     toast.add({ severity: 'success', summary: 'Заявка создана', life: 3000 })
     router.push(`/tickets/${ticket.id}`)
@@ -517,6 +520,16 @@ async function onSubmit() {
               />
               <small class="field-help">Что произошло? Когда? Что уже пробовали? Какую ошибку видите?</small>
               <small v-if="descriptionInvalid" class="field-error">Опишите проблему подробнее</small>
+            </div>
+
+            <Divider />
+
+            <!-- Компания-клиент -->
+            <div class="form-section-title"><i class="pi pi-briefcase section-icon" /> Компания-клиент</div>
+            <div class="field">
+              <label>Выберите компанию или добавьте по ИНН</label>
+              <CustomerSelect v-model="customerId" />
+              <small class="field-help">Компании синхронизированы с Bitrix24 CRM. Нет в списке? Нажмите «+» и введите ИНН.</small>
             </div>
 
             <Divider />

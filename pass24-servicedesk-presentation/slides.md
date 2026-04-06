@@ -483,6 +483,80 @@ layout: none
 ---
 
 <div style="position:absolute;inset:0;z-index:0;overflow:hidden;">
+  <div style="position:absolute;inset:0;background:#0e1624;"></div>
+  <div style="position:absolute;top:50%;left:50%;width:500px;height:500px;transform:translate(-50%,-50%);background:radial-gradient(circle,rgba(245,158,11,0.07) 0%,transparent 70%);border-radius:50%;"></div>
+</div>
+<div style="position:absolute;inset:0;z-index:1;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:48px 80px;text-align:center;">
+  <h1 style="font-size:3em;font-weight:800;color:#e2e8f0;margin:0;line-height:1.15;">Проекты внедрения</h1>
+  <div style="width:60px;height:3px;background:#f59e0b;border-radius:2px;margin:16px auto;"></div>
+  <p style="font-size:1.2em;color:#94a3b8;margin:0;">Не только поддержка — управление подключением новых клиентов</p>
+</div>
+
+<style>
+.slidev-layout { padding: 0 !important; overflow: hidden; }
+</style>
+
+---
+layout: default
+---
+
+<div style="margin-bottom:8px;display:flex;align-items:center;gap:8px;">
+  <span style="font-size:0.75em;font-weight:700;letter-spacing:0.1em;color:#f59e0b;text-transform:uppercase;">ВНЕДРЕНИЕ</span>
+</div>
+
+## 4 шаблона проекта — от создания до сдачи
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px;">
+  <div style="background:#162036;border-radius:10px;padding:14px 20px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <Icon name="building" :size="20" color="#22d3ee" />
+      <strong style="color:#e2e8f0;font-size:0.95em;">Стандартный ЖК</strong>
+      <span style="color:#94a3b8;font-size:0.8em;">10 фаз · 10 нед</span>
+    </div>
+    <p style="margin:0;color:#94a3b8;font-size:0.85em;">КПП, подъезды, шлагбаумы, обучение УК</p>
+  </div>
+  <div style="background:#162036;border-radius:10px;padding:14px 20px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <Icon name="building" :size="20" color="#f59e0b" />
+      <strong style="color:#e2e8f0;font-size:0.95em;">Стандартный БЦ</strong>
+      <span style="color:#94a3b8;font-size:0.8em;">9 фаз · 8 нед</span>
+    </div>
+    <p style="margin:0;color:#94a3b8;font-size:0.85em;">Турникеты, парковка, интеграция 1С/AD</p>
+  </div>
+  <div style="background:#162036;border-radius:10px;padding:14px 20px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <Icon name="search" :size="20" color="#22d3ee" />
+      <strong style="color:#e2e8f0;font-size:0.95em;">Только камеры</strong>
+      <span style="color:#94a3b8;font-size:0.8em;">5 фаз · 4 нед</span>
+    </div>
+    <p style="margin:0;color:#94a3b8;font-size:0.85em;">pass24.auto — распознавание номеров</p>
+  </div>
+  <div style="background:#162036;border-radius:10px;padding:14px 20px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <Icon name="layers" :size="20" color="#f59e0b" />
+      <strong style="color:#e2e8f0;font-size:0.95em;">Большая стройка</strong>
+      <span style="color:#94a3b8;font-size:0.8em;">12 фаз · 16 нед</span>
+    </div>
+    <p style="margin:0;color:#94a3b8;font-size:0.85em;">Тендер, очереди, усиленный контроль качества</p>
+  </div>
+</div>
+
+<div style="display:flex;gap:20px;margin-top:14px;align-items:center;">
+  <div style="display:flex;align-items:center;gap:6px;color:#94a3b8;font-size:0.85em;">
+    <Icon name="zap" :size="16" color="#22d3ee" />
+    FSM: черновик → планирование → в работе → завершён
+  </div>
+  <div style="display:flex;align-items:center;gap:6px;color:#94a3b8;font-size:0.85em;">
+    <Icon name="target" :size="16" color="#f59e0b" />
+    Milestone-трекинг + автодаты фаз
+  </div>
+</div>
+
+---
+layout: none
+---
+
+<div style="position:absolute;inset:0;z-index:0;overflow:hidden;">
   <div style="position:absolute;inset:0;background:#0b1120;"></div>
   <div style="position:absolute;top:50%;left:50%;width:600px;height:600px;transform:translate(-50%,-50%);background:radial-gradient(circle,rgba(34,211,238,0.05) 0%,transparent 70%);border-radius:50%;"></div>
 </div>
@@ -493,6 +567,7 @@ layout: none
     <p style="color:#e2e8f0;font-size:1.15em;margin:0;"><Icon name="merge" style="color:#22d3ee;font-size:1.2em;" /> <strong>Единый контекст</strong> <span style="color:#94a3b8;">— один тикет = вся история</span></p>
     <p style="color:#e2e8f0;font-size:1.15em;margin:0;"><Icon name="zap" style="color:#22d3ee;font-size:1.2em;" /> <strong>Автоматизация</strong> <span style="color:#94a3b8;">— макросы, FSM, SLA-watcher</span></p>
     <p style="color:#e2e8f0;font-size:1.15em;margin:0;"><Icon name="check-circle" style="color:#22d3ee;font-size:1.2em;" /> <strong>Прозрачность</strong> <span style="color:#94a3b8;">— клиент видит статус, команда видит метрики</span></p>
+    <p style="color:#e2e8f0;font-size:1.15em;margin:0;"><Icon name="layers" style="color:#f59e0b;font-size:1.2em;" /> <strong>Полный цикл</strong> <span style="color:#94a3b8;">— от внедрения до поддержки в одной системе</span></p>
   </div>
 </div>
 
@@ -511,18 +586,19 @@ layout: none
 <div style="position:absolute;inset:0;z-index:1;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:48px 80px;text-align:center;">
   <h1 style="font-size:2.6em;font-weight:800;color:#e2e8f0;margin:0;line-height:1.15;">Service Desk — центральный хаб</h1>
   <div style="width:60px;height:3px;background:#22d3ee;border-radius:2px;margin:20px auto;"></div>
-  <div style="display:flex;gap:32px;margin:24px 0;">
-    <div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:10px;padding:16px 24px;">
+  <div style="display:flex;gap:24px;margin:20px 0;">
+    <div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:10px;padding:14px 24px;">
       <div style="color:#f87171;font-weight:700;font-size:0.85em;margin-bottom:6px;">ДО</div>
-      <p style="color:#94a3b8;margin:0;font-size:0.95em;">82% «Другое», 0% автоматизации</p>
+      <p style="color:#94a3b8;margin:0;font-size:0.9em;">82% «Другое», 0% автоматизации</p>
     </div>
-    <div style="background:rgba(34,211,238,0.1);border:1px solid rgba(34,211,238,0.3);border-radius:10px;padding:16px 24px;">
+    <div style="background:rgba(34,211,238,0.1);border:1px solid rgba(34,211,238,0.3);border-radius:10px;padding:14px 24px;">
       <div style="color:#22d3ee;font-weight:700;font-size:0.85em;margin-bottom:6px;">ПОСЛЕ</div>
-      <p style="color:#e2e8f0;margin:0;font-size:0.95em;">Единый тикет, SLA, метрики, база знаний</p>
+      <p style="color:#e2e8f0;margin:0;font-size:0.9em;">Тикеты, БЗ, SLA, проекты внедрения</p>
     </div>
   </div>
-  <p style="color:#f59e0b;font-size:1.05em;margin:16px 0 0;max-width:650px;"><Icon name="arrow-right" style="color:#f59e0b;" /> Следующий шаг: наполнить БЗ по SMS-кодам <Icon name="arrow-right" style="color:#f59e0b;" /> 15-25% Deflection к июлю</p>
-  <p style="color:#e2e8f0;font-size:1.3em;font-weight:700;margin:32px 0 0;">Вопросы и обсуждение</p>
+  <p style="color:#94a3b8;font-size:1em;margin:12px 0 0;max-width:700px;">Поддержка клиентов <span style="color:#22d3ee;">+</span> подключение новых объектов <span style="color:#22d3ee;">+</span> база знаний <span style="color:#22d3ee;">=</span> <strong style="color:#e2e8f0;">единая точка входа</strong></p>
+  <p style="color:#f59e0b;font-size:0.95em;margin:16px 0 0;max-width:650px;">Следующий шаг: наполнить БЗ по SMS-кодам → 15-25% Deflection к июлю</p>
+  <p style="color:#e2e8f0;font-size:1.3em;font-weight:700;margin:28px 0 0;">Вопросы и обсуждение</p>
 </div>
 
 <style>
