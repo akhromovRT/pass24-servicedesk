@@ -64,6 +64,8 @@ const roleOptions = [
 // Filters
 const filterRoles = ref<string[]>([])
 const filterActive = ref<string>('all')  // 'all' | 'active' | 'inactive'
+const filterSearch = ref('')
+let searchDebounce: ReturnType<typeof setTimeout> | null = null
 
 const activeStatusOptions = [
   { label: 'Все', value: 'all' },
@@ -78,6 +80,7 @@ async function loadUsers() {
     if (filterRoles.value.length) params.set('role', filterRoles.value.join(','))
     if (filterActive.value === 'active') params.set('is_active', 'true')
     if (filterActive.value === 'inactive') params.set('is_active', 'false')
+    if (filterSearch.value.trim()) params.set('q', filterSearch.value.trim())
 
     const qs = params.toString()
     users.value = await api.get<User[]>(`/auth/users${qs ? '?' + qs : ''}`)
@@ -88,9 +91,15 @@ async function loadUsers() {
   }
 }
 
+function onSearchInput() {
+  if (searchDebounce) clearTimeout(searchDebounce)
+  searchDebounce = setTimeout(() => loadUsers(), 300)
+}
+
 function resetFilters() {
   filterRoles.value = []
   filterActive.value = 'all'
+  filterSearch.value = ''
   loadUsers()
 }
 
@@ -474,6 +483,12 @@ onMounted(() => {
 
           <!-- Filters -->
           <div class="users-filters">
+            <InputText
+              v-model="filterSearch"
+              placeholder="Поиск по ФИО, email, компании..."
+              class="search-input"
+              @input="onSearchInput"
+            />
             <MultiSelect
               v-model="filterRoles"
               :options="roleOptions"
@@ -494,7 +509,7 @@ onMounted(() => {
               @change="loadUsers"
             />
             <Button
-              v-if="filterRoles.length || filterActive !== 'all'"
+              v-if="filterRoles.length || filterActive !== 'all' || filterSearch"
               label="Сбросить"
               icon="pi pi-times"
               text
@@ -519,6 +534,13 @@ onMounted(() => {
                     <div class="user-email">{{ data.email }}</div>
                   </div>
                 </div>
+              </template>
+            </Column>
+
+            <Column field="customer_name" header="Компания" style="width: 200px">
+              <template #body="{ data }">
+                <span v-if="data.customer_name" class="company-name">{{ data.customer_name }}</span>
+                <span v-else class="no-company">—</span>
               </template>
             </Column>
 
@@ -756,6 +778,7 @@ a { color: #3b82f6; }
   margin: 12px 0;
   flex-wrap: wrap;
 }
+.search-input { min-width: 260px; flex: 1; }
 .filter-select { min-width: 180px; }
 .filter-counter {
   margin-left: auto;
@@ -781,6 +804,8 @@ a { color: #3b82f6; }
 .user-avatar.inactive { background: linear-gradient(135deg, #94a3b8, #64748b); }
 .user-name { font-size: 14px; font-weight: 500; color: #1e293b; }
 .user-email { font-size: 12px; color: #94a3b8; }
+.company-name { font-size: 13px; color: #1e293b; }
+.no-company { font-size: 13px; color: #cbd5e1; }
 .user-date { font-size: 13px; color: #64748b; }
 
 .role-select { width: 100%; font-size: 13px; }

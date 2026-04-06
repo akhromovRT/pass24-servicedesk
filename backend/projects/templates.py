@@ -58,7 +58,7 @@ RESIDENTIAL_TEMPLATE = TemplateDefinition(
     description="Типовое внедрение PASS24 в жилом комплексе: 10 фаз от kickoff до handover, ~10 недель.",
     phases=[
         TemplatePhase(
-            order=1, name="Kickoff & Planning", duration_days=5, weight=1,
+            order=1, name="Запуск и планирование", duration_days=5, weight=1,
             description="Запуск проекта, согласование команды, обзор объекта",
             tasks=[
                 TemplateTask("Встреча с клиентом (kickoff)", is_milestone=True, estimated_hours=3),
@@ -68,7 +68,7 @@ RESIDENTIAL_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=2, name="Procurement & Pre-Installation", duration_days=14, weight=1,
+            order=2, name="Закупка и подготовка к монтажу", duration_days=14, weight=1,
             description="Закупка оборудования, подготовка к монтажу",
             tasks=[
                 TemplateTask("Составить спецификацию оборудования (BOM)", estimated_hours=8),
@@ -78,7 +78,7 @@ RESIDENTIAL_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=3, name="Hardware Installation", duration_days=21, weight=2,
+            order=3, name="Монтаж оборудования", duration_days=21, weight=2,
             description="Монтаж оборудования на объекте: КПП, подъезды, шлагбаумы",
             tasks=[
                 TemplateTask("Монтаж СКУД на главном КПП", estimated_hours=16),
@@ -89,7 +89,7 @@ RESIDENTIAL_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=4, name="Software Configuration", duration_days=14, weight=1,
+            order=4, name="Настройка ПО", duration_days=14, weight=1,
             description="Создание объекта в PASS24.online, настройка зон и правил",
             tasks=[
                 TemplateTask("Создать объект в PASS24.online", estimated_hours=2),
@@ -99,7 +99,7 @@ RESIDENTIAL_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=5, name="User Data Import", duration_days=7, weight=1,
+            order=5, name="Импорт данных жильцов", duration_days=7, weight=1,
             description="Загрузка списков жильцов, выдача доступов",
             tasks=[
                 TemplateTask("Получить список жильцов от УК"),
@@ -109,7 +109,7 @@ RESIDENTIAL_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=6, name="Training", duration_days=7, weight=1,
+            order=6, name="Обучение", duration_days=7, weight=1,
             description="Обучение УК и охраны работе с системой",
             tasks=[
                 TemplateTask("Тренинг администраторов УК", is_milestone=True, estimated_hours=4),
@@ -118,7 +118,7 @@ RESIDENTIAL_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=7, name="UAT Testing", duration_days=10, weight=1,
+            order=7, name="Приёмочное тестирование", duration_days=10, weight=1,
             description="Тестирование всех сценариев доступа",
             tasks=[
                 TemplateTask("Составить тест-план (20 сценариев)", estimated_hours=4),
@@ -128,7 +128,7 @@ RESIDENTIAL_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=8, name="Pilot Operation", duration_days=7, weight=1,
+            order=8, name="Пилотная эксплуатация", duration_days=7, weight=1,
             description="Запуск для ограниченной группы жильцов",
             tasks=[
                 TemplateTask("Запуск для 1 подъезда (pilot)"),
@@ -137,7 +137,7 @@ RESIDENTIAL_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=9, name="Go-Live", duration_days=1, weight=2,
+            order=9, name="Ввод в эксплуатацию", duration_days=1, weight=2,
             description="Переключение всех подъездов на систему",
             tasks=[
                 TemplateTask("Переключение всех подъездов на PASS24", is_milestone=True, estimated_hours=4),
@@ -146,7 +146,7 @@ RESIDENTIAL_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=10, name="Handover", duration_days=5, weight=1,
+            order=10, name="Сдача работ", duration_days=5, weight=1,
             description="Сдача работ, передача паролей, начало поддержки",
             tasks=[
                 TemplateTask("Подписать акт сдачи-приёмки", is_milestone=True, estimated_hours=2),
@@ -167,7 +167,7 @@ COMMERCIAL_TEMPLATE = TemplateDefinition(
     description="Внедрение PASS24 в бизнес-центре: шлагбаумы парковки, турникеты, интеграция с 1С/AD, ~8 недель.",
     phases=[
         TemplatePhase(
-            order=1, name="Kickoff & Planning", duration_days=5, weight=1,
+            order=1, name="Запуск и планирование", duration_days=5, weight=1,
             description="Запуск проекта",
             tasks=[
                 TemplateTask("Kickoff meeting с представителями БЦ", is_milestone=True, estimated_hours=3),
@@ -176,7 +176,7 @@ COMMERCIAL_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=2, name="Procurement", duration_days=14, weight=1,
+            order=2, name="Закупка оборудования", duration_days=14, weight=1,
             description="Закупка оборудования",
             tasks=[
                 TemplateTask("Спецификация: турникеты, шлагбаумы, считыватели", estimated_hours=6),
@@ -185,7 +185,7 @@ COMMERCIAL_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=3, name="Hardware Installation", duration_days=14, weight=2,
+            order=3, name="Монтаж оборудования", duration_days=14, weight=2,
             description="Монтаж турникетов в лобби, шлагбаумов на парковке",
             tasks=[
                 TemplateTask("Установка турникетов в лобби", is_milestone=True, estimated_hours=24),
@@ -195,7 +195,7 @@ COMMERCIAL_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=4, name="Software Configuration", duration_days=10, weight=1,
+            order=4, name="Настройка ПО", duration_days=10, weight=1,
             description="Настройка PASS24 + интеграция с 1С/AD",
             tasks=[
                 TemplateTask("Создать объект в PASS24.online"),
@@ -205,7 +205,7 @@ COMMERCIAL_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=5, name="Employee/Tenant Data Import", duration_days=7, weight=1,
+            order=5, name="Импорт данных арендаторов", duration_days=7, weight=1,
             description="Импорт сотрудников арендаторов",
             tasks=[
                 TemplateTask("Получить реестр арендаторов и сотрудников"),
@@ -214,7 +214,7 @@ COMMERCIAL_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=6, name="Training", duration_days=5, weight=1,
+            order=6, name="Обучение", duration_days=5, weight=1,
             description="Отдельные тренинги ресепшн и охраны",
             tasks=[
                 TemplateTask("Обучение сотрудников ресепшн", is_milestone=True, estimated_hours=3),
@@ -223,7 +223,7 @@ COMMERCIAL_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=7, name="UAT Testing", duration_days=7, weight=1,
+            order=7, name="Приёмочное тестирование", duration_days=7, weight=1,
             description="Тестирование",
             tasks=[
                 TemplateTask("Тест-план сценариев БЦ"),
@@ -232,7 +232,7 @@ COMMERCIAL_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=8, name="Go-Live", duration_days=1, weight=2,
+            order=8, name="Ввод в эксплуатацию", duration_days=1, weight=2,
             description="Ввод в эксплуатацию",
             tasks=[
                 TemplateTask("Запуск всех точек доступа", is_milestone=True, estimated_hours=4),
@@ -241,7 +241,7 @@ COMMERCIAL_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=9, name="Handover", duration_days=3, weight=1,
+            order=9, name="Сдача работ", duration_days=3, weight=1,
             description="Сдача работ",
             tasks=[
                 TemplateTask("Акт сдачи-приёмки", is_milestone=True, estimated_hours=2),
@@ -262,7 +262,7 @@ CAMERAS_ONLY_TEMPLATE = TemplateDefinition(
     description="Минимальное внедрение: установка камер распознавания номеров для парковки, ~4 недели.",
     phases=[
         TemplatePhase(
-            order=1, name="Planning", duration_days=3, weight=1,
+            order=1, name="Планирование", duration_days=3, weight=1,
             description="Обследование объекта, точки установки",
             tasks=[
                 TemplateTask("Обследование объекта", is_milestone=True, estimated_hours=4),
@@ -271,7 +271,7 @@ CAMERAS_ONLY_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=2, name="Hardware Installation", duration_days=10, weight=2,
+            order=2, name="Монтаж оборудования", duration_days=10, weight=2,
             description="Монтаж камер и сетевой инфраструктуры",
             tasks=[
                 TemplateTask("Монтаж камер на точках парковки", is_milestone=True, estimated_hours=16),
@@ -280,7 +280,7 @@ CAMERAS_ONLY_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=3, name="pass24.auto Configuration", duration_days=7, weight=1,
+            order=3, name="Настройка pass24.auto", duration_days=7, weight=1,
             description="Настройка распознавания номеров",
             tasks=[
                 TemplateTask("Настройка pass24.auto", estimated_hours=4),
@@ -289,7 +289,7 @@ CAMERAS_ONLY_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=4, name="Testing", duration_days=5, weight=1,
+            order=4, name="Тестирование", duration_days=5, weight=1,
             description="Проверка точности распознавания",
             tasks=[
                 TemplateTask("Тест распознавания 100 разных номеров", estimated_hours=4),
@@ -297,7 +297,7 @@ CAMERAS_ONLY_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=5, name="Go-Live & Handover", duration_days=3, weight=2,
+            order=5, name="Запуск и сдача работ", duration_days=3, weight=2,
             description="Запуск и сдача работ",
             tasks=[
                 TemplateTask("Запуск в эксплуатацию", is_milestone=True, estimated_hours=2),
@@ -318,7 +318,7 @@ LARGE_CONSTRUCTION_TEMPLATE = TemplateDefinition(
     description="Масштабный проект с тендером, поэтапной сдачей очередей, усиленным контролем качества, ~16 недель.",
     phases=[
         TemplatePhase(
-            order=1, name="Kickoff & Planning", duration_days=7, weight=1,
+            order=1, name="Запуск и планирование", duration_days=7, weight=1,
             description="Запуск проекта, согласование с заказчиком и подрядчиками",
             tasks=[
                 TemplateTask("Kickoff meeting с застройщиком", is_milestone=True, estimated_hours=4),
@@ -327,7 +327,7 @@ LARGE_CONSTRUCTION_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=2, name="Extended Procurement", duration_days=28, weight=2,
+            order=2, name="Тендер и закупка", duration_days=28, weight=2,
             description="Тендер, закупка, логистика, входной контроль",
             tasks=[
                 TemplateTask("Подготовка тендерной документации", estimated_hours=16),
@@ -338,7 +338,7 @@ LARGE_CONSTRUCTION_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=3, name="Site Preparation", duration_days=7, weight=1,
+            order=3, name="Подготовка площадки", duration_days=7, weight=1,
             description="Подготовка электрики и магистралей СКС",
             tasks=[
                 TemplateTask("Прокладка магистральной СКС", estimated_hours=24),
@@ -347,7 +347,7 @@ LARGE_CONSTRUCTION_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=4, name="Hardware Installation", duration_days=35, weight=3,
+            order=4, name="Монтаж оборудования", duration_days=35, weight=3,
             description="Поэтапный монтаж по очередям сдачи объекта",
             tasks=[
                 TemplateTask("Монтаж очереди 1: СКУД на КПП", is_milestone=True, estimated_hours=32),
@@ -358,7 +358,7 @@ LARGE_CONSTRUCTION_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=5, name="Quality Inspection", duration_days=5, weight=1,
+            order=5, name="Контроль качества", duration_days=5, weight=1,
             description="Контроль качества монтажа по чек-листу",
             tasks=[
                 TemplateTask("Чек-лист по всем точкам монтажа", estimated_hours=16),
@@ -367,7 +367,7 @@ LARGE_CONSTRUCTION_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=6, name="Software Configuration", duration_days=14, weight=1,
+            order=6, name="Настройка ПО", duration_days=14, weight=1,
             description="Настройка PASS24 для большого объекта",
             tasks=[
                 TemplateTask("Создание объекта со всеми секциями"),
@@ -376,7 +376,7 @@ LARGE_CONSTRUCTION_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=7, name="User Data Import", duration_days=7, weight=1,
+            order=7, name="Импорт данных жильцов", duration_days=7, weight=1,
             description="Массовый импорт жильцов по очередям",
             tasks=[
                 TemplateTask("Получить списки жильцов по каждой очереди"),
@@ -385,7 +385,7 @@ LARGE_CONSTRUCTION_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=8, name="Training", duration_days=7, weight=1,
+            order=8, name="Обучение", duration_days=7, weight=1,
             description="Обучение УК и охраны",
             tasks=[
                 TemplateTask("Тренинг УК", is_milestone=True, estimated_hours=6),
@@ -394,7 +394,7 @@ LARGE_CONSTRUCTION_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=9, name="UAT Testing", duration_days=10, weight=1,
+            order=9, name="Приёмочное тестирование", duration_days=10, weight=1,
             description="Комплексное тестирование",
             tasks=[
                 TemplateTask("Тест-план: 30+ сценариев", estimated_hours=6),
@@ -403,7 +403,7 @@ LARGE_CONSTRUCTION_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=10, name="Pilot Operation", duration_days=14, weight=1,
+            order=10, name="Пилотная эксплуатация", duration_days=14, weight=1,
             description="Запуск для первой очереди",
             tasks=[
                 TemplateTask("Pilot запуск очереди 1"),
@@ -412,7 +412,7 @@ LARGE_CONSTRUCTION_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=11, name="Go-Live", duration_days=2, weight=2,
+            order=11, name="Ввод в эксплуатацию", duration_days=2, weight=2,
             description="Ввод в эксплуатацию всех очередей",
             tasks=[
                 TemplateTask("Запуск всех очередей", is_milestone=True, estimated_hours=8),
@@ -420,7 +420,7 @@ LARGE_CONSTRUCTION_TEMPLATE = TemplateDefinition(
             ],
         ),
         TemplatePhase(
-            order=12, name="Handover", duration_days=7, weight=1,
+            order=12, name="Сдача работ", duration_days=7, weight=1,
             description="Сдача работ",
             tasks=[
                 TemplateTask("Акт сдачи-приёмки", is_milestone=True, estimated_hours=4),

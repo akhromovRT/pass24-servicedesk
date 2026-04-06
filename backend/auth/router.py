@@ -124,12 +124,15 @@ async def list_users(
     _: User = Depends(require_role(UserRole.ADMIN)),
     role: Optional[str] = None,
     is_active: Optional[bool] = None,
+    q: Optional[str] = Query(default=None, description="Поиск по ФИО, email, компании"),
+    customer_id: Optional[str] = Query(default=None, description="Фильтр по компании"),
 ) -> list[UserRead]:
-    """Список всех пользователей с фильтрами по роли и статусу."""
+    """Список пользователей с фильтрами по роли, статусу, поиску, компании."""
+    from backend.customers.models import Customer
+
     query = select(User).order_by(User.created_at.desc())
 
     if role:
-        # Поддержка нескольких ролей через запятую
         roles = [r.strip() for r in role.split(",") if r.strip()]
         if len(roles) == 1:
             query = query.where(User.role == roles[0])
@@ -139,8 +142,42 @@ async def list_users(
     if is_active is not None:
         query = query.where(User.is_active == is_active)
 
+    if customer_id:
+        query = query.where(User.customer_id == customer_id)
+
+    # Поиск по ФИО / email
+    if q and q.strip():
+        pattern = f"%{q.strip()}%"
+        # Также ищем по названию компании
+        matching_customer_ids = await session.execute(
+            select(Customer.id).where(Customer.name.ilike(pattern))
+        )
+        cids = [r[0] for r in matching_customer_ids.all()]
+        if cids:
+            query = query.where(
+                User.full_name.ilike(pattern) | User.email.ilike(pattern) | User.customer_id.in_(cids)
+            )
+        else:
+            query = query.where(User.full_name.ilike(pattern) | User.email.ilike(pattern))
+
     result = await session.execute(query)
-    return [UserRead.model_validate(u) for u in result.scalars().all()]
+    users = result.scalars().all()
+
+    # Подтягиваем customer_name
+    cust_ids = {u.customer_id for u in users if u.customer_id}
+    cust_names: dict[str, str] = {}
+    if cust_ids:
+        cr = await session.execute(select(Customer).where(Customer.id.in_(cust_ids)))
+        for c in cr.scalars():
+            cust_names[c.id] = c.name
+
+    items = []
+    for u in users:
+        data = UserRead.model_validate(u)
+        data.customer_name = cust_names.get(u.customer_id or "", None)
+        items.append(data)
+
+    return items
 
 
 @router.post("/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)

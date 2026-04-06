@@ -32,6 +32,8 @@ class UserRead(BaseModel):
     full_name: str
     role: UserRole
     is_active: bool
+    customer_id: str | None = None
+    customer_name: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -129,6 +129,8 @@ async function createNewCustomer() {
       full_name: result.full_name,
       role: 'property_manager',
       is_active: true,
+      customer_id: null,
+      customer_name: null,
       created_at: new Date().toISOString(),
     }
     customers.value.push(newUser)

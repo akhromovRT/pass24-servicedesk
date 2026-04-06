@@ -6,6 +6,8 @@ export interface User {
   full_name: string
   role: UserRole
   is_active: boolean
+  customer_id: string | null
+  customer_name: string | null
   created_at: string
 }
 
