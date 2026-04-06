@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 from backend.projects.models import (
     DocumentType,
@@ -208,6 +208,8 @@ class ProjectCreate(BaseModel):
     planned_end_date: Optional[date] = None
     manager_id: Optional[str] = None
     notes: Optional[str] = Field(default=None, max_length=4000)
+    send_welcome_email: bool = Field(default=False, description="Отправить welcome-email новому клиенту")
+    customer_temp_password: Optional[str] = Field(default=None, description="Пароль для welcome-email (не сохраняется)")
 
 
 class ProjectUpdate(BaseModel):
@@ -337,6 +339,26 @@ class ProjectStats(BaseModel):
 class TicketLinkRequest(BaseModel):
     ticket_id: str
     is_blocker: bool = False
+
+
+class CustomerCreate(BaseModel):
+    """Создание нового клиента-администратора УК прямо из формы проекта."""
+
+    email: EmailStr
+    full_name: str = Field(..., min_length=2, max_length=256)
+    phone: Optional[str] = Field(default=None, max_length=20)
+    company: str = Field(..., min_length=1, max_length=256, description="Название УК")
+
+
+class CustomerCreated(BaseModel):
+    """Ответ после создания клиента."""
+
+    id: str
+    email: str
+    full_name: str
+    temp_password: str  # отображается один раз админу
+
+    model_config = {"from_attributes": True}
 
 
 class LinkedTicket(BaseModel):

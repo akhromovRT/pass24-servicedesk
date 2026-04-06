@@ -227,6 +227,16 @@ export const useProjectsStore = defineStore('projects', () => {
     await api.post(`/projects/${projectId}/unlink-ticket/${ticketId}`, {})
   }
 
+  // Create customer (PM) inline
+  async function createCustomer(payload: {
+    email: string
+    full_name: string
+    phone?: string
+    company: string
+  }): Promise<{ id: string; email: string; full_name: string; temp_password: string }> {
+    return await api.post('/projects/create-customer', payload)
+  }
+
   // Users for autocomplete
   async function fetchUsers(role?: string): Promise<User[]> {
     const params = new URLSearchParams()
@@ -331,6 +341,7 @@ export const useProjectsStore = defineStore('projects', () => {
     linkTicket,
     unlinkTicket,
     fetchUsers,
+    createCustomer,
     createTask,
     updatePhase,
     uploadDocument,

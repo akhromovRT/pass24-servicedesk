@@ -24,6 +24,7 @@ from backend.auth.dependencies import get_current_user
 from backend.auth.models import User, UserRole
 from backend.database import get_session
 from backend.notifications.projects import (
+    notify_customer_welcome,
     notify_milestone_reached,
     notify_phase_completed,
     notify_project_created,
@@ -46,6 +47,8 @@ from backend.projects.models import (
     TaskStatus,
 )
 from backend.projects.schemas import (
+    CustomerCreate,
+    CustomerCreated,
     PhaseRead,
     PhaseUpdate,
     ProjectCreate,
@@ -118,6 +121,55 @@ async def list_templates(
             )
         )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Create customer (POST /projects/create-customer)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/create-customer", response_model=CustomerCreated, status_code=status.HTTP_201_CREATED)
+async def create_customer(
+    payload: CustomerCreate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_admin),
+) -> CustomerCreated:
+    """Создать нового клиента-администратора УК прямо из формы проекта.
+
+    Генерирует временный пароль, создаёт пользователя с ролью property_manager.
+    Пароль возвращается в ответе один раз (для показа админу).
+    """
+    import uuid as uuid_mod
+
+    from backend.auth.utils import hash_password
+
+    email = payload.email.strip().lower()
+
+    # Проверка уникальности
+    existing = await session.execute(select(User).where(User.email == email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Пользователь с таким email уже существует",
+        )
+
+    temp_password = uuid_mod.uuid4().hex[:10]
+    user = User(
+        email=email,
+        hashed_password=hash_password(temp_password),
+        full_name=payload.full_name.strip(),
+        role=UserRole.PROPERTY_MANAGER,
+    )
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+
+    return CustomerCreated(
+        id=str(user.id),
+        email=user.email,
+        full_name=user.full_name,
+        temp_password=temp_password,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -319,15 +371,32 @@ async def create_project(
     doc_count = await count_project_documents(session, project.id)
     open_tasks = await count_open_tasks(session, project.id)
 
-    # Уведомление о создании
+    # Уведомление
     customer_email, manager_email = await _get_notification_recipients(session, project)
-    if customer_email:
+    phases_html = _build_phases_html(full) if full else ""
+
+    if payload.send_welcome_email and customer_email and payload.customer_temp_password:
+        # Welcome-email для нового клиента (с паролем и инструкциями)
+        customer = await session.get(User, payload.customer_id)
+        background_tasks.add_task(
+            notify_customer_welcome,
+            customer_email=customer_email,
+            customer_name=customer.full_name if customer else "Клиент",
+            temp_password=payload.customer_temp_password,
+            project_code=project.code,
+            project_name=project.name,
+            object_name=project.object_name,
+            phases_html=phases_html,
+        )
+    elif customer_email:
+        # Обычное уведомление для существующего клиента (с фазами)
         background_tasks.add_task(
             notify_project_created,
             customer_email=customer_email,
             project_code=project.code,
             project_name=project.name,
             object_name=project.object_name,
+            phases_summary=phases_html,
             manager_email=manager_email,
         )
 
@@ -337,6 +406,18 @@ async def create_project(
 # ---------------------------------------------------------------------------
 # Вспомогательная функция сборки ProjectRead
 # ---------------------------------------------------------------------------
+
+
+def _build_phases_html(project: ImplementationProject) -> str:
+    """Сгенерировать HTML-список фаз для email-уведомлений."""
+    if not project.phases:
+        return "<p>Фазы будут определены позже.</p>"
+    sorted_phases = sorted(project.phases, key=lambda p: p.order_num)
+    items = []
+    for p in sorted_phases:
+        duration = f" ({p.planned_duration_days} дн)" if p.planned_duration_days else ""
+        items.append(f"<li><strong>{p.order_num}. {p.name}</strong>{duration}</li>")
+    return f'<ol style="padding-left: 20px;">{"".join(items)}</ol>'
 
 
 async def _get_notification_recipients(

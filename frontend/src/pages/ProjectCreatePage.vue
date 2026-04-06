@@ -8,6 +8,7 @@ import Textarea from 'primevue/textarea'
 import Select from 'primevue/select'
 import DatePicker from 'primevue/datepicker'
 import Divider from 'primevue/divider'
+import Dialog from 'primevue/dialog'
 import { useToast } from 'primevue/usetoast'
 import { useProjectsStore } from '../stores/projects'
 import type { ProjectType, User } from '../types'
@@ -61,7 +62,7 @@ async function submit() {
   if (!canSubmit.value || !selectedCustomer.value) return
   saving.value = true
   try {
-    const project = await store.createProject({
+    const payload: Record<string, unknown> = {
       name: name.value.trim(),
       customer_id: String(selectedCustomer.value.id),
       customer_company: customerCompany.value.trim(),
@@ -73,7 +74,13 @@ async function submit() {
       planned_start_date: plannedStartDate.value?.toISOString().slice(0, 10),
       manager_id: selectedManager.value ? String(selectedManager.value.id) : undefined,
       notes: notes.value.trim() || undefined,
-    })
+    }
+    // Welcome-email для нового клиента
+    if (createdPassword.value) {
+      payload.send_welcome_email = true
+      payload.customer_temp_password = createdPassword.value
+    }
+    const project = await store.createProject(payload as any)
     toast.add({
       severity: 'success',
       summary: 'Проект создан',
@@ -91,6 +98,64 @@ async function submit() {
   } finally {
     saving.value = false
   }
+}
+
+// --- Create new customer dialog ---
+const showCreateCustomer = ref(false)
+const newCustName = ref('')
+const newCustEmail = ref('')
+const newCustPhone = ref('')
+const newCustCompany = ref('')
+const creatingCustomer = ref(false)
+const createdPassword = ref('')
+
+async function createNewCustomer() {
+  if (!newCustName.value.trim() || !newCustEmail.value.trim() || !newCustCompany.value.trim()) {
+    toast.add({ severity: 'warn', summary: 'Заполните Ф��О, email и компанию', life: 3000 })
+    return
+  }
+  creatingCustomer.value = true
+  try {
+    const result = await store.createCustomer({
+      email: newCustEmail.value.trim(),
+      full_name: newCustName.value.trim(),
+      phone: newCustPhone.value.trim() || undefined,
+      company: newCustCompany.value.trim(),
+    })
+    // Auto-select and fill
+    const newUser: User = {
+      id: result.id,
+      email: result.email,
+      full_name: result.full_name,
+      role: 'property_manager',
+      is_active: true,
+      created_at: new Date().toISOString(),
+    }
+    customers.value.push(newUser)
+    selectedCustomer.value = newUser
+    customerCompany.value = newCustCompany.value.trim()
+    createdPassword.value = result.temp_password
+    toast.add({
+      severity: 'success',
+      summary: 'Клиент со��дан',
+      detail: `${result.full_name} (${result.email}). Пароль: ${result.temp_password}`,
+      life: 10000,
+    })
+    // Reset form but keep dialog open to show password
+  } catch (err: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: err.message, life: 5000 })
+  } finally {
+    creatingCustomer.value = false
+  }
+}
+
+function closeCreateCustomer() {
+  showCreateCustomer.value = false
+  newCustName.value = ''
+  newCustEmail.value = ''
+  newCustPhone.value = ''
+  newCustCompany.value = ''
+  createdPassword.value = ''
 }
 
 onMounted(async () => {
@@ -131,26 +196,36 @@ onMounted(async () => {
             <div class="field-row">
               <div class="field">
                 <label>Клиент (администратор УК) *</label>
-                <Select
-                  v-model="selectedCustomer"
-                  :options="customers"
-                  option-label="full_name"
-                  placeholder="Выберите клиента"
-                  filter
-                  filter-placeholder="Поиск по имени..."
-                  show-clear
-                >
-                  <template #option="{ option }">
-                    <div class="user-option">
-                      <strong>{{ option.full_name }}</strong>
-                      <span class="user-email">{{ option.email }}</span>
-                    </div>
-                  </template>
-                  <template #value="{ value }">
-                    <span v-if="value">{{ value.full_name }} ({{ value.email }})</span>
-                    <span v-else class="placeholder">Выберите клиента</span>
-                  </template>
-                </Select>
+                <div class="field-with-action">
+                  <Select
+                    v-model="selectedCustomer"
+                    :options="customers"
+                    option-label="full_name"
+                    placeholder="Выберите клиента"
+                    filter
+                    filter-placeholder="Поиск по имени..."
+                    show-clear
+                    class="flex-grow"
+                  >
+                    <template #option="{ option }">
+                      <div class="user-option">
+                        <strong>{{ option.full_name }}</strong>
+                        <span class="user-email">{{ option.email }}</span>
+                      </div>
+                    </template>
+                    <template #value="{ value }">
+                      <span v-if="value">{{ value.full_name }} ({{ value.email }})</span>
+                      <span v-else class="placeholder">Выберите клиента</span>
+                    </template>
+                  </Select>
+                  <Button
+                    icon="pi pi-user-plus"
+                    severity="secondary"
+                    outlined
+                    title="Создать нового клиента"
+                    @click="showCreateCustomer = true"
+                  />
+                </div>
               </div>
               <div class="field">
                 <label>Компания клиента *</label>
@@ -284,6 +359,56 @@ onMounted(async () => {
         </template>
       </Card>
     </div>
+
+    <!-- Create customer dialog -->
+    <Dialog v-model:visible="showCreateCustomer" header="Создать клиента-администратора УК" :modal="true" :style="{ width: '500px' }" @hide="closeCreateCustomer">
+      <div v-if="createdPassword" class="customer-created-success">
+        <div class="success-banner">
+          <i class="pi pi-check-circle" />
+          <div>
+            <strong>Клиент создан!</strong>
+            <p>{{ newCustName }} ({{ newCustEmail }})</p>
+          </div>
+        </div>
+        <div class="password-block">
+          <label>Временный пароль (покажите клиенту):</label>
+          <code class="temp-password">{{ createdPassword }}</code>
+        </div>
+        <p class="welcome-hint">
+          <i class="pi pi-envelope" />
+          Welcome-письмо с доступом к порталу будет отправлено автоматически при создании проекта.
+        </p>
+        <Button label="Готово" icon="pi pi-check" @click="closeCreateCustomer" class="close-btn" />
+      </div>
+      <div v-else class="create-customer-form">
+        <div class="field">
+          <label>ФИО *</label>
+          <InputText v-model="newCustName" placeholder="Иванов Иван Иванович" />
+        </div>
+        <div class="field">
+          <label>Email *</label>
+          <InputText v-model="newCustEmail" placeholder="ivanov@uk-romashka.ru" />
+        </div>
+        <div class="field">
+          <label>Телефон</label>
+          <InputText v-model="newCustPhone" placeholder="+7 (999) 123-45-67" />
+        </div>
+        <div class="field">
+          <label>Название УК / компании *</label>
+          <InputText v-model="newCustCompany" placeholder="УК Ромашка" />
+        </div>
+      </div>
+      <template v-if="!createdPassword" #footer>
+        <Button label="Отмена" severity="secondary" text @click="closeCreateCustomer" />
+        <Button
+          label="Создать клиента"
+          icon="pi pi-user-plus"
+          :loading="creatingCustomer"
+          :disabled="!newCustName.trim() || !newCustEmail.trim() || !newCustCompany.trim()"
+          @click="createNewCustomer"
+        />
+      </template>
+    </Dialog>
   </div>
 </template>
 
@@ -314,4 +439,19 @@ h1 { margin: 16px 0 24px; font-size: 1.75rem; }
 .phase-days { font-size: 0.75rem; color: #64748b; }
 .loading-template { padding: 24px; text-align: center; color: #94a3b8; }
 .select-value, .select-option { display: flex; align-items: center; gap: 8px; }
+.field-with-action { display: flex; gap: 8px; align-items: flex-start; }
+.flex-grow { flex: 1; }
+.create-customer-form { display: flex; flex-direction: column; gap: 16px; }
+.create-customer-form .field { display: flex; flex-direction: column; gap: 6px; }
+.create-customer-form .field label { font-size: 0.85rem; color: #475569; font-weight: 500; }
+.customer-created-success { display: flex; flex-direction: column; gap: 16px; }
+.success-banner { display: flex; align-items: center; gap: 12px; background: #f0fdf4; border-radius: 8px; padding: 12px 16px; }
+.success-banner i { font-size: 1.5rem; color: #10b981; }
+.success-banner p { margin: 4px 0 0; color: #64748b; font-size: 0.875rem; }
+.password-block { background: #f8fafc; border-radius: 8px; padding: 12px 16px; }
+.password-block label { font-size: 0.85rem; color: #475569; display: block; margin-bottom: 8px; }
+.temp-password { font-size: 1.25rem; font-weight: 600; background: #e2e8f0; padding: 4px 12px; border-radius: 4px; user-select: all; }
+.welcome-hint { display: flex; align-items: center; gap: 8px; color: #64748b; font-size: 0.875rem; }
+.welcome-hint i { color: #3b82f6; }
+.close-btn { align-self: flex-end; }
 </style>
