@@ -56,17 +56,60 @@ const innLoading = ref(false)
 const innResult = ref<DaDataResult | null>(null)
 const innCreating = ref(false)
 
+// DaData suggestions (если не найдено среди своих)
+interface DaDataSuggestion {
+  name: string; inn: string; address: string; ogrn: string; status: string
+}
+const dadataSuggestions = ref<DaDataSuggestion[]>([])
+const showDadataResults = ref(false)
+const dadataLoading = ref(false)
+
 async function search(event: { query: string }) {
   if (event.query.length < 1) return
   loading.value = true
+  showDadataResults.value = false
+  dadataSuggestions.value = []
   try {
-    suggestions.value = await api.get<CustomerOption[]>(
+    const results = await api.get<CustomerOption[]>(
       `/customers/search?q=${encodeURIComponent(event.query)}`
     )
+    suggestions.value = results
+
+    // Если среди постоянных клиентов мало/нет результатов и запрос >= 3 символов
+    // показываем кнопку «Искать в DaData»
+    if (results.length < 3 && event.query.length >= 3) {
+      showDadataResults.value = true
+      // Подгружаем из DaData параллельно
+      dadataLoading.value = true
+      try {
+        dadataSuggestions.value = await api.get<DaDataSuggestion[]>(
+          `/customers/dadata-search?q=${encodeURIComponent(event.query)}`
+        )
+      } catch { dadataSuggestions.value = [] }
+      finally { dadataLoading.value = false }
+    }
   } catch {
     suggestions.value = []
   } finally {
     loading.value = false
+  }
+}
+
+async function addFromDadata(dadata: DaDataSuggestion) {
+  innCreating.value = true
+  try {
+    const customer = await api.post<CustomerOption>(
+      `/customers/create-by-inn?inn=${dadata.inn}`
+    )
+    selectedCustomer.value = customer
+    emit('update:modelValue', customer.id)
+    emit('customer-selected', customer)
+    showDadataResults.value = false
+    toast.add({ severity: 'success', summary: 'Компания добавлена', detail: customer.name, life: 3000 })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+  } finally {
+    innCreating.value = false
   }
 }
 
@@ -175,6 +218,29 @@ const displayName = computed(() =>
       />
     </div>
 
+    <!-- DaData результаты (если мало среди своих) -->
+    <div v-if="showDadataResults && dadataSuggestions.length" class="dadata-results">
+      <div class="dadata-header">
+        <i class="pi pi-search" />
+        Найдено в реестре (ФНС):
+      </div>
+      <button
+        v-for="d in dadataSuggestions"
+        :key="d.inn"
+        type="button"
+        class="dadata-item"
+        :disabled="innCreating"
+        @click="addFromDadata(d)"
+      >
+        <div class="dadata-name">{{ d.name }}</div>
+        <div class="dadata-meta">ИНН {{ d.inn }}<span v-if="d.address"> · {{ d.address.slice(0, 50) }}</span></div>
+        <i class="pi pi-plus-circle dadata-add" />
+      </button>
+    </div>
+    <div v-else-if="showDadataResults && dadataLoading" class="dadata-loading">
+      <i class="pi pi-spin pi-spinner" /> Поиск в реестре ФНС...
+    </div>
+
     <!-- Dialog: создание по ИНН -->
     <Dialog
       v-model:visible="showInnDialog"
@@ -253,4 +319,30 @@ const displayName = computed(() =>
 .result-row .label { color: #94a3b8; min-width: 90px; display: inline-block; }
 .status-active { color: #059669; font-weight: 600; }
 .status-inactive { color: #dc2626; font-weight: 600; }
+
+/* DaData results */
+.dadata-results {
+  margin-top: 8px; border: 1px solid #e0f2fe; border-radius: 8px;
+  background: #f0f9ff; overflow: hidden;
+}
+.dadata-header {
+  padding: 8px 12px; font-size: 12px; font-weight: 600; color: #0369a1;
+  display: flex; align-items: center; gap: 6px;
+  border-bottom: 1px solid #bae6fd;
+}
+.dadata-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 8px 12px; border: none; background: white; cursor: pointer;
+  text-align: left; font-family: inherit; border-bottom: 1px solid #f0f9ff;
+  transition: background 0.15s;
+}
+.dadata-item:hover { background: #e0f2fe; }
+.dadata-item:last-child { border-bottom: none; }
+.dadata-name { font-size: 13px; font-weight: 500; color: #1e293b; flex: 1; }
+.dadata-meta { font-size: 11px; color: #64748b; flex: 1; }
+.dadata-add { color: #0ea5e9; font-size: 16px; flex-shrink: 0; }
+.dadata-loading {
+  margin-top: 6px; font-size: 12px; color: #64748b;
+  display: flex; align-items: center; gap: 6px;
+}
 </style>

@@ -82,20 +82,6 @@ async def list_customers(
     return list(r.scalars())
 
 
-@router.get("/{customer_id}", response_model=CustomerRead)
-async def get_customer(
-    customer_id: str,
-    session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user),
-):
-    """Получить компанию по ID."""
-    r = await session.execute(select(Customer).where(Customer.id == customer_id))
-    customer = r.scalar_one_or_none()
-    if not customer:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    return customer
-
-
 @router.get("/search")
 async def search_customers(
     q: str = Query(..., min_length=1, description="Поиск по названию или ИНН"),
@@ -116,6 +102,17 @@ async def search_customers(
     ]
 
 
+@router.get("/dadata-search")
+async def dadata_search(
+    q: str = Query(..., min_length=2, description="Поиск компании по названию через DaData"),
+    current_user: User = Depends(get_current_user),
+):
+    """Поиск компании по названию через DaData (если нет среди постоянных клиентов)."""
+    from .dadata import search_by_name
+    results = await search_by_name(q, count=5)
+    return results
+
+
 @router.get("/lookup-inn/{inn}")
 async def lookup_inn(
     inn: str,
@@ -127,6 +124,20 @@ async def lookup_inn(
     if not result:
         raise HTTPException(status_code=404, detail=f"Компания с ИНН {inn} не найдена в DaData")
     return result
+
+
+@router.get("/{customer_id}", response_model=CustomerRead)
+async def get_customer(
+    customer_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Получить компанию по ID."""
+    r = await session.execute(select(Customer).where(Customer.id == customer_id))
+    customer = r.scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    return customer
 
 
 @router.post("/create-by-inn", response_model=CustomerRead, status_code=201)
