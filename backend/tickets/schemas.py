@@ -52,6 +52,9 @@ class TicketCreate(BaseModel):
         default=None, max_length=512,
         description="Slug статьи БЗ, из которой создан тикет (клиент не нашёл ответа)"
     )
+    customer_id: Optional[str] = Field(
+        default=None, description="ID компании-клиента (Customer)"
+    )
 
 
 class GuestTicketCreate(BaseModel):
@@ -176,6 +179,7 @@ class TicketRead(BaseModel):
     # Implementation project link
     implementation_project_id: Optional[str] = None
     is_implementation_blocker: bool = False
+    customer_id: Optional[str] = None
 
     events: List[EventRead] = []
     comments: List[CommentRead] = []

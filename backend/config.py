@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_webhook_secret: str = ""
 
+    # Bitrix24 CRM
+    bitrix24_webhook_url: str = ""
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

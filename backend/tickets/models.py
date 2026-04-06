@@ -218,6 +218,9 @@ class Ticket(SQLModel, table=True):
     implementation_project_id: Optional[str] = Field(default=None, index=True)
     is_implementation_blocker: bool = Field(default=False, index=True)
 
+    # Компания-клиент (синхронизируется с Bitrix24)
+    customer_id: Optional[str] = Field(default=None, index=True)
+
     # Связи
     events: List["TicketEvent"] = Relationship(back_populates="ticket")
     comments: List["TicketComment"] = Relationship(back_populates="ticket")

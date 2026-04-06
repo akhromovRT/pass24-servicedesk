@@ -258,6 +258,7 @@ async def create_ticket(
         app_version=payload.app_version,
         error_message=payload.error_message,
         urgent=payload.urgent,
+        customer_id=payload.customer_id or (creator_user.customer_id if hasattr(creator_user, 'customer_id') else None),
     )
     ticket.auto_detect_category()
     ticket.assign_priority_based_on_context()

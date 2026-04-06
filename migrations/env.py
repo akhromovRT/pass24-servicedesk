@@ -17,6 +17,7 @@ from backend.auth.models import User  # noqa: F401
 from backend.knowledge.models import Article  # noqa: F401
 from backend.tickets.models import Attachment, Ticket, TicketComment, TicketEvent  # noqa: F401
 from backend.tickets.templates import KbImprovementSuggestion, Macro, ResponseTemplate, SavedView, TicketArticleLink  # noqa: F401
+from backend.customers.models import Customer  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

@@ -31,6 +31,7 @@ from .tickets.templates_router import router as templates_router
 from .tickets.views_router import router as views_router
 from .tickets.sla_watcher import sla_watcher_loop
 from .notifications.telegram import router as telegram_router
+from .customers.router import router as customers_router
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
@@ -97,6 +98,7 @@ def create_app() -> FastAPI:
     app.include_router(stats_router)
     app.include_router(assistant_router)
     app.include_router(telegram_router)
+    app.include_router(customers_router)
 
     @app.get("/health")
     async def health():
