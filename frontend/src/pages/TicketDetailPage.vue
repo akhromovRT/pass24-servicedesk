@@ -16,8 +16,9 @@ import TicketStatusBadge from '../components/TicketStatusBadge.vue'
 import TicketPriorityBadge from '../components/TicketPriorityBadge.vue'
 import { useTicketsStore } from '../stores/tickets'
 import { useAuthStore } from '../stores/auth'
+import { useProjectsStore } from '../stores/projects'
 import { api } from '../api/client'
-import type { TicketStatus, Attachment, TicketPriority, PaginatedResponse, Ticket } from '../types'
+import type { TicketStatus, Attachment, TicketPriority, PaginatedResponse, Ticket, ProjectListItem } from '../types'
 
 const route = useRoute()
 const router = useRouter()
@@ -201,7 +202,7 @@ async function loadTicket() {
   try {
     await store.fetchTicket(id)
     if (isStaff.value) {
-      await Promise.all([loadArticleLinks(), loadChildren(), loadParent()])
+      await Promise.all([loadArticleLinks(), loadChildren(), loadParent(), loadProjects()])
     }
   } catch (e: any) {
     toast.add({
@@ -502,6 +503,58 @@ interface ChildrenResponse {
 const childTickets = ref<ChildTicket[]>([])
 const childrenCount = ref(0)
 const parentTicket = ref<{ id: string; title: string } | null>(null)
+
+// Implementation project linking
+const projectsStore = useProjectsStore()
+const projectsList = ref<ProjectListItem[]>([])
+const linkProjectId = ref<string>('')
+const linkAsBlocker = ref(false)
+const projectLinking = ref(false)
+const linkedProjectName = computed(() => {
+  if (!ticket.value?.implementation_project_id) return null
+  const p = projectsList.value.find(p => p.id === ticket.value?.implementation_project_id)
+  return p ? `${p.code} — ${p.name}` : ticket.value.implementation_project_id
+})
+
+async function loadProjects() {
+  if (!isStaff.value) return
+  try {
+    await projectsStore.fetchProjects(1, { status: ['planning', 'in_progress', 'on_hold'] })
+    projectsList.value = projectsStore.projects
+  } catch {
+    projectsList.value = []
+  }
+}
+
+async function linkToProject() {
+  if (!ticket.value || !linkProjectId.value) return
+  projectLinking.value = true
+  try {
+    await projectsStore.linkTicket(linkProjectId.value, ticket.value.id, linkAsBlocker.value)
+    await store.fetchTicket(ticket.value.id)
+    linkProjectId.value = ''
+    linkAsBlocker.value = false
+    toast.add({ severity: 'success', summary: 'Тикет связан с проектом', life: 2000 })
+  } catch (err: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: err.message, life: 4000 })
+  } finally {
+    projectLinking.value = false
+  }
+}
+
+async function unlinkFromProject() {
+  if (!ticket.value || !ticket.value.implementation_project_id) return
+  projectLinking.value = true
+  try {
+    await projectsStore.unlinkTicket(ticket.value.implementation_project_id, ticket.value.id)
+    await store.fetchTicket(ticket.value.id)
+    toast.add({ severity: 'success', summary: 'Связь снята', life: 2000 })
+  } catch (err: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: err.message, life: 4000 })
+  } finally {
+    projectLinking.value = false
+  }
+}
 const parentDialogVisible = ref(false)
 const parentSearchQuery = ref('')
 const parentSearchResults = ref<Ticket[]>([])
@@ -1047,6 +1100,65 @@ onUnmounted(() => {
               <i class="pi pi-check-circle" /> Спасибо! Предложение отправлено администратору.
             </p>
           </div>
+        </template>
+      </Card>
+
+      <!-- Связь с проектом внедрения — только для staff -->
+      <Card v-if="isStaff" class="section-card">
+        <template #title>
+          <div class="card-title-row"><i class="pi pi-briefcase" /> Проект внедрения</div>
+        </template>
+        <template #content>
+          <template v-if="ticket.implementation_project_id">
+            <div class="parent-banner">
+              <i class="pi pi-link parent-banner-icon" />
+              <div class="parent-banner-content">
+                <div class="parent-banner-label">
+                  Связан с проектом
+                  <Tag v-if="ticket.is_implementation_blocker" value="БЛОКЕР" severity="danger" class="relation-tag" />
+                </div>
+                <button
+                  type="button"
+                  class="parent-banner-link"
+                  @click="router.push(`/projects/${ticket.implementation_project_id}`)"
+                >
+                  {{ linkedProjectName }}
+                </button>
+              </div>
+              <Button
+                label="Отвязать"
+                icon="pi pi-times"
+                severity="secondary"
+                outlined
+                size="small"
+                :loading="projectLinking"
+                @click="unlinkFromProject"
+              />
+            </div>
+          </template>
+          <template v-else>
+            <p v-if="projectsList.length === 0" class="no-comments">Нет активных проектов</p>
+            <div v-else class="link-project-form">
+              <select v-model="linkProjectId" class="agent-select">
+                <option value="">— выберите проект —</option>
+                <option v-for="p in projectsList" :key="p.id" :value="p.id">
+                  {{ p.code }} — {{ p.name }} ({{ p.object_name }})
+                </option>
+              </select>
+              <label class="blocker-checkbox">
+                <Checkbox v-model="linkAsBlocker" :binary="true" />
+                <span>Блокирует проект</span>
+              </label>
+              <Button
+                label="Связать"
+                icon="pi pi-link"
+                size="small"
+                :disabled="!linkProjectId"
+                :loading="projectLinking"
+                @click="linkToProject"
+              />
+            </div>
+          </template>
         </template>
       </Card>
 
@@ -1776,6 +1888,9 @@ onUnmounted(() => {
   font-size: 13px; background: white; color: #1e293b;
 }
 .macros-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.link-project-form { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.link-project-form .agent-select { flex: 1; min-width: 200px; }
+.blocker-checkbox { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: #64748b; }
 
 .comment-actions {
   display: flex;

@@ -173,6 +173,10 @@ class TicketRead(BaseModel):
     satisfaction_requested_at: Optional[datetime] = None
     satisfaction_submitted_at: Optional[datetime] = None
 
+    # Implementation project link
+    implementation_project_id: Optional[str] = None
+    is_implementation_blocker: bool = False
+
     events: List[EventRead] = []
     comments: List[CommentRead] = []
     attachments: List[AttachmentRead] = []

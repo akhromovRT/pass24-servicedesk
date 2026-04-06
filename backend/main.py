@@ -23,6 +23,8 @@ from .auth.router import router as auth_router
 from .knowledge.router import router as knowledge_router
 from .notifications.inbound import email_polling_loop
 from .assistant.router import router as assistant_router
+from .projects.router import router as projects_router
+from .projects.workspace_router import router as projects_workspace_router
 from .stats.router import router as stats_router
 from .tickets.router import router as tickets_router
 from .tickets.templates_router import router as templates_router
@@ -90,6 +92,8 @@ def create_app() -> FastAPI:
     app.include_router(templates_router)
     app.include_router(tickets_router)
     app.include_router(knowledge_router)
+    app.include_router(projects_workspace_router)
+    app.include_router(projects_router)
     app.include_router(stats_router)
     app.include_router(assistant_router)
     app.include_router(telegram_router)

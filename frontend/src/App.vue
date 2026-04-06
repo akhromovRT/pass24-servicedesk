@@ -34,6 +34,16 @@ const menuItems = computed(() => {
     })
   }
 
+  // «Проекты» — для PM, support_agent, admin (не для резидентов)
+  if (auth.isLoggedIn && auth.user?.role && ['property_manager', 'support_agent', 'admin'].includes(auth.user.role)) {
+    items.push({
+      label: 'Проекты',
+      icon: 'pi pi-sitemap',
+      command: () => router.push('/projects'),
+      class: route.path.startsWith('/projects') ? 'p-menuitem-active' : '',
+    })
+  }
+
   items.push({
     label: 'База знаний',
     icon: 'pi pi-book',

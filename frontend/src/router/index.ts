@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { isAuthenticated } from '../api/client'
+import { useAuthStore } from '../stores/auth'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -89,6 +90,25 @@ const router = createRouter({
       component: () => import('../pages/SettingsPage.vue'),
       meta: { auth: true },
     },
+    // Implementation Projects
+    {
+      path: '/projects',
+      name: 'projects',
+      component: () => import('../pages/ProjectsListPage.vue'),
+      meta: { auth: true },
+    },
+    {
+      path: '/projects/create',
+      name: 'project-create',
+      component: () => import('../pages/ProjectCreatePage.vue'),
+      meta: { auth: true, roles: ['admin'] },
+    },
+    {
+      path: '/projects/:id',
+      name: 'project-detail',
+      component: () => import('../pages/ProjectDetailPage.vue'),
+      meta: { auth: true },
+    },
   ],
 })
 
@@ -99,6 +119,15 @@ router.beforeEach((to) => {
   }
   if (to.meta.guest && isAuthenticated()) {
     return { name: 'home' }
+  }
+  // RBAC по meta.roles
+  if (to.meta.roles && isAuthenticated()) {
+    const auth = useAuthStore()
+    const userRole = auth.user?.role
+    const allowedRoles = to.meta.roles as string[]
+    if (!userRole || !allowedRoles.includes(userRole)) {
+      return { name: 'home' }
+    }
   }
 })
 

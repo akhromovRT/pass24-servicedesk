@@ -9,6 +9,30 @@
 
 ## Записи
 
+### 2026-04-05 — v0.6: Модуль «Проекты внедрения клиентов»
+
+**Что сделано:**
+- **Новый домен** `backend/projects/` с 7 таблицами: ImplementationProject, ProjectPhase, ProjectTask, ProjectDocument, ProjectTeamMember, ProjectEvent, ProjectComment
+- **Миграция 010**: создание всех таблиц + добавление `implementation_project_id` и `is_implementation_blocker` в `tickets`
+- **FSM проекта**: DRAFT → PLANNING → IN_PROGRESS ⇄ ON_HOLD → COMPLETED/CANCELLED, с автоматическим заполнением `actual_start_date/actual_end_date`
+- **Автопересчёт прогресса**: `phase.progress = done_tasks / active_tasks × 100` (cancelled исключаются), `project.progress = Σ(phase.progress × weight) / Σ(weight)` (skipped-фазы исключаются)
+- **4 шаблона** проектов в `templates.py`: Стандартный ЖК (10 фаз, 91 день), Стандартный БЦ (9, 66), Только камеры (5, 28), Большая стройка (12, 143)
+- **RBAC через dependency** `get_project_with_access()`: резидент → 403, PM → только свой проект (customer_id), support_agent/admin → все проекты
+- **CRUD endpoints**: projects (`POST /projects/`, `GET /projects/`, `PATCH /projects/{id}`, `POST /projects/{id}/transition`, `DELETE` = soft-cancel), phases (`start`, `complete`), tasks (`complete`, soft-delete via CANCELLED)
+- **Workspace endpoints** (`workspace_router.py`): upload/download документов (20 МБ, 9 MIME типов), команда (admin-only add/remove), комментарии (PM не видит is_internal), события (audit log)
+- **Ticket-link**: `POST /projects/{id}/link-ticket`, `/unlink-ticket/{ticket_id}`, `GET /projects/{id}/tickets` — опциональная привязка тикета к проекту с флагом `is_implementation_blocker`
+- **Email-уведомления** (`backend/notifications/projects.py`): `notify_project_created`, `notify_project_status_changed`, `notify_phase_completed`, `notify_milestone_reached` — отправка клиенту + менеджеру через background_tasks
+- **Frontend**: новый Pinia store `stores/projects.ts` (24 action'а), 3 страницы (`ProjectsListPage`, `ProjectDetailPage` с TabView из 7 табов, `ProjectCreatePage` с preview шаблона), 5 компонентов (`ProjectCard`, `ProjectStatusBadge`, `ProjectTypeBadge`, `PhaseCard`, `TaskRow`, `ProjectTimeline`)
+- **Секция "Проект внедрения"** в `TicketDetailPage.vue`: Select активных проектов + Checkbox "Блокер" + кнопки Связать/Отвязать
+- **RBAC в роутере**: `router.beforeEach` расширен проверкой `to.meta.roles` против `authStore.user?.role`
+- **Пункт меню «Проекты»** в App.vue для ролей `property_manager`, `support_agent`, `admin` (резиденты НЕ видят)
+- **33 unit-теста** в `tests/test_projects_models.py`: FSM, recalculate_progress (edge-cases: skipped/cancelled/empty), все 4 шаблона, phase/task methods
+- **ADR-006** (Проекты — отдельный домен) + **ADR-007** (Шаблоны как Python-константы)
+
+**Зачем:** PASS24 Service Desk был только реактивным (тикеты). Теперь это **единый портал** для клиента: и поддержка после запуска, и контроль процесса внедрения СКУД. PM видит прогресс online, команда знает текущие задачи и блокеры. Опциональная связь тикетов с проектами даёт целостный контекст: тикет-блокер → проект встаёт.
+
+---
+
 ### 2026-04-05 — Top-3 ROI: Saved Views, Parent-Child, KB Links + inbound HTML cleanup
 
 **Что сделано:**
