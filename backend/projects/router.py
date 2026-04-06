@@ -508,7 +508,7 @@ async def transition_project(
     return _build_project_read(full, doc_count, open_tasks)
 
 
-@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_project(
     project_id: str,
     session: AsyncSession = Depends(get_session),
@@ -925,7 +925,7 @@ async def complete_task(
     return TaskRead.model_validate(task)
 
 
-@router.delete("/{project_id}/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{project_id}/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_task(
     project_id: str,
     task_id: str,

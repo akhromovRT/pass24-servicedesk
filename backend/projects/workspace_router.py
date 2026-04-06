@@ -188,7 +188,7 @@ async def download_document(
     )
 
 
-@router.delete("/{project_id}/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{project_id}/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_document(
     project_id: str,
     document_id: str,
@@ -320,7 +320,7 @@ async def add_team_member(
     return read
 
 
-@router.delete("/{project_id}/team/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{project_id}/team/{member_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def remove_team_member(
     project_id: str,
     member_id: str,
@@ -520,7 +520,7 @@ async def link_ticket(
     return LinkedTicket.model_validate(ticket)
 
 
-@router.post("/{project_id}/unlink-ticket/{ticket_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/{project_id}/unlink-ticket/{ticket_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def unlink_ticket(
     project_id: str,
     ticket_id: str,
