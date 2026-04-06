@@ -108,8 +108,13 @@ async function onStaffSubmit() {
       </template>
       <template #footer>
         <div class="auth-footer">
-          Нет аккаунта?
-          <router-link to="/register">Зарегистрироваться</router-link>
+          <div class="auth-footer-row">
+            <router-link to="/forgot-password">Забыли пароль?</router-link>
+          </div>
+          <div class="auth-footer-row">
+            Нет аккаунта?
+            <router-link to="/register">Зарегистрироваться</router-link>
+          </div>
         </div>
       </template>
     </Card>
@@ -238,6 +243,13 @@ async function onStaffSubmit() {
   text-align: center;
   font-size: 0.875rem;
   color: #64748b;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.auth-footer-row {
+  line-height: 1.4;
 }
 
 .auth-footer a {

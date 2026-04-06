@@ -44,3 +44,16 @@ class Token(BaseModel):
 
     access_token: str
     token_type: str = "bearer"
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Запрос на сброс пароля — принимает email."""
+
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    """Установка нового пароля по токену из email."""
+
+    token: str
+    new_password: str = Field(..., min_length=6, description="Новый пароль (минимум 6 символов)")

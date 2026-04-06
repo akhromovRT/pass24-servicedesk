@@ -30,3 +30,5 @@ class User(SQLModel, table=True):
     telegram_chat_id: int | None = Field(default=None, index=True)
     customer_id: str | None = Field(default=None, index=True)  # FK → customers.id
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    password_reset_token: str | None = Field(default=None)
+    password_reset_expires_at: datetime | None = Field(default=None)

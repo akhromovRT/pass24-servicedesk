@@ -232,6 +232,53 @@ async def notify_ticket_created(
     )
 
 
+async def notify_password_reset(email: str, reset_url: str) -> None:
+    """Письмо со ссылкой для сброса пароля."""
+    await _send_email(
+        to=email,
+        subject="Сброс пароля — PASS24 Service Desk",
+        html_body=f"""
+        <div style="font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; max-width: 640px; margin: 0 auto; background: #f8fafc;">
+            <div style="background: linear-gradient(135deg, #0f172a, #1e293b); color: #f8fafc; padding: 18px 24px; border-radius: 10px 10px 0 0;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <div style="background: linear-gradient(135deg, #ef4444, #991b1b); padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 12px;">PASS24</div>
+                    <strong style="font-size:15px;">Service Desk</strong>
+                </div>
+            </div>
+
+            <div style="padding: 24px; background: #fff; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 10px 10px;">
+                <h2 style="margin: 0 0 12px; color: #0f172a; font-size: 18px;">Сброс пароля</h2>
+                <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px;">
+                    Вы запросили сброс пароля для вашей учётной записи в PASS24 Service Desk.
+                    Нажмите кнопку ниже, чтобы создать новый пароль:
+                </p>
+
+                <div style="text-align: center; margin: 24px 0;">
+                    <a href="{reset_url}" style="display: inline-block; background: #0f172a; color: #ffffff; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 15px;">
+                        Создать новый пароль
+                    </a>
+                </div>
+
+                <div style="background: #fefce8; border: 1px solid #fde68a; border-radius: 8px; padding: 12px 16px; margin: 20px 0;">
+                    <p style="color: #92400e; font-size: 13px; margin: 0; line-height: 1.5;">
+                        Ссылка действительна <strong>1 час</strong>. Если вы не запрашивали сброс пароля, просто проигнорируйте это письмо.
+                    </p>
+                </div>
+
+                <p style="color: #94a3b8; font-size: 12px; margin: 20px 0 0; line-height: 1.5;">
+                    Если кнопка не работает, скопируйте и вставьте эту ссылку в браузер:<br>
+                    <a href="{reset_url}" style="color: #3b82f6; word-break: break-all;">{reset_url}</a>
+                </p>
+
+                <p style="color: #94a3b8; font-size: 12px; margin: 24px 0 0; text-align: center;">
+                    PASS24 Service Desk &middot; support@pass24online.ru
+                </p>
+            </div>
+        </div>
+        """,
+    )
+
+
 async def notify_ticket_status_changed(
     creator_email: str,
     ticket_id: str,

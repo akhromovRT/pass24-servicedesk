@@ -84,6 +84,14 @@ def create_app() -> FastAPI:
         async def spa_register():
             return FileResponse(_index)
 
+        @app.get("/forgot-password", response_class=FileResponse, include_in_schema=False)
+        async def spa_forgot_password():
+            return FileResponse(_index)
+
+        @app.get("/reset-password", response_class=FileResponse, include_in_schema=False)
+        async def spa_reset_password():
+            return FileResponse(_index)
+
     # API роутеры
     # ВАЖНО: views_router и templates_router регистрируются ДО tickets_router,
     # потому что tickets_router содержит GET /tickets/{ticket_id} — это широкий

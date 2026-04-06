@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import secrets
 from datetime import datetime, timedelta
 
 import bcrypt
@@ -29,3 +31,15 @@ def create_access_token(data: dict) -> str:
     expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
     to_encode["exp"] = expire
     return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+
+
+def create_reset_token() -> tuple[str, str]:
+    """Генерирует пару (raw_token, sha256_hash) для сброса пароля."""
+    raw = secrets.token_urlsafe(32)
+    hashed = hashlib.sha256(raw.encode()).hexdigest()
+    return raw, hashed
+
+
+def hash_reset_token(raw: str) -> str:
+    """SHA-256 хеш токена сброса для сравнения с хранимым значением."""
+    return hashlib.sha256(raw.encode()).hexdigest()

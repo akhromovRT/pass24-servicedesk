@@ -9,6 +9,12 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440  # 24 hours
 
+    # URL фронтенда (для ссылок в email)
+    app_base_url: str = "https://support.pass24pro.ru"
+
+    # Сброс пароля
+    password_reset_expire_minutes: int = 60  # 1 час
+
     # SMTP (исходящая почта)
     smtp_host: str = "smtp.timeweb.ru"
     smtp_port: int = 465

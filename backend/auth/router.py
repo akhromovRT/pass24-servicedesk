@@ -8,11 +8,28 @@ from backend.database import get_session
 
 from .dependencies import get_current_user, require_role
 from .models import User, UserRole
-from .schemas import Token, UserCreate, UserLogin, UserRead
-from .utils import create_access_token, hash_password, verify_password
+from .schemas import (
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
+    Token,
+    UserCreate,
+    UserLogin,
+    UserRead,
+)
+from .utils import (
+    create_access_token,
+    create_reset_token,
+    hash_password,
+    hash_reset_token,
+    verify_password,
+)
+
+from datetime import datetime, timedelta
 
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
+
+from backend.config import settings as app_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -82,6 +99,82 @@ async def login(
 
     access_token = create_access_token(data={"sub": str(user.id)})
     return Token(access_token=access_token)
+
+
+@router.post("/forgot-password", status_code=status.HTTP_200_OK)
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Запрос на сброс пароля. Отправляет email со ссылкой."""
+    result = await session.execute(select(User).where(User.email == payload.email))
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь с таким email не найден",
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Учётная запись деактивирована",
+        )
+
+    raw_token, token_hash = create_reset_token()
+    user.password_reset_token = token_hash
+    user.password_reset_expires_at = datetime.utcnow() + timedelta(
+        minutes=app_settings.password_reset_expire_minutes,
+    )
+    session.add(user)
+    await session.commit()
+
+    reset_url = f"{app_settings.app_base_url}/reset-password?token={raw_token}"
+
+    from backend.notifications.email import notify_password_reset
+
+    await notify_password_reset(user.email, reset_url)
+
+    return {"message": "Письмо для сброса пароля отправлено"}
+
+
+@router.post("/reset-password", status_code=status.HTTP_200_OK)
+async def reset_password(
+    payload: ResetPasswordRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Установка нового пароля по токену из email."""
+    token_hash = hash_reset_token(payload.token)
+
+    result = await session.execute(
+        select(User).where(User.password_reset_token == token_hash)
+    )
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Недействительная ссылка для сброса пароля",
+        )
+
+    if user.password_reset_expires_at is None or user.password_reset_expires_at < datetime.utcnow():
+        user.password_reset_token = None
+        user.password_reset_expires_at = None
+        session.add(user)
+        await session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Срок действия ссылки истёк. Запросите сброс пароля повторно",
+        )
+
+    user.hashed_password = hash_password(payload.new_password)
+    user.password_reset_token = None
+    user.password_reset_expires_at = None
+    session.add(user)
+    await session.commit()
+
+    return {"message": "Пароль успешно изменён"}
 
 
 @router.get("/me", response_model=UserRead)
