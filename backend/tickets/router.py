@@ -343,6 +343,7 @@ async def list_tickets(
     my: Optional[bool] = Query(default=None, description="Только мои тикеты"),
     q: Optional[str] = Query(default=None, description="Поиск по теме, описанию, email, объекту"),
     view: Optional[str] = Query(default=None, description="Saved view: open/overdue/urgent/waiting/closed"),
+    sort: Optional[str] = Query(default=None, description="Сортировка: created_desc, created_asc, updated_desc, priority_desc"),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> TicketListResponse:
@@ -477,13 +478,24 @@ async def list_tickets(
 
     # Пагинация и сортировка
     offset = (page - 1) * per_page
-    query = (
-        query.order_by(
+    if sort == "created_asc":
+        query = query.order_by(Ticket.created_at.asc())
+    elif sort == "created_desc":
+        query = query.order_by(Ticket.created_at.desc())
+    elif sort == "updated_desc":
+        query = query.order_by(Ticket.updated_at.desc())
+    elif sort == "priority_desc":
+        query = query.order_by(priority_order, Ticket.created_at.desc())
+    else:
+        # По умолчанию: smart-сортировка для агентов
+        query = query.order_by(
             Ticket.sla_breached.desc(),  # просроченные первыми
             status_order,                 # открытые первыми
             priority_order,               # critical → low
             Ticket.created_at.desc(),     # свежие первыми
         )
+    query = (
+        query
         .offset(offset)
         .limit(per_page)
         .options(*_ticket_load_options())

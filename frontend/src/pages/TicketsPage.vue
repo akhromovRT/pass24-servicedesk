@@ -32,7 +32,23 @@ const statusFilter = ref<string[]>([])
 const categoryFilter = ref<string[]>([])
 const searchQuery = ref('')
 const showAdvancedFilters = ref(false)
+const sortField = ref<string>('default')
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+const sortOptions = computed(() => {
+  const base = [
+    { label: 'Сначала новые', value: 'created_desc' },
+    { label: 'Сначала старые', value: 'created_asc' },
+    { label: 'Последние обновлённые', value: 'updated_desc' },
+  ]
+  if (isStaff.value) {
+    base.unshift({ label: 'По умолчанию (SLA)', value: 'default' })
+    base.push({ label: 'По приоритету', value: 'priority_desc' })
+  } else {
+    base.unshift({ label: 'По умолчанию', value: 'default' })
+  }
+  return base
+})
 
 // ─── Saved Views ────────────────────────────────────────────────
 const iconOptions = [
@@ -85,15 +101,21 @@ const currentFiltersPreview = computed(() => {
 
 // ─── Views (tabs) ────────────────────────────────────────────────
 const views = computed(() => {
-  const base = [
-    { id: 'all', label: 'Все', icon: 'pi pi-list' },
+  if (isStaff.value) {
+    return [
+      { id: 'all', label: 'Все', icon: 'pi pi-list' },
+      { id: 'open', label: 'Открытые', icon: 'pi pi-inbox', count: store.stats.open },
+      { id: 'urgent', label: 'Срочные', icon: 'pi pi-exclamation-triangle', count: store.stats.urgent, severity: 'danger' },
+      { id: 'overdue', label: 'Просрочено', icon: 'pi pi-clock', count: store.stats.overdue, severity: 'danger' },
+      { id: 'waiting', label: 'Ждут ответа', icon: 'pi pi-hourglass', count: store.stats.waiting, severity: 'warn' },
+      { id: 'closed', label: 'Закрытые', icon: 'pi pi-check-circle' },
+    ]
+  }
+  return [
     { id: 'open', label: 'Открытые', icon: 'pi pi-inbox', count: store.stats.open },
-    { id: 'urgent', label: 'Срочные', icon: 'pi pi-exclamation-triangle', count: store.stats.urgent, severity: 'danger' },
-    { id: 'overdue', label: 'Просрочено', icon: 'pi pi-clock', count: store.stats.overdue, severity: 'danger' },
-    { id: 'waiting', label: 'Ждут ответа', icon: 'pi pi-hourglass', count: store.stats.waiting, severity: 'warn' },
+    { id: 'all', label: 'Все', icon: 'pi pi-list' },
     { id: 'closed', label: 'Закрытые', icon: 'pi pi-check-circle' },
   ]
-  return base
 })
 
 // ─── Options ─────────────────────────────────────────────────────
@@ -118,9 +140,13 @@ const categoryOptions = [
   { label: 'Другое', value: 'other' },
 ]
 
-const statusLabels: Record<string, string> = {
+const statusLabelsStaff: Record<string, string> = {
   new: 'Новый', in_progress: 'В работе', waiting_for_user: 'Ожидает', resolved: 'Решён', closed: 'Закрыт',
 }
+const statusLabelsUser: Record<string, string> = {
+  new: 'Принята', in_progress: 'В работе', waiting_for_user: 'Ждёт ответа', resolved: 'Решена', closed: 'Закрыта',
+}
+const statusLabels = computed(() => isStaff.value ? statusLabelsStaff : statusLabelsUser)
 const statusColors: Record<string, string> = {
   new: '#3b82f6', in_progress: '#f59e0b', waiting_for_user: '#8b5cf6', resolved: '#10b981', closed: '#64748b',
 }
@@ -198,6 +224,7 @@ async function loadTickets(p?: number) {
       category: categoryFilter.value.length ? categoryFilter.value : undefined,
       q: searchQuery.value.trim() || undefined,
       view: activeView.value !== 'all' ? activeView.value : undefined,
+      sort: sortField.value !== 'default' ? sortField.value : undefined,
     })
   } catch (e: any) {
     toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message || 'Не удалось загрузить', life: 4000 })
@@ -298,13 +325,15 @@ function openTicket(id: string) { router.push(`/tickets/${id}`) }
 
 onMounted(() => {
   store.fetchStats()
+  // Пользователи видят только открытые по умолчанию
+  if (!isStaff.value) activeView.value = 'open'
   loadTickets(1)
   if (auth.isLoggedIn) store.fetchSavedViews()
 })
 </script>
 
 <template>
-  <div class="tickets-page">
+  <div class="tickets-page" :class="{ 'user-view': !isStaff }">
     <!-- Header -->
     <div class="page-header">
       <div>
@@ -378,11 +407,21 @@ onMounted(() => {
         outlined
         @click="showAdvancedFilters = !showAdvancedFilters"
       />
+      <Select
+        v-model="sortField"
+        :options="sortOptions"
+        option-label="label"
+        option-value="value"
+        placeholder="Сортировка"
+        class="sort-select"
+        @change="loadTickets(1)"
+      />
     </div>
 
     <!-- Advanced filters -->
     <div v-if="showAdvancedFilters" class="advanced-filters">
       <MultiSelect
+        v-if="isStaff"
         v-model="statusFilter"
         :options="statusOptions"
         option-label="label" option-value="value"
@@ -420,7 +459,7 @@ onMounted(() => {
         label="Сбросить фильтры" text severity="secondary" size="small"
         @click="searchQuery = ''; statusFilter = []; categoryFilter = []; activeView = 'all'; loadTickets(1)"
       />
-      <Button v-else label="Создать первую заявку" icon="pi pi-plus" @click="router.push('/tickets/create')" />
+      <Button v-else label="Создать заявку" icon="pi pi-plus" @click="router.push('/tickets/create')" />
     </div>
 
     <div v-else class="ticket-list">
@@ -444,13 +483,13 @@ onMounted(() => {
           <div class="row-meta">
             <span class="meta-id">#{{ ticket.id.slice(0, 8).toUpperCase() }}</span>
             <span class="meta-sep">·</span>
-            <span v-if="ticket.product" class="meta-item">
+            <span v-if="isStaff && ticket.product" class="meta-item">
               <i class="pi pi-box" />{{ productLabels[ticket.product] || ticket.product }}
             </span>
             <span v-if="ticket.category" class="meta-sep">·</span>
             <span v-if="ticket.category" class="meta-item">{{ categoryLabels[ticket.category] || ticket.category }}</span>
-            <span v-if="ticket.contact_name || ticket.contact_email" class="meta-sep">·</span>
-            <span v-if="ticket.contact_name || ticket.contact_email" class="meta-item">
+            <span v-if="isStaff && (ticket.contact_name || ticket.contact_email)" class="meta-sep">·</span>
+            <span v-if="isStaff && (ticket.contact_name || ticket.contact_email)" class="meta-item">
               <i class="pi pi-user" />{{ ticket.contact_name || ticket.contact_email }}
             </span>
             <span v-if="ticket.comments?.length" class="meta-sep">·</span>
@@ -461,8 +500,8 @@ onMounted(() => {
         </div>
 
         <div class="row-right">
-          <!-- SLA indicator -->
-          <div v-if="ticket.status !== 'closed' && ticket.status !== 'resolved'" class="sla-widget">
+          <!-- SLA indicator (только для агентов) -->
+          <div v-if="isStaff && ticket.status !== 'closed' && ticket.status !== 'resolved'" class="sla-widget">
             <div class="sla-bar-track">
               <div
                 class="sla-bar-fill"
@@ -474,7 +513,7 @@ onMounted(() => {
               {{ slaProgress(ticket).remaining }}
             </div>
           </div>
-          <div v-else class="sla-widget done">
+          <div v-else-if="isStaff" class="sla-widget done">
             <i class="pi pi-check-circle" /> решено
           </div>
 
@@ -483,7 +522,7 @@ onMounted(() => {
             <span class="pill pill-status" :style="{ '--c': statusColors[ticket.status] }">
               {{ statusLabels[ticket.status] || ticket.status }}
             </span>
-            <span class="pill pill-priority" :style="{ '--c': priorityColors[ticket.priority] || '#64748b' }">
+            <span v-if="isStaff" class="pill pill-priority" :style="{ '--c': priorityColors[ticket.priority] || '#64748b' }">
               {{ priorityLabels[ticket.priority] || ticket.priority }}
             </span>
           </div>
@@ -637,6 +676,7 @@ onMounted(() => {
 .toolbar { display: flex; gap: 10px; align-items: center; }
 .search-field { flex: 1; }
 .search-input :deep(input) { border-radius: 10px; padding: 10px 14px 10px 38px; }
+.sort-select { min-width: 200px; }
 
 /* Advanced filters */
 .advanced-filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -737,4 +777,8 @@ onMounted(() => {
   .row-right { flex-direction: row; align-items: center; width: 100%; justify-content: space-between; flex-wrap: wrap; }
   .sla-widget { min-width: 90px; }
 }
+
+/* --- Упрощённый вид для обычных пользователей --- */
+.user-view .ticket-row { padding: 18px 20px 18px 26px; }
+.user-view .row-right { gap: 12px; }
 </style>

@@ -18,6 +18,7 @@ export interface TicketFilters {
   my?: boolean
   q?: string
   view?: string
+  sort?: string
 }
 
 export interface TicketStats {
@@ -78,6 +79,7 @@ export const useTicketsStore = defineStore('tickets', () => {
       if (filters.value.my) params.set('my', 'true')
       if (filters.value.q) params.set('q', filters.value.q)
       if (filters.value.view) params.set('view', filters.value.view)
+      if (filters.value.sort) params.set('sort', filters.value.sort)
 
       const data = await api.get<PaginatedResponse<Ticket>>(
         `/tickets/?${params.toString()}`,

@@ -2,9 +2,12 @@
 import Tag from 'primevue/tag'
 import type { TicketStatus } from '../types'
 
-defineProps<{
+const props = withDefaults(defineProps<{
   status: TicketStatus
-}>()
+  simplified?: boolean
+}>(), {
+  simplified: false,
+})
 
 const statusLabels: Record<TicketStatus, string> = {
   new: 'Новый',
@@ -12,6 +15,14 @@ const statusLabels: Record<TicketStatus, string> = {
   waiting_for_user: 'Ожидает ответа',
   resolved: 'Решён',
   closed: 'Закрыт',
+}
+
+const userStatusLabels: Record<TicketStatus, string> = {
+  new: 'Принята',
+  in_progress: 'В работе',
+  waiting_for_user: 'Ждёт вашего ответа',
+  resolved: 'Решена',
+  closed: 'Закрыта',
 }
 
 const statusSeverity: Record<TicketStatus, string> = {
@@ -25,7 +36,7 @@ const statusSeverity: Record<TicketStatus, string> = {
 
 <template>
   <Tag
-    :value="statusLabels[status]"
+    :value="(simplified ? userStatusLabels : statusLabels)[status]"
     :severity="statusSeverity[status] as any"
   />
 </template>

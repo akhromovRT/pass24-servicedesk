@@ -62,6 +62,13 @@ const isStaff = computed(() =>
   auth.user?.role === 'support_agent' || auth.user?.role === 'admin'
 )
 
+// Комментарии без внутренних для обычных пользователей
+const visibleComments = computed(() => {
+  if (!ticket.value) return []
+  if (isStaff.value) return ticket.value.comments
+  return ticket.value.comments.filter((c: any) => !c.is_internal)
+})
+
 // Агентские инструменты
 interface Agent { id: string; full_name: string; email: string }
 interface ResponseTemplate { id: string; name: string; body: string; usage_count: number }
@@ -718,7 +725,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="ticket-detail-page">
+  <div class="ticket-detail-page" :class="{ 'user-detail': !isStaff }">
     <Button
       label="Назад к заявкам"
       icon="pi pi-arrow-left"
@@ -739,7 +746,7 @@ onUnmounted(() => {
           <div class="ticket-header">
             <h2 class="ticket-title">{{ ticket.title }}</h2>
             <div class="ticket-meta">
-              <TicketStatusBadge :status="ticket.status" />
+              <TicketStatusBadge :status="ticket.status" :simplified="!isStaff" />
               <TicketPriorityBadge :priority="ticket.priority" />
               <Tag
                 v-if="ticket.category"
@@ -761,8 +768,8 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- Кнопки смены статуса -->
-          <div v-if="availableTransitions.length" class="status-actions">
+          <!-- Кнопки смены статуса (только для агентов) -->
+          <div v-if="isStaff && availableTransitions.length" class="status-actions">
             <Button
               v-for="transition in availableTransitions"
               :key="transition.target"
@@ -794,8 +801,8 @@ onUnmounted(() => {
         </template>
         <template #content>
           <div class="info-grid">
-            <!-- Контакт -->
-            <div v-if="ticket.contact_email || ticket.contact_phone || ticket.contact_name || ticket.company" class="info-block" style="--accent:#3b82f6">
+            <!-- Контакт (только для агентов — пользователь знает свои данные) -->
+            <div v-if="isStaff && (ticket.contact_email || ticket.contact_phone || ticket.contact_name || ticket.company)" class="info-block" style="--accent:#3b82f6">
               <div class="info-header">
                 <i class="pi pi-user info-icon" />
                 <span class="info-title">Контакт</span>
@@ -842,8 +849,8 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- Классификация -->
-            <div v-if="ticket.product || ticket.ticket_type || ticket.source" class="info-block" style="--accent:#10b981">
+            <!-- Классификация (только для агентов) -->
+            <div v-if="isStaff && (ticket.product || ticket.ticket_type || ticket.source)" class="info-block" style="--accent:#10b981">
               <div class="info-header">
                 <i class="pi pi-tag info-icon" />
                 <span class="info-title">Классификация</span>
@@ -864,8 +871,8 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- Техника -->
-            <div v-if="ticket.device_type || ticket.app_version || ticket.error_message" class="info-block" style="--accent:#f59e0b">
+            <!-- Техника (только для агентов) -->
+            <div v-if="isStaff && (ticket.device_type || ticket.app_version || ticket.error_message)" class="info-block" style="--accent:#f59e0b">
               <div class="info-header">
                 <i class="pi pi-desktop info-icon" />
                 <span class="info-title">Техническая информация</span>
@@ -960,8 +967,8 @@ onUnmounted(() => {
         </template>
       </Card>
 
-      <!-- История событий -->
-      <Card v-if="ticket.events.length" class="section-card">
+      <!-- История событий (только для агентов) -->
+      <Card v-if="isStaff && ticket.events.length" class="section-card">
         <template #title>История</template>
         <template #content>
           <Timeline :value="ticket.events" class="events-timeline">
@@ -1239,17 +1246,17 @@ onUnmounted(() => {
       </Card>
 
       <!-- Комментарии -->
-      <Card class="section-card">
+      <Card class="section-card comments-section">
         <template #title>
           Комментарии
-          <span v-if="ticket.comments.length" class="comments-count">
-            ({{ ticket.comments.length }})
+          <span v-if="visibleComments.length" class="comments-count">
+            ({{ visibleComments.length }})
           </span>
         </template>
         <template #content>
-          <div v-if="ticket.comments.length" class="comments-list">
+          <div v-if="visibleComments.length" class="comments-list">
             <div
-              v-for="comment in ticket.comments"
+              v-for="comment in visibleComments"
               :key="comment.id"
               :class="['comment-item', { 'comment-internal': comment.is_internal }]"
             >
@@ -2164,4 +2171,10 @@ onUnmounted(() => {
   padding: 1rem 0;
   margin: 0;
 }
+
+/* --- Упрощённый вид для обычных пользователей --- */
+.user-detail { gap: 20px; }
+.user-detail .section-card { border-radius: 14px; }
+.user-detail .ticket-description { font-size: 16px; line-height: 1.8; }
+.user-detail .comments-section { order: -1; }
 </style>
