@@ -102,19 +102,45 @@ async def discover_inn_field() -> Optional[str]:
         return None
 
 
+async def _load_inn_map() -> dict[int, str]:
+    """Загружает маппинг company_id → ИНН из crm.requisite.list."""
+    inn_map: dict[int, str] = {}
+    last_id = 0
+    while True:
+        data = await _b24_call("crm.requisite.list", {
+            "select": ["ID", "ENTITY_ID", "ENTITY_TYPE_ID", "RQ_INN"],
+            "filter": {"ENTITY_TYPE_ID": 4, ">ID": last_id},  # 4 = company
+            "order": {"ID": "ASC"},
+            "start": -1,
+        })
+        batch = data.get("result", [])
+        if not batch:
+            break
+        for r in batch:
+            inn = (r.get("RQ_INN") or "").strip()
+            if inn:
+                inn_map[int(r["ENTITY_ID"])] = inn
+        last_id = int(batch[-1]["ID"])
+        if len(batch) < 50:
+            break
+    return inn_map
+
+
 async def sync_companies(inn_field: Optional[str] = None) -> dict:
     """Синхронизация компаний из Bitrix24 → Customer.
 
+    ИНН берётся из crm.requisite.list (RQ_INN), привязывается по company_id.
+
     Returns: { "created": N, "updated": N, "skipped_no_inn": N, "total": N }
     """
-    if inn_field is None:
-        inn_field = await discover_inn_field()
-        if not inn_field:
-            return {"error": "INN field not found in Bitrix24"}
+    # Загружаем маппинг company_id → ИНН из реквизитов
+    inn_map = await _load_inn_map()
+    logger.info("Loaded %d INN records from requisites", len(inn_map))
 
     # Загружаем все компании
-    select_fields = ["ID", "TITLE", "PHONE", "EMAIL", "ADDRESS", "COMMENTS", "INDUSTRY", inn_field]
-    companies = await _b24_list_all("crm.company.list", select_fields)
+    companies = await _b24_list_all("crm.company.list", [
+        "ID", "TITLE", "PHONE", "EMAIL", "ADDRESS", "COMMENTS", "INDUSTRY",
+    ])
     logger.info("Loaded %d companies from Bitrix24", len(companies))
 
     stats = {"created": 0, "updated": 0, "skipped_no_inn": 0, "total": len(companies)}
@@ -122,7 +148,7 @@ async def sync_companies(inn_field: Optional[str] = None) -> dict:
     async with async_session_factory() as session:
         for c in companies:
             b24_id = int(c["ID"])
-            inn_val = (c.get(inn_field) or "").strip()
+            inn_val = inn_map.get(b24_id, "").strip()
 
             if not inn_val:
                 stats["skipped_no_inn"] += 1
