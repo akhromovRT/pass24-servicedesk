@@ -2,7 +2,7 @@
 import Tag from 'primevue/tag'
 import type { TicketStatus } from '../types'
 
-const props = withDefaults(defineProps<{
+withDefaults(defineProps<{
   status: TicketStatus
   simplified?: boolean
 }>(), {
