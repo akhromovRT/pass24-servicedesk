@@ -10,8 +10,13 @@ import Tab from 'primevue/tab'
 import TabPanels from 'primevue/tabpanels'
 import TabPanel from 'primevue/tabpanel'
 import Textarea from 'primevue/textarea'
+import InputText from 'primevue/inputtext'
 import Checkbox from 'primevue/checkbox'
 import Divider from 'primevue/divider'
+import Dialog from 'primevue/dialog'
+import Select from 'primevue/select'
+import DatePicker from 'primevue/datepicker'
+import FileUpload from 'primevue/fileupload'
 import { useToast } from 'primevue/usetoast'
 import ProjectStatusBadge from '../components/ProjectStatusBadge.vue'
 import ProjectTypeBadge from '../components/ProjectTypeBadge.vue'
@@ -26,6 +31,7 @@ import type {
   ProjectEvent,
   ProjectStatus,
   ProjectTeamMember,
+  TaskPriority,
 } from '../types'
 
 const route = useRoute()
@@ -166,6 +172,107 @@ async function postComment() {
   }
 }
 
+// --- Add task from PhaseCard ---
+async function onAddTask(phaseId: string, title: string, priority: TaskPriority, isMilestone: boolean) {
+  try {
+    await store.createTask(projectId.value, phaseId, { title, priority, is_milestone: isMilestone })
+    toast.add({ severity: 'success', summary: 'Задача добавлена', life: 2000 })
+  } catch (err: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: err.message, life: 4000 })
+  }
+}
+
+// --- Update phase dates from PhaseCard ---
+async function onUpdateDates(phaseId: string, startDate: string | null, endDate: string | null) {
+  try {
+    await store.updatePhase(projectId.value, phaseId, {
+      planned_start_date: startDate,
+      planned_end_date: endDate,
+    })
+    toast.add({ severity: 'success', summary: 'Даты обновлены', life: 2000 })
+  } catch (err: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: err.message, life: 4000 })
+  }
+}
+
+// --- Upload document ---
+const uploadingDoc = ref(false)
+const docTypeOptions = [
+  { label: 'Договор', value: 'contract' },
+  { label: 'ТЗ / Спецификация', value: 'specification' },
+  { label: 'Акт', value: 'act' },
+  { label: 'Схема', value: 'diagram' },
+  { label: 'Фото', value: 'photo' },
+  { label: 'Отчёт', value: 'report' },
+  { label: 'Другое', value: 'other' },
+]
+const selectedDocType = ref('other')
+
+async function onUploadDoc(event: { files: File | File[] }) {
+  const file = Array.isArray(event.files) ? event.files[0] : event.files
+  if (!file) return
+  uploadingDoc.value = true
+  try {
+    await store.uploadDocument(projectId.value, file, selectedDocType.value)
+    documents.value = await store.fetchDocuments(projectId.value)
+    toast.add({ severity: 'success', summary: 'Документ загружен', life: 2000 })
+  } catch (err: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка загрузки', detail: err.message, life: 4000 })
+  } finally {
+    uploadingDoc.value = false
+  }
+}
+
+async function onDeleteDoc(docId: string) {
+  try {
+    await store.deleteDocument(projectId.value, docId)
+    documents.value = documents.value.filter(d => d.id !== docId)
+    toast.add({ severity: 'success', summary: 'Документ удалён', life: 2000 })
+  } catch (err: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: err.message, life: 4000 })
+  }
+}
+
+// --- Edit project dialog ---
+const showEditDialog = ref(false)
+const editForm = ref({ name: '', customer_company: '', object_name: '', object_address: '', notes: '', planned_start_date: null as Date | null, planned_end_date: null as Date | null })
+const savingEdit = ref(false)
+
+function openEditDialog() {
+  if (!project.value) return
+  editForm.value = {
+    name: project.value.name,
+    customer_company: project.value.customer_company,
+    object_name: project.value.object_name,
+    object_address: project.value.object_address || '',
+    notes: project.value.notes || '',
+    planned_start_date: project.value.planned_start_date ? new Date(project.value.planned_start_date) : null,
+    planned_end_date: project.value.planned_end_date ? new Date(project.value.planned_end_date) : null,
+  }
+  showEditDialog.value = true
+}
+
+async function saveEdit() {
+  savingEdit.value = true
+  try {
+    await store.updateProject(projectId.value, {
+      name: editForm.value.name,
+      customer_company: editForm.value.customer_company,
+      object_name: editForm.value.object_name,
+      object_address: editForm.value.object_address || undefined,
+      notes: editForm.value.notes || undefined,
+      planned_start_date: editForm.value.planned_start_date?.toISOString().slice(0, 10),
+      planned_end_date: editForm.value.planned_end_date?.toISOString().slice(0, 10),
+    })
+    showEditDialog.value = false
+    toast.add({ severity: 'success', summary: 'Проект обновлён', life: 2000 })
+  } catch (err: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: err.message, life: 4000 })
+  } finally {
+    savingEdit.value = false
+  }
+}
+
 function formatDate(d: string | null): string {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('ru-RU', {
@@ -212,6 +319,7 @@ onMounted(loadProject)
           </div>
         </div>
         <div class="project-actions" v-if="canEdit">
+          <Button label="Редактировать" icon="pi pi-pencil" severity="secondary" size="small" @click="openEditDialog" />
           <Button
             v-for="t in transitionOptions"
             :key="t.to"
@@ -286,6 +394,8 @@ onMounted(loadProject)
                 @complete="onCompletePhase"
                 @task-complete="onCompleteTask"
                 @task-cancel="onCancelTask"
+                @add-task="onAddTask"
+                @update-dates="onUpdateDates"
               />
             </div>
           </TabPanel>
@@ -297,6 +407,20 @@ onMounted(loadProject)
 
           <!-- Documents -->
           <TabPanel value="documents">
+            <!-- Upload form -->
+            <div class="upload-section">
+              <Select v-model="selectedDocType" :options="docTypeOptions" option-label="label" option-value="value" placeholder="Тип документа" class="doc-type-select" />
+              <FileUpload
+                mode="basic"
+                :auto="true"
+                choose-label="Загрузить файл"
+                :custom-upload="true"
+                @uploader="onUploadDoc"
+                accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png,.txt"
+                :max-file-size="20000000"
+              />
+            </div>
+            <Divider v-if="documents.length" />
             <div v-if="documents.length === 0" class="empty-panel">Документов пока нет</div>
             <div v-else class="docs-list">
               <div v-for="doc in documents" :key="doc.id" class="doc-item">
@@ -305,12 +429,8 @@ onMounted(loadProject)
                   <strong>{{ doc.name }}</strong>
                   <span class="doc-meta">{{ doc.filename }} · {{ formatSize(doc.size) }} · {{ formatDateTime(doc.created_at) }}</span>
                 </div>
-                <Button
-                  icon="pi pi-download"
-                  size="small"
-                  text
-                  @click="downloadDocument(doc.id)"
-                />
+                <Button icon="pi pi-download" size="small" text @click="downloadDocument(doc.id)" />
+                <Button v-if="canEdit" icon="pi pi-trash" size="small" text severity="danger" @click="onDeleteDoc(doc.id)" />
               </div>
             </div>
           </TabPanel>
@@ -405,6 +525,48 @@ onMounted(loadProject)
         </TabPanels>
       </Tabs>
     </template>
+
+    <!-- Edit project dialog -->
+    <Dialog v-model:visible="showEditDialog" header="Редактирование проекта" :modal="true" :style="{ width: '600px' }">
+      <div class="edit-form">
+        <div class="field">
+          <label>Название</label>
+          <InputText v-model="editForm.name" />
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Компания</label>
+            <InputText v-model="editForm.customer_company" />
+          </div>
+          <div class="field">
+            <label>Объект</label>
+            <InputText v-model="editForm.object_name" />
+          </div>
+        </div>
+        <div class="field">
+          <label>Адрес</label>
+          <InputText v-model="editForm.object_address" />
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Плановый старт</label>
+            <DatePicker v-model="editForm.planned_start_date" date-format="dd.mm.yy" show-icon />
+          </div>
+          <div class="field">
+            <label>Плановый финиш</label>
+            <DatePicker v-model="editForm.planned_end_date" date-format="dd.mm.yy" show-icon />
+          </div>
+        </div>
+        <div class="field">
+          <label>Примечания</label>
+          <Textarea v-model="editForm.notes" rows="3" auto-resize />
+        </div>
+      </div>
+      <template #footer>
+        <Button label="Отмена" severity="secondary" text @click="showEditDialog = false" />
+        <Button label="Сохранить" icon="pi pi-check" :loading="savingEdit" @click="saveEdit" />
+      </template>
+    </Dialog>
   </div>
 </template>
 
@@ -591,4 +753,10 @@ onMounted(loadProject)
   font-weight: 600;
 }
 .event-date { color: #94a3b8; font-size: 0.8rem; }
+.upload-section { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
+.doc-type-select { min-width: 180px; }
+.edit-form { display: flex; flex-direction: column; gap: 16px; }
+.edit-form .field { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.edit-form .field label { font-size: 0.85rem; color: #475569; font-weight: 500; }
+.edit-form .field-row { display: flex; gap: 12px; }
 </style>

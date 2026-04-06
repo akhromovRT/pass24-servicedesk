@@ -12,9 +12,12 @@ import type {
   ProjectListItem,
   ProjectStats,
   ProjectStatus,
+  ProjectTask,
   ProjectTeamMember,
   ProjectTemplate,
+  TaskPriority,
   TeamRole,
+  User,
 } from '../types'
 
 export interface ProjectFilters {
@@ -224,6 +227,76 @@ export const useProjectsStore = defineStore('projects', () => {
     await api.post(`/projects/${projectId}/unlink-ticket/${ticketId}`, {})
   }
 
+  // Users for autocomplete
+  async function fetchUsers(role?: string): Promise<User[]> {
+    const params = new URLSearchParams()
+    if (role) params.set('role', role)
+    params.set('is_active', 'true')
+    return await api.get<User[]>(`/auth/users?${params.toString()}`)
+  }
+
+  // Create task in phase
+  async function createTask(
+    projectId: string,
+    phaseId: string,
+    payload: { title: string; priority?: TaskPriority; is_milestone?: boolean },
+  ) {
+    const task = await api.post<ProjectTask>(
+      `/projects/${projectId}/phases/${phaseId}/tasks`,
+      payload,
+    )
+    if (currentProject.value?.id === projectId) {
+      await fetchProject(projectId)
+    }
+    return task
+  }
+
+  // Update phase
+  async function updatePhase(
+    projectId: string,
+    phaseId: string,
+    payload: Record<string, unknown>,
+  ) {
+    await api.patch(`/projects/${projectId}/phases/${phaseId}`, payload)
+    if (currentProject.value?.id === projectId) {
+      await fetchProject(projectId)
+    }
+  }
+
+  // Upload document (multipart)
+  async function uploadDocument(
+    projectId: string,
+    file: File,
+    documentType: string,
+    name?: string,
+    phaseId?: string,
+  ): Promise<ProjectDocument> {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('document_type', documentType)
+    if (name) formData.append('name', name)
+    if (phaseId) formData.append('phase_id', phaseId)
+
+    const token = localStorage.getItem('access_token')
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+
+    const response = await fetch(`/projects/${projectId}/documents`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ detail: 'Upload failed' }))
+      throw new Error(err.detail || `HTTP ${response.status}`)
+    }
+    return response.json()
+  }
+
+  async function deleteDocument(projectId: string, docId: string) {
+    await api.delete(`/projects/${projectId}/documents/${docId}`)
+  }
+
   return {
     // state
     projects,
@@ -257,5 +330,10 @@ export const useProjectsStore = defineStore('projects', () => {
     fetchLinkedTickets,
     linkTicket,
     unlinkTicket,
+    fetchUsers,
+    createTask,
+    updatePhase,
+    uploadDocument,
+    deleteDocument,
   }
 })

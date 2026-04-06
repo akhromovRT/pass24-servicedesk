@@ -10,7 +10,7 @@ import DatePicker from 'primevue/datepicker'
 import Divider from 'primevue/divider'
 import { useToast } from 'primevue/usetoast'
 import { useProjectsStore } from '../stores/projects'
-import type { ProjectType } from '../types'
+import type { ProjectType, User } from '../types'
 
 const router = useRouter()
 const toast = useToast()
@@ -23,9 +23,13 @@ const typeOptions = [
   { label: 'Большая стройка', value: 'large_construction', icon: 'pi pi-wrench' },
 ]
 
-// form state
+// Users for autocomplete
+const customers = ref<User[]>([])
+const managers = ref<User[]>([])
+
+// Form state
 const name = ref('')
-const customerId = ref('')
+const selectedCustomer = ref<User | null>(null)
 const customerCompany = ref('')
 const objectName = ref('')
 const objectAddress = ref('')
@@ -33,14 +37,13 @@ const projectType = ref<ProjectType>('residential')
 const contractNumber = ref('')
 const contractSignedAt = ref<Date | null>(null)
 const plannedStartDate = ref<Date | null>(null)
-const managerId = ref('')
+const selectedManager = ref<User | null>(null)
 const notes = ref('')
 const saving = ref(false)
 
 const selectedTemplate = computed(() =>
   store.templates.find((t) => t.project_type === projectType.value),
 )
-
 const totalPhases = computed(() => selectedTemplate.value?.phases.length ?? 0)
 const totalTasks = computed(() =>
   selectedTemplate.value?.phases.reduce((sum, p) => sum + p.tasks.length, 0) ?? 0,
@@ -49,25 +52,18 @@ const totalDuration = computed(() => selectedTemplate.value?.total_duration_days
 
 const canSubmit = computed(() =>
   name.value.trim().length > 0
-    && customerId.value.trim().length > 0
+    && selectedCustomer.value !== null
     && customerCompany.value.trim().length > 0
     && objectName.value.trim().length > 0,
 )
 
 async function submit() {
-  if (!canSubmit.value) {
-    toast.add({
-      severity: 'warn',
-      summary: 'Заполните обязательные поля',
-      life: 3000,
-    })
-    return
-  }
+  if (!canSubmit.value || !selectedCustomer.value) return
   saving.value = true
   try {
     const project = await store.createProject({
       name: name.value.trim(),
-      customer_id: customerId.value.trim(),
+      customer_id: String(selectedCustomer.value.id),
       customer_company: customerCompany.value.trim(),
       object_name: objectName.value.trim(),
       object_address: objectAddress.value.trim() || undefined,
@@ -75,7 +71,7 @@ async function submit() {
       contract_number: contractNumber.value.trim() || undefined,
       contract_signed_at: contractSignedAt.value?.toISOString().slice(0, 10),
       planned_start_date: plannedStartDate.value?.toISOString().slice(0, 10),
-      manager_id: managerId.value.trim() || undefined,
+      manager_id: selectedManager.value ? String(selectedManager.value.id) : undefined,
       notes: notes.value.trim() || undefined,
     })
     toast.add({
@@ -99,11 +95,17 @@ async function submit() {
 
 onMounted(async () => {
   try {
-    await store.fetchTemplates()
+    const [, customerList, managerList] = await Promise.all([
+      store.fetchTemplates(),
+      store.fetchUsers('property_manager'),
+      store.fetchUsers('support_agent,admin'),
+    ])
+    customers.value = customerList
+    managers.value = managerList
   } catch (err: any) {
     toast.add({
       severity: 'error',
-      summary: 'Не удалось загрузить шаблоны',
+      summary: 'Ошибка загрузки',
       detail: err.message,
       life: 4000,
     })
@@ -117,7 +119,6 @@ onMounted(async () => {
     <h1>Создание проекта внедрения</h1>
 
     <div class="create-grid">
-      <!-- Форма -->
       <Card>
         <template #title>Основная информация</template>
         <template #content>
@@ -129,8 +130,27 @@ onMounted(async () => {
 
             <div class="field-row">
               <div class="field">
-                <label>ID клиента (User.id) *</label>
-                <InputText v-model="customerId" placeholder="UUID пользователя PM" />
+                <label>Клиент (администратор УК) *</label>
+                <Select
+                  v-model="selectedCustomer"
+                  :options="customers"
+                  option-label="full_name"
+                  placeholder="Выберите клиента"
+                  filter
+                  filter-placeholder="Поиск по имени..."
+                  show-clear
+                >
+                  <template #option="{ option }">
+                    <div class="user-option">
+                      <strong>{{ option.full_name }}</strong>
+                      <span class="user-email">{{ option.email }}</span>
+                    </div>
+                  </template>
+                  <template #value="{ value }">
+                    <span v-if="value">{{ value.full_name }} ({{ value.email }})</span>
+                    <span v-else class="placeholder">Выберите клиента</span>
+                  </template>
+                </Select>
               </div>
               <div class="field">
                 <label>Компания клиента *</label>
@@ -192,8 +212,27 @@ onMounted(async () => {
                 <DatePicker v-model="plannedStartDate" date-format="dd.mm.yy" show-icon />
               </div>
               <div class="field">
-                <label>Менеджер (User.id)</label>
-                <InputText v-model="managerId" placeholder="UUID support_agent" />
+                <label>Менеджер проекта (PASS24)</label>
+                <Select
+                  v-model="selectedManager"
+                  :options="managers"
+                  option-label="full_name"
+                  placeholder="Выберите менеджера"
+                  filter
+                  filter-placeholder="Поиск..."
+                  show-clear
+                >
+                  <template #option="{ option }">
+                    <div class="user-option">
+                      <strong>{{ option.full_name }}</strong>
+                      <span class="user-email">{{ option.email }}</span>
+                    </div>
+                  </template>
+                  <template #value="{ value }">
+                    <span v-if="value">{{ value.full_name }}</span>
+                    <span v-else class="placeholder">Не назначен</span>
+                  </template>
+                </Select>
               </div>
             </div>
 
@@ -210,12 +249,7 @@ onMounted(async () => {
                 :disabled="!canSubmit"
                 @click="submit"
               />
-              <Button
-                label="Отмена"
-                severity="secondary"
-                text
-                @click="router.push('/projects')"
-              />
+              <Button label="Отмена" severity="secondary" text @click="router.push('/projects')" />
             </div>
           </div>
         </template>
@@ -224,10 +258,7 @@ onMounted(async () => {
       <!-- Preview шаблона -->
       <Card class="preview-card">
         <template #title>
-          <div class="preview-header">
-            <i class="pi pi-file-o" />
-            Предпросмотр шаблона
-          </div>
+          <div class="preview-header"><i class="pi pi-file-o" /> Предпросмотр шаблона</div>
         </template>
         <template #content>
           <div v-if="selectedTemplate">
@@ -240,11 +271,7 @@ onMounted(async () => {
             </div>
             <Divider />
             <div class="phases-preview">
-              <div
-                v-for="phase in selectedTemplate.phases"
-                :key="phase.order"
-                class="phase-preview-item"
-              >
+              <div v-for="phase in selectedTemplate.phases" :key="phase.order" class="phase-preview-item">
                 <span class="phase-num">{{ phase.order }}</span>
                 <div>
                   <strong>{{ phase.name }}</strong>
@@ -261,120 +288,30 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.project-create-page {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 24px;
-}
+.project-create-page { max-width: 1400px; margin: 0 auto; padding: 24px; }
 h1 { margin: 16px 0 24px; font-size: 1.75rem; }
-.create-grid {
-  display: grid;
-  grid-template-columns: 1fr 400px;
-  gap: 24px;
-}
-@media (max-width: 900px) {
-  .create-grid { grid-template-columns: 1fr; }
-}
-.form-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: 1;
-}
-.field label {
-  font-size: 0.85rem;
-  color: #475569;
-  font-weight: 500;
-}
-.field-row {
-  display: flex;
-  gap: 12px;
-}
-.form-actions {
-  display: flex;
-  gap: 12px;
-  margin-top: 8px;
-}
-.preview-card {
-  position: sticky;
-  top: 24px;
-  height: fit-content;
-}
-.preview-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.template-desc {
-  color: #64748b;
-  font-size: 0.875rem;
-  margin: 4px 0 12px;
-}
-.template-stats {
-  display: flex;
-  gap: 16px;
-  margin: 12px 0;
-}
-.stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 12px;
-  background: #f8fafc;
-  border-radius: 6px;
-  flex: 1;
-}
-.stat strong {
-  font-size: 1.5rem;
-  color: #3b82f6;
-}
-.stat span {
-  font-size: 0.75rem;
-  color: #64748b;
-  text-transform: uppercase;
-}
-.phases-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 400px;
-  overflow-y: auto;
-}
-.phase-preview-item {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.phase-num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 24px;
-  height: 24px;
-  background: #dbeafe;
-  color: #1e40af;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-.phase-preview-item strong {
-  font-size: 0.875rem;
-  display: block;
-}
-.phase-days {
-  font-size: 0.75rem;
-  color: #64748b;
-}
+.create-grid { display: grid; grid-template-columns: 1fr 400px; gap: 24px; }
+@media (max-width: 900px) { .create-grid { grid-template-columns: 1fr; } }
+.form-fields { display: flex; flex-direction: column; gap: 16px; }
+.field { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.field label { font-size: 0.85rem; color: #475569; font-weight: 500; }
+.field-row { display: flex; gap: 12px; }
+.form-actions { display: flex; gap: 12px; margin-top: 8px; }
+.user-option { display: flex; flex-direction: column; }
+.user-email { font-size: 0.8rem; color: #64748b; }
+.placeholder { color: #94a3b8; }
+.preview-card { position: sticky; top: 24px; height: fit-content; }
+.preview-header { display: flex; align-items: center; gap: 8px; }
+.template-desc { color: #64748b; font-size: 0.875rem; margin: 4px 0 12px; }
+.template-stats { display: flex; gap: 16px; margin: 12px 0; }
+.stat { display: flex; flex-direction: column; align-items: center; padding: 12px; background: #f8fafc; border-radius: 6px; flex: 1; }
+.stat strong { font-size: 1.5rem; color: #3b82f6; }
+.stat span { font-size: 0.75rem; color: #64748b; text-transform: uppercase; }
+.phases-preview { display: flex; flex-direction: column; gap: 8px; max-height: 400px; overflow-y: auto; }
+.phase-preview-item { display: flex; gap: 8px; align-items: center; }
+.phase-num { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; background: #dbeafe; color: #1e40af; border-radius: 12px; font-size: 0.75rem; font-weight: 600; flex-shrink: 0; }
+.phase-preview-item strong { font-size: 0.875rem; display: block; }
+.phase-days { font-size: 0.75rem; color: #64748b; }
 .loading-template { padding: 24px; text-align: center; color: #94a3b8; }
-.select-value, .select-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+.select-value, .select-option { display: flex; align-items: center; gap: 8px; }
 </style>
