@@ -161,7 +161,7 @@ class Ticket(SQLModel, table=True):
     category: str = Field(default=TicketCategory.OTHER, sa_column=Column(String, index=True, default="other"))
     ticket_type: str = Field(default=TicketType.INCIDENT, sa_column=Column(String, index=True, default="incident"))
     source: str = Field(default=TicketSource.WEB, sa_column=Column(String, index=True, default="web"))
-    status: TicketStatus = Field(default=TicketStatus.NEW)
+    status: str = Field(default=TicketStatus.NEW, sa_column=Column(String, index=True, default="new"))
 
     # Приоритет по ITIL: impact × urgency → priority
     impact: str = Field(default=TicketImpact.LOW, sa_column=Column(String, index=True, default="low"))
@@ -352,8 +352,10 @@ class Ticket(SQLModel, table=True):
 
         current_allowed = allowed.get(self.status, set())
         if new_status not in current_allowed:
+            current = self.status.value if hasattr(self.status, 'value') else self.status
+            target = new_status.value if hasattr(new_status, 'value') else new_status
             raise ValueError(
-                f"Недопустимый переход статуса: {self.status.value} -> {new_status.value}"
+                f"Недопустимый переход статуса: {current} -> {target}"
             )
 
         now = datetime.utcnow()
