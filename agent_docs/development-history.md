@@ -9,6 +9,33 @@
 
 ## Записи
 
+### 2026-04-07 — v0.8 Phase 1: Редизайн интерфейса агента
+
+**Что сделано:**
+- **Новые статусы FSM**: добавлены `on_hold` (Отложена) и `engineer_visit` (Выезд инженера) к существующим 5 статусам → 7 статусов
+  - `on_hold`: SLA ставится на паузу (как waiting_for_user)
+  - `engineer_visit`: SLA продолжает тикать (работа идёт, но offsite)
+  - Миграция: `014_add_on_hold_engineer_visit_statuses.py`
+- **Автостатус**: первый ответ агента теперь переводит тикет `new → in_progress` (было → waiting_for_user)
+  - Агент сам решает когда ставить waiting_for_user через ручной dropdown
+- **2-колоночный layout**: TicketDetailPage.vue переписан с 2196 строк до ~220 строк shell
+  - Центр: чат-переписка с пузырями сообщений (TicketConversation, TicketMessageBubble, TicketComposeArea)
+  - Правый сайдбар 380px: статус dropdown, SLA, назначение, контакт, объект, техинфо, связи
+  - 18 новых компонентов в `frontend/src/components/ticket/`
+  - 4 composables в `frontend/src/composables/`
+- **Inline-вложения**: attachments привязываются к comment_id, отображаются внутри пузырей сообщений
+  - Thumbnail для изображений, chips для файлов
+- **Email threading**: тег PASS24-xxx добавлен в тело письма + In-Reply-To/References заголовки
+  - Inbound: проверка body перед fallback на subject → тройная защита
+- **Дефолтная сортировка**: для агентов теперь `created_desc` (новые первые) вместо SLA
+- **Вкладка «Выезды»**: добавлена для фильтрации тикетов со статусом engineer_visit
+
+**Файлы:**
+- Backend: `models.py`, `router.py`, `schemas.py`, `email.py`, `inbound.py`, `sla_watcher.py`
+- Frontend: `TicketDetailPage.vue`, `TicketStatusBadge.vue`, `TicketsPage.vue`, `types/index.ts`
+- Новые: 18 компонентов `ticket/`, 4 composables, 1 миграция
+- Spec: `docs/superpowers/specs/2026-04-07-agent-interface-redesign.md`
+
 ### 2026-04-06 — Стабилизация v0.7: тесты + roadmap sync
 
 **Что сделано:**

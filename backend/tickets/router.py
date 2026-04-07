@@ -407,11 +407,11 @@ async def list_tickets(
     from datetime import timedelta
     now = datetime.utcnow()
     if view == "open":
-        open_statuses = ["new", "in_progress", "waiting_for_user"]
+        open_statuses = ["new", "in_progress", "waiting_for_user", "on_hold", "engineer_visit"]
         query = query.where(Ticket.status.in_(open_statuses))
         count_query = count_query.where(Ticket.status.in_(open_statuses))
     elif view == "urgent":
-        open_statuses = ["new", "in_progress", "waiting_for_user"]
+        open_statuses = ["new", "in_progress", "waiting_for_user", "on_hold", "engineer_visit"]
         query = query.where(
             Ticket.status.in_(open_statuses)
             & ((Ticket.priority == "critical") | (Ticket.priority == "CRITICAL") | (Ticket.urgent == True))  # noqa: E712
@@ -423,7 +423,7 @@ async def list_tickets(
     elif view == "overdue":
         # Просроченные: open + (first_response_at IS NULL AND created_at + sla_response_hours < now)
         # упрощённо: статус открыт и с даты создания прошло больше sla_resolve_hours часов
-        open_statuses = ["new", "in_progress", "waiting_for_user"]
+        open_statuses = ["new", "in_progress", "waiting_for_user", "on_hold", "engineer_visit"]
         query = query.where(
             Ticket.status.in_(open_statuses) & (Ticket.sla_breached == True)  # noqa: E712
         )
@@ -433,6 +433,9 @@ async def list_tickets(
     elif view == "waiting":
         query = query.where(Ticket.status == "waiting_for_user")
         count_query = count_query.where(Ticket.status == "waiting_for_user")
+    elif view == "engineer_visit":
+        query = query.where(Ticket.status == "engineer_visit")
+        count_query = count_query.where(Ticket.status == "engineer_visit")
     elif view == "closed":
         query = query.where(Ticket.status.in_(["resolved", "closed"]))
         count_query = count_query.where(Ticket.status.in_(["resolved", "closed"]))
@@ -469,11 +472,13 @@ async def list_tickets(
     )
     status_order = case(
         (Ticket.status == TicketStatus.NEW, 0),
-        (Ticket.status == TicketStatus.IN_PROGRESS, 1),
-        (Ticket.status == TicketStatus.WAITING_FOR_USER, 2),
-        (Ticket.status == TicketStatus.RESOLVED, 3),
-        (Ticket.status == TicketStatus.CLOSED, 4),
-        else_=5,
+        (Ticket.status == TicketStatus.ENGINEER_VISIT, 1),
+        (Ticket.status == TicketStatus.IN_PROGRESS, 2),
+        (Ticket.status == TicketStatus.ON_HOLD, 3),
+        (Ticket.status == TicketStatus.WAITING_FOR_USER, 4),
+        (Ticket.status == TicketStatus.RESOLVED, 5),
+        (Ticket.status == TicketStatus.CLOSED, 6),
+        else_=7,
     )
 
     # Пагинация и сортировка
@@ -761,12 +766,12 @@ async def add_comment(
     # Авто-переход статуса + флаг unread
     if not is_internal:
         if is_staff:
-            # Агент ответил клиенту → ждём ответа от клиента
-            if ticket.status in (TicketStatus.NEW, TicketStatus.IN_PROGRESS):
+            # Первый ответ агента → переводим в работу (агент сам решит когда ждать ответа)
+            if ticket.status == TicketStatus.NEW:
                 try:
                     event = ticket.transition(
                         actor_id=str(current_user.id),
-                        new_status=TicketStatus.WAITING_FOR_USER,
+                        new_status=TicketStatus.IN_PROGRESS,
                     )
                     session.add(event)
                 except ValueError:
@@ -1270,7 +1275,7 @@ async def agent_dashboard(
     # По статусам
     open_st = await session.execute(
         select(func.count()).select_from(Ticket)
-        .where(Ticket.assignee_id == agent_id, Ticket.status.in_([TicketStatus.NEW, TicketStatus.IN_PROGRESS, TicketStatus.WAITING_FOR_USER]))
+        .where(Ticket.assignee_id == agent_id, Ticket.status.in_([TicketStatus.NEW, TicketStatus.IN_PROGRESS, TicketStatus.WAITING_FOR_USER, TicketStatus.ON_HOLD, TicketStatus.ENGINEER_VISIT]))
     )
     open_count = open_st.scalar_one()
 

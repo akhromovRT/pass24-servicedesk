@@ -15,6 +15,8 @@ class TicketStatus(str, Enum):
     NEW = "new"
     IN_PROGRESS = "in_progress"
     WAITING_FOR_USER = "waiting_for_user"
+    ON_HOLD = "on_hold"
+    ENGINEER_VISIT = "engineer_visit"
     RESOLVED = "resolved"
     CLOSED = "closed"
 
@@ -332,8 +334,19 @@ class Ticket(SQLModel, table=True):
 
         allowed = {
             TicketStatus.NEW: {TicketStatus.IN_PROGRESS, TicketStatus.RESOLVED},
-            TicketStatus.IN_PROGRESS: {TicketStatus.WAITING_FOR_USER, TicketStatus.RESOLVED},
+            TicketStatus.IN_PROGRESS: {
+                TicketStatus.WAITING_FOR_USER,
+                TicketStatus.ON_HOLD,
+                TicketStatus.ENGINEER_VISIT,
+                TicketStatus.RESOLVED,
+            },
             TicketStatus.WAITING_FOR_USER: {TicketStatus.IN_PROGRESS, TicketStatus.RESOLVED},
+            TicketStatus.ON_HOLD: {TicketStatus.IN_PROGRESS, TicketStatus.RESOLVED},
+            TicketStatus.ENGINEER_VISIT: {
+                TicketStatus.IN_PROGRESS,
+                TicketStatus.RESOLVED,
+                TicketStatus.WAITING_FOR_USER,
+            },
             TicketStatus.RESOLVED: {TicketStatus.CLOSED, TicketStatus.IN_PROGRESS},
         }
 
@@ -348,11 +361,11 @@ class Ticket(SQLModel, table=True):
         self.status = new_status
         self.updated_at = now
 
-        # SLA pause: при входе в WAITING_FOR_USER — ставим на паузу
-        if new_status == TicketStatus.WAITING_FOR_USER and self.sla_paused_at is None:
+        # SLA pause: при входе в WAITING_FOR_USER или ON_HOLD — ставим на паузу
+        if new_status in (TicketStatus.WAITING_FOR_USER, TicketStatus.ON_HOLD) and self.sla_paused_at is None:
             self.sla_paused_at = now
-        # При выходе из WAITING_FOR_USER — суммируем паузу и сбрасываем
-        if prev_status == TicketStatus.WAITING_FOR_USER and self.sla_paused_at is not None:
+        # При выходе из WAITING_FOR_USER или ON_HOLD — суммируем паузу и сбрасываем
+        if prev_status in (TicketStatus.WAITING_FOR_USER, TicketStatus.ON_HOLD) and self.sla_paused_at is not None:
             pause_seconds = int((now - self.sla_paused_at).total_seconds())
             self.sla_total_pause_seconds += pause_seconds
             self.sla_paused_at = None
@@ -423,6 +436,7 @@ class Attachment(SQLModel, table=True):
     content_type: str = Field(max_length=128)
     size: int
     storage_path: str = Field(max_length=1024)
+    comment_id: Optional[str] = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     ticket: Optional["Ticket"] = Relationship(back_populates="attachments")

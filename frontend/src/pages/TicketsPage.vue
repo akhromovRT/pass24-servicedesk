@@ -32,7 +32,7 @@ const statusFilter = ref<string[]>([])
 const categoryFilter = ref<string[]>([])
 const searchQuery = ref('')
 const showAdvancedFilters = ref(false)
-const sortField = ref<string>('default')
+const sortField = ref<string>('created_desc')
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
 const sortOptions = computed(() => {
@@ -108,6 +108,7 @@ const views = computed(() => {
       { id: 'urgent', label: 'Срочные', icon: 'pi pi-exclamation-triangle', count: store.stats.urgent, severity: 'danger' },
       { id: 'overdue', label: 'Просрочено', icon: 'pi pi-clock', count: store.stats.overdue, severity: 'danger' },
       { id: 'waiting', label: 'Ждут ответа', icon: 'pi pi-hourglass', count: store.stats.waiting, severity: 'warn' },
+      { id: 'engineer_visit', label: 'Выезды', icon: 'pi pi-car' },
       { id: 'closed', label: 'Закрытые', icon: 'pi pi-check-circle' },
     ]
   }
@@ -123,6 +124,8 @@ const statusOptions = [
   { label: 'Новый', value: 'new' },
   { label: 'В работе', value: 'in_progress' },
   { label: 'Ожидает ответа', value: 'waiting_for_user' },
+  { label: 'Отложена', value: 'on_hold' },
+  { label: 'Выезд инженера', value: 'engineer_visit' },
   { label: 'Решён', value: 'resolved' },
   { label: 'Закрыт', value: 'closed' },
 ]
@@ -141,14 +144,14 @@ const categoryOptions = [
 ]
 
 const statusLabelsStaff: Record<string, string> = {
-  new: 'Новый', in_progress: 'В работе', waiting_for_user: 'Ожидает', resolved: 'Решён', closed: 'Закрыт',
+  new: 'Новый', in_progress: 'В работе', waiting_for_user: 'Ожидает', on_hold: 'Отложена', engineer_visit: 'Выезд', resolved: 'Решён', closed: 'Закрыт',
 }
 const statusLabelsUser: Record<string, string> = {
-  new: 'Принята', in_progress: 'В работе', waiting_for_user: 'Ждёт ответа', resolved: 'Решена', closed: 'Закрыта',
+  new: 'Принята', in_progress: 'В работе', waiting_for_user: 'Ждёт ответа', on_hold: 'Отложена', engineer_visit: 'Инженер выехал', resolved: 'Решена', closed: 'Закрыта',
 }
 const statusLabels = computed(() => isStaff.value ? statusLabelsStaff : statusLabelsUser)
 const statusColors: Record<string, string> = {
-  new: '#3b82f6', in_progress: '#f59e0b', waiting_for_user: '#8b5cf6', resolved: '#10b981', closed: '#64748b',
+  new: '#3b82f6', in_progress: '#f59e0b', waiting_for_user: '#8b5cf6', on_hold: '#6366f1', engineer_visit: '#0ea5e9', resolved: '#10b981', closed: '#64748b',
 }
 const priorityColors: Record<string, string> = {
   critical: '#dc2626', high: '#ea580c', normal: '#2563eb', low: '#64748b',

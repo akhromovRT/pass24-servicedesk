@@ -688,10 +688,20 @@ async def process_incoming_emails() -> int:
     for mail_data in emails:
         subject = mail_data["subject"]
 
-        # 1. Ответ с тегом [PASS24-xxxxxxxx]
+        # 1. Ответ с тегом [PASS24-xxxxxxxx] в теме
         tag_match = TICKET_TAG_RE.search(subject)
         if tag_match:
             ticket_id_prefix = tag_match.group(1)
+            handled = await _handle_reply(mail_data, ticket_id_prefix)
+            if handled:
+                processed += 1
+                continue
+
+        # 1b. Тег PASS24-xxxxxxxx в теле письма (надёжный fallback)
+        body_text = mail_data.get("body", "")
+        body_tag_match = TICKET_TAG_RE.search(body_text)
+        if body_tag_match:
+            ticket_id_prefix = body_tag_match.group(1)
             handled = await _handle_reply(mail_data, ticket_id_prefix)
             if handled:
                 processed += 1

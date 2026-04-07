@@ -14,6 +14,8 @@ STATUS_LABELS = {
     "new": "Новый",
     "in_progress": "В работе",
     "waiting_for_user": "Ожидает ответа",
+    "on_hold": "Отложена",
+    "engineer_visit": "Выезд инженера",
     "resolved": "Решён",
     "closed": "Закрыт",
 }
@@ -26,8 +28,18 @@ PRIORITY_LABELS = {
 }
 
 
-async def _send_email(to: str, subject: str, html_body: str) -> None:
-    """Отправка email через SMTP. Ошибки логируются, но не прерывают работу."""
+async def _send_email(
+    to: str,
+    subject: str,
+    html_body: str,
+    *,
+    ticket_id: str | None = None,
+) -> None:
+    """Отправка email через SMTP. Ошибки логируются, но не прерывают работу.
+
+    Если передан ticket_id — добавляет In-Reply-To/References заголовки
+    для корректной группировки в email-клиентах.
+    """
     if not settings.smtp_password:
         logger.warning("SMTP_PASSWORD не задан — email не отправлен: %s", subject)
         return
@@ -36,6 +48,14 @@ async def _send_email(to: str, subject: str, html_body: str) -> None:
     msg["From"] = f"PASS24 Service Desk <{settings.smtp_from}>"
     msg["To"] = to
     msg["Subject"] = subject
+
+    # Email threading headers
+    if ticket_id:
+        thread_id = f"<ticket-{ticket_id}@pass24servicedesk>"
+        msg["Message-ID"] = thread_id
+        msg["In-Reply-To"] = thread_id
+        msg["References"] = thread_id
+
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
     try:
@@ -55,6 +75,17 @@ async def _send_email(to: str, subject: str, html_body: str) -> None:
 def ticket_subject_tag(ticket_id: str) -> str:
     """Формирует тег тикета для темы письма: [PASS24-abc12345]."""
     return f"[PASS24-{ticket_id[:8]}]"
+
+
+def _ticket_body_reference(ticket_id: str) -> str:
+    """HTML-блок с идентификатором тикета в теле письма для надёжного threading."""
+    tag = ticket_id[:8]
+    return (
+        '<div style="color:#999;font-size:11px;border-top:1px solid #eee;'
+        'padding-top:8px;margin-top:20px;">'
+        f'--- Не удаляйте эту строку: PASS24-{tag} ---'
+        '</div>'
+    )
 
 
 PRODUCT_LABELS = {
@@ -226,9 +257,11 @@ async def notify_ticket_created(
                 <p style="color: #94a3b8; font-size: 12px; margin: 24px 0 0; text-align:center;">
                     PASS24 Service Desk · support@pass24online.ru
                 </p>
+                {_ticket_body_reference(ticket_id)}
             </div>
         </div>
         """,
+        ticket_id=ticket_id,
     )
 
 
@@ -333,9 +366,11 @@ async def notify_ticket_status_changed(
                 <p style="color: #64748b; font-size: 14px; margin: 16px 0 0;">
                     Вы можете отслеживать статус заявки в личном кабинете Service Desk.
                 </p>
+                {_ticket_body_reference(ticket_id)}
             </div>
         </div>
         """,
+        ticket_id=ticket_id,
     )
 
 
@@ -363,7 +398,9 @@ async def notify_ticket_comment(
                 <div style="background: #f8fafc; border-left: 3px solid #3b82f6; padding: 12px 16px; margin: 12px 0; border-radius: 0 4px 4px 0;">
                     <p style="color: #334155; margin: 0; white-space: pre-wrap;">{comment_text}</p>
                 </div>
+                {_ticket_body_reference(ticket_id)}
             </div>
         </div>
         """,
+        ticket_id=ticket_id,
     )

@@ -18,7 +18,7 @@ export interface Token {
   token_type: string
 }
 
-export type TicketStatus = 'new' | 'in_progress' | 'waiting_for_user' | 'resolved' | 'closed'
+export type TicketStatus = 'new' | 'in_progress' | 'waiting_for_user' | 'on_hold' | 'engineer_visit' | 'resolved' | 'closed'
 export type TicketPriority = 'low' | 'normal' | 'high' | 'critical'
 export type TicketProduct = 'pass24_online' | 'mobile_app' | 'pass24_key' | 'pass24_control' | 'pass24_auto' | 'equipment' | 'integration' | 'other'
 export type TicketCategory = 'registration' | 'passes' | 'recognition' | 'app_issues' | 'objects' | 'trusted_persons' | 'equipment_issues' | 'consultation' | 'feature_request' | 'other'
@@ -100,6 +100,7 @@ export interface Attachment {
   filename: string
   content_type: string
   size: number
+  comment_id: string | null
   created_at: string
 }
 
