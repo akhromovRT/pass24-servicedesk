@@ -83,7 +83,7 @@ async def _check_sla_breaches() -> int:
         # Активные тикеты, которые ещё не были предупреждены
         r = await session.execute(
             select(Ticket).where(
-                Ticket.status.in_([TicketStatus.NEW, TicketStatus.IN_PROGRESS, TicketStatus.ENGINEER_VISIT]),
+                Ticket.status.in_(["new", "in_progress", "engineer_visit"]),
                 Ticket.sla_breach_warned == False,  # noqa: E712
                 Ticket.resolved_at.is_(None),
             )

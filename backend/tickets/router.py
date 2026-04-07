@@ -471,13 +471,13 @@ async def list_tickets(
         else_=4,
     )
     status_order = case(
-        (Ticket.status == TicketStatus.NEW, 0),
-        (Ticket.status == TicketStatus.ENGINEER_VISIT, 1),
-        (Ticket.status == TicketStatus.IN_PROGRESS, 2),
-        (Ticket.status == TicketStatus.ON_HOLD, 3),
-        (Ticket.status == TicketStatus.WAITING_FOR_USER, 4),
-        (Ticket.status == TicketStatus.RESOLVED, 5),
-        (Ticket.status == TicketStatus.CLOSED, 6),
+        (Ticket.status == "new", 0),
+        (Ticket.status == "engineer_visit", 1),
+        (Ticket.status == "in_progress", 2),
+        (Ticket.status == "on_hold", 3),
+        (Ticket.status == "waiting_for_user", 4),
+        (Ticket.status == "resolved", 5),
+        (Ticket.status == "closed", 6),
         else_=7,
     )
 
@@ -525,7 +525,7 @@ async def get_ticket_stats(
     """Статистика по заявкам для dashboard-карточек."""
     from backend.auth.models import UserRole
 
-    open_statuses = ["new", "in_progress", "waiting_for_user"]
+    open_statuses = ["new", "in_progress", "waiting_for_user", "on_hold", "engineer_visit"]
 
     # Базовый фильтр: резиденты/УК видят только свои
     base_filter = None
@@ -1275,7 +1275,7 @@ async def agent_dashboard(
     # По статусам
     open_st = await session.execute(
         select(func.count()).select_from(Ticket)
-        .where(Ticket.assignee_id == agent_id, Ticket.status.in_([TicketStatus.NEW, TicketStatus.IN_PROGRESS, TicketStatus.WAITING_FOR_USER, TicketStatus.ON_HOLD, TicketStatus.ENGINEER_VISIT]))
+        .where(Ticket.assignee_id == agent_id, Ticket.status.in_(["new", "in_progress", "waiting_for_user", "on_hold", "engineer_visit"]))
     )
     open_count = open_st.scalar_one()
 
