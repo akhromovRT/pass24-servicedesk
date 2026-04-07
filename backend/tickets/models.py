@@ -360,7 +360,7 @@ class Ticket(SQLModel, table=True):
 
         now = datetime.utcnow()
         prev_status = self.status
-        self.status = new_status
+        self.status = new_status.value if hasattr(new_status, 'value') else new_status
         self.updated_at = now
 
         # SLA pause: при входе в WAITING_FOR_USER или ON_HOLD — ставим на паузу
