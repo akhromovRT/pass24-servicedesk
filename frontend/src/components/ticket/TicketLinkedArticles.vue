@@ -35,7 +35,7 @@ const props = defineProps<{
   ticketId: string
 }>()
 
-const emit = defineEmits<{
+defineEmits<{
   updated: []
 }>()
 
