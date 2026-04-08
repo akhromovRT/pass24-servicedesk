@@ -89,7 +89,7 @@ def _ticket_body_reference(ticket_id: str) -> str:
 
 
 PRODUCT_LABELS = {
-    "pass24_online": "PASS24.online (веб-портал)",
+    "pass24_online": "PASS24 (веб-портал)",
     "mobile_app": "Мобильное приложение PASS24",
     "pass24_key": "PASS24.Key (BLE-ключи)",
     "pass24_control": "PASS24.control (СКУД)",

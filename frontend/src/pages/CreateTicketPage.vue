@@ -174,7 +174,7 @@ const deviceType = ref<string | undefined>(undefined)
 const urgent = ref(false)
 
 const productOptions = [
-  { label: 'PASS24.online (веб-портал)', value: 'pass24_online' },
+  { label: 'PASS24 (веб-портал)', value: 'pass24_online' },
   { label: 'Мобильное приложение', value: 'mobile_app' },
   { label: 'PASS24.Key (BLE-ключи)', value: 'pass24_key' },
   { label: 'PASS24.control (СКУД)', value: 'pass24_control' },

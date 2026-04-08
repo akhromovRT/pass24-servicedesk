@@ -133,7 +133,7 @@ def _looks_like_html(text: str) -> bool:
         text,
         re.IGNORECASE,
     )
-    if len(tag_matches) >= 3:
+    if len(tag_matches) >= 1:
         return True
     # HTML-entities (Яндекс мобильная почта их оставляет в text/plain)
     if re.search(r"&(lt|gt|amp|nbsp|quot|#\d+);", text):

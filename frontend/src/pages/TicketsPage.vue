@@ -165,7 +165,7 @@ const categoryLabels: Record<string, string> = {
   equipment_issues: 'Оборудование', consultation: 'Консультация', feature_request: 'Предложение', other: 'Другое',
 }
 const productLabels: Record<string, string> = {
-  pass24_online: 'PASS24.online', mobile_app: 'Мобильное приложение', pass24_key: 'PASS24.Key',
+  pass24_online: 'PASS24', mobile_app: 'Мобильное приложение', pass24_key: 'PASS24.Key',
   pass24_control: 'PASS24.control', pass24_auto: 'PASS24.auto',
   equipment: 'Оборудование', integration: 'Интеграция', other: 'Другое',
 }

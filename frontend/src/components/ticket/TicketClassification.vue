@@ -6,7 +6,7 @@ defineProps<{
 }>()
 
 const productLabels: Record<string, string> = {
-  pass24_online: 'PASS24.online',
+  pass24_online: 'PASS24',
   mobile_app: 'Мобильное приложение',
   pass24_key: 'PASS24.Key',
   pass24_control: 'PASS24.control',
