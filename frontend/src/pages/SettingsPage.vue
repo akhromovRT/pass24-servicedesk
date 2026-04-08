@@ -81,12 +81,6 @@ const agentOptions = computed(() => [
   ...agentsList.value.map(a => ({ label: `${a.full_name} (${a.email})`, value: a.id })),
 ])
 
-const currentAssigneeName = computed(() => {
-  if (!defaultAssigneeId.value) return 'Не выбран'
-  const agent = agentsList.value.find(a => a.id === defaultAssigneeId.value)
-  return agent ? agent.full_name : 'Неизвестный'
-})
-
 async function saveTicketSettings() {
   savingTicketSettings.value = true
   try {
