@@ -26,7 +26,7 @@ const auth = useAuthStore()
 const isStaff = computed(() => auth.user?.role === 'support_agent' || auth.user?.role === 'admin')
 
 // ─── Filters & View ─────────────────────────────────────────────
-const activeView = ref<string>('all')
+const activeView = ref<string>('open')
 const activeSavedViewId = ref<string | null>(null)
 const statusFilter = ref<string[]>([])
 const categoryFilter = ref<string[]>([])
