@@ -233,17 +233,27 @@ def _detect_category(text: str) -> str:
 
 
 def _clean_body(body: str) -> str:
-    """Очистка тела письма от подписей и цитирований."""
+    """Очистка тела письма от подписей, сервисных строк и лишних пробелов.
+
+    Не обрезает текст — письмо сохраняется целиком. Цитирования (строки с '>')
+    сохраняются, чтобы не терять контекст переписки.
+    Подпись отсекается только по стандартному RFC-маркеру '-- ' (два дефиса + пробел).
+    """
     lines = body.split("\n")
     cleaned = []
     for line in lines:
-        if line.strip().startswith("--") and len(line.strip()) <= 5:
+        # RFC 3676: стандартный маркер подписи — ровно "-- " (два дефиса, пробел, конец строки)
+        if line.rstrip() == "-- ":
             break
-        if line.strip().startswith(">"):
+        # Убираем строку с нашим тегом threading из тела письма
+        if "Не удаляйте эту строку: PASS24-" in line:
             continue
         cleaned.append(line)
     result = "\n".join(cleaned).strip()
-    return result[:4000] if result else ""
+    # Убираем лишние пустые строки подряд (более 2)
+    import re as _re
+    result = _re.sub(r"\n{3,}", "\n\n", result)
+    return result
 
 
 def _is_sufficient(subject: str, body: str) -> bool:
@@ -558,7 +568,7 @@ async def _handle_new_ticket(mail_data: dict) -> None:
         ticket = Ticket(
             creator_id=str(user.id),
             title=title[:200],
-            description=body[:4000],
+            description=body[:10000],
             category=category,
             source="email",
             contact_name=from_name,

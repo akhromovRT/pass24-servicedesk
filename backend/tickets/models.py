@@ -154,7 +154,7 @@ class Ticket(SQLModel, table=True):
 
     # Основные
     title: str = Field(default="", max_length=200)
-    description: str = Field(default="", max_length=4000)
+    description: str = Field(default="", max_length=10000)
 
     # 5-осевая классификация
     product: str = Field(default=TicketProduct.PASS24_ONLINE, sa_column=Column(String, index=True, default="pass24_online"))

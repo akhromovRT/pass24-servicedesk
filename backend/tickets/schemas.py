@@ -12,7 +12,7 @@ class TicketCreate(BaseModel):
     """Схема создания тикета."""
 
     title: str = Field(..., max_length=200)
-    description: str = Field(..., max_length=4000)
+    description: str = Field(..., max_length=10000)
 
     # 5-осевая классификация (всё опционально — авто-определяется)
     product: Optional[str] = Field(default="pass24_online", max_length=64)
@@ -63,7 +63,7 @@ class GuestTicketCreate(BaseModel):
     email: str = Field(..., min_length=5, max_length=320, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$", description="Email заявителя")
     name: Optional[str] = Field(default=None, max_length=256, description="Имя")
     title: str = Field(..., max_length=200)
-    description: str = Field(..., max_length=4000)
+    description: str = Field(..., max_length=10000)
     product: Optional[str] = Field(default="pass24_online", max_length=64)
     category: Optional[str] = Field(default="other", max_length=64)
     ticket_type: Optional[str] = Field(default="problem", max_length=64)
@@ -92,7 +92,7 @@ class EventRead(BaseModel):
 
 
 class CommentCreate(BaseModel):
-    text: str = Field(..., min_length=1, max_length=4000)
+    text: str = Field(..., min_length=1, max_length=10000)
     is_internal: bool = Field(default=False, description="Внутренний комментарий")
 
 
