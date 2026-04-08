@@ -332,25 +332,18 @@ class Ticket(SQLModel, table=True):
         if self.status == TicketStatus.CLOSED:
             raise ValueError("Нельзя менять статус закрытого тикета")
 
-        allowed = {
-            TicketStatus.NEW: {TicketStatus.IN_PROGRESS, TicketStatus.RESOLVED},
-            TicketStatus.IN_PROGRESS: {
-                TicketStatus.WAITING_FOR_USER,
-                TicketStatus.ON_HOLD,
-                TicketStatus.ENGINEER_VISIT,
-                TicketStatus.RESOLVED,
-            },
-            TicketStatus.WAITING_FOR_USER: {TicketStatus.IN_PROGRESS, TicketStatus.RESOLVED},
-            TicketStatus.ON_HOLD: {TicketStatus.IN_PROGRESS, TicketStatus.RESOLVED},
-            TicketStatus.ENGINEER_VISIT: {
-                TicketStatus.IN_PROGRESS,
-                TicketStatus.RESOLVED,
-                TicketStatus.WAITING_FOR_USER,
-            },
-            TicketStatus.RESOLVED: {TicketStatus.CLOSED, TicketStatus.IN_PROGRESS},
+        # Из любого статуса (кроме CLOSED) можно перейти в любой другой
+        all_targets = {
+            TicketStatus.NEW,
+            TicketStatus.IN_PROGRESS,
+            TicketStatus.WAITING_FOR_USER,
+            TicketStatus.ON_HOLD,
+            TicketStatus.ENGINEER_VISIT,
+            TicketStatus.RESOLVED,
+            TicketStatus.CLOSED,
         }
 
-        current_allowed = allowed.get(self.status, set())
+        current_allowed = all_targets - {TicketStatus(self.status) if not isinstance(self.status, TicketStatus) else self.status}
         if new_status not in current_allowed:
             current = self.status.value if hasattr(self.status, 'value') else self.status
             target = new_status.value if hasattr(new_status, 'value') else new_status

@@ -8,34 +8,27 @@ interface StatusTransition {
   color: string
 }
 
+const ALL_STATUSES: StatusTransition[] = [
+  { label: 'В работу', value: 'in_progress', icon: 'pi pi-play', color: '#f59e0b' },
+  { label: 'Ожидать ответа', value: 'waiting_for_user', icon: 'pi pi-clock', color: '#8b5cf6' },
+  { label: 'Отложить', value: 'on_hold', icon: 'pi pi-pause', color: '#6366f1' },
+  { label: 'Выезд инженера', value: 'engineer_visit', icon: 'pi pi-car', color: '#0ea5e9' },
+  { label: 'Решить', value: 'resolved', icon: 'pi pi-check', color: '#10b981' },
+  { label: 'Закрыть', value: 'closed', icon: 'pi pi-lock', color: '#64748b' },
+]
+
+function transitionsFor(current: TicketStatus): StatusTransition[] {
+  if (current === 'closed') return []
+  return ALL_STATUSES.filter(s => s.value !== current)
+}
+
 const TRANSITIONS: Record<TicketStatus, StatusTransition[]> = {
-  new: [
-    { label: 'Взять в работу', value: 'in_progress', icon: 'pi pi-play', color: '#f59e0b' },
-    { label: 'Решить', value: 'resolved', icon: 'pi pi-check', color: '#10b981' },
-  ],
-  in_progress: [
-    { label: 'Ожидать ответа', value: 'waiting_for_user', icon: 'pi pi-clock', color: '#8b5cf6' },
-    { label: 'Отложить', value: 'on_hold', icon: 'pi pi-pause', color: '#6366f1' },
-    { label: 'Выезд инженера', value: 'engineer_visit', icon: 'pi pi-car', color: '#0ea5e9' },
-    { label: 'Решить', value: 'resolved', icon: 'pi pi-check', color: '#10b981' },
-  ],
-  waiting_for_user: [
-    { label: 'Вернуть в работу', value: 'in_progress', icon: 'pi pi-replay', color: '#f59e0b' },
-    { label: 'Решить', value: 'resolved', icon: 'pi pi-check', color: '#10b981' },
-  ],
-  on_hold: [
-    { label: 'Вернуть в работу', value: 'in_progress', icon: 'pi pi-replay', color: '#f59e0b' },
-    { label: 'Решить', value: 'resolved', icon: 'pi pi-check', color: '#10b981' },
-  ],
-  engineer_visit: [
-    { label: 'Вернуть в работу', value: 'in_progress', icon: 'pi pi-replay', color: '#f59e0b' },
-    { label: 'Ожидать ответа', value: 'waiting_for_user', icon: 'pi pi-clock', color: '#8b5cf6' },
-    { label: 'Решить', value: 'resolved', icon: 'pi pi-check', color: '#10b981' },
-  ],
-  resolved: [
-    { label: 'Закрыть', value: 'closed', icon: 'pi pi-lock', color: '#64748b' },
-    { label: 'Переоткрыть', value: 'in_progress', icon: 'pi pi-refresh', color: '#f59e0b' },
-  ],
+  new: transitionsFor('new'),
+  in_progress: transitionsFor('in_progress'),
+  waiting_for_user: transitionsFor('waiting_for_user'),
+  on_hold: transitionsFor('on_hold'),
+  engineer_visit: transitionsFor('engineer_visit'),
+  resolved: transitionsFor('resolved'),
   closed: [],
 }
 

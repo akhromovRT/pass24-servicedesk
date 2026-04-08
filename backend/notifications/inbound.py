@@ -44,6 +44,8 @@ CATEGORY_KEYWORDS = {
 
 # Паттерн тега тикета в теме: [PASS24-abc12345]
 TICKET_TAG_RE = re.compile(r"\[PASS24-([a-f0-9]{8})\]", re.IGNORECASE)
+# Паттерн тега в теле письма (без скобок): PASS24-abc12345
+TICKET_BODY_TAG_RE = re.compile(r"PASS24-([a-f0-9]{8})", re.IGNORECASE)
 
 
 def _decode_mime_header(raw: str) -> str:
@@ -309,6 +311,7 @@ def _fetch_unseen_emails() -> list[dict]:
                 "from_email": from_email,
                 "from_name": from_name or from_email.split("@")[0],
                 "body": _clean_body(body),
+                "raw_body": body,
                 "attachments": attachments,
             })
 
@@ -714,8 +717,9 @@ async def process_incoming_emails() -> int:
                 continue
 
         # 1b. Тег PASS24-xxxxxxxx в теле письма (надёжный fallback)
-        body_text = mail_data.get("body", "")
-        body_tag_match = TICKET_TAG_RE.search(body_text)
+        # Ищем в raw_body (до очистки), т.к. _clean_body удаляет строку-референс
+        raw_body = mail_data.get("raw_body", mail_data.get("body", ""))
+        body_tag_match = TICKET_BODY_TAG_RE.search(raw_body)
         if body_tag_match:
             ticket_id_prefix = body_tag_match.group(1)
             handled = await _handle_reply(mail_data, ticket_id_prefix)
