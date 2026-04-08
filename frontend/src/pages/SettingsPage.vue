@@ -34,6 +34,7 @@ interface SettingsSection {
 
 const sections = computed<SettingsSection[]>(() => {
   const base: SettingsSection[] = [
+    { id: 'tickets', title: 'Заявки', icon: 'pi pi-ticket', description: 'Назначение по умолчанию, автоматизация обработки заявок', color: '#10b981' },
     { id: 'email', title: 'Подключение почты', icon: 'pi pi-envelope', description: 'SMTP / IMAP для отправки и приёма email-обращений', color: '#3b82f6' },
     { id: 'telegram', title: 'Telegram-бот', icon: 'pi pi-send', description: 'Настройка бота для приёма заявок из Telegram', color: '#0ea5e9' },
   ]
@@ -43,12 +44,62 @@ const sections = computed<SettingsSection[]>(() => {
   return base
 })
 
-const activeSection = ref<string | null>('email')
+const activeSection = ref<string | null>('tickets')
 
 function toggleSection(id: string) {
   activeSection.value = activeSection.value === id ? null : id
   if (id === 'users' && activeSection.value === 'users') loadUsers()
+  if (id === 'tickets' && activeSection.value === 'tickets') loadTicketSettings()
 }
+
+// ─── Ticket settings (default assignee) ─────────────────────────
+interface AgentOption { id: string; full_name: string; email: string }
+
+const ticketSettingsLoading = ref(false)
+const defaultAssigneeId = ref<string | null>(null)
+const agentsList = ref<AgentOption[]>([])
+const savingTicketSettings = ref(false)
+
+async function loadTicketSettings() {
+  ticketSettingsLoading.value = true
+  try {
+    const [settings, agents] = await Promise.all([
+      api.get<{ default_assignee_id: string | null }>('/tickets/settings/app'),
+      api.get<AgentOption[]>('/tickets/agents/list'),
+    ])
+    defaultAssigneeId.value = settings.default_assignee_id || null
+    agentsList.value = agents
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+  } finally {
+    ticketSettingsLoading.value = false
+  }
+}
+
+const agentOptions = computed(() => [
+  { label: 'Без назначения (вручную)', value: null },
+  ...agentsList.value.map(a => ({ label: `${a.full_name} (${a.email})`, value: a.id })),
+])
+
+const currentAssigneeName = computed(() => {
+  if (!defaultAssigneeId.value) return 'Не выбран'
+  const agent = agentsList.value.find(a => a.id === defaultAssigneeId.value)
+  return agent ? agent.full_name : 'Неизвестный'
+})
+
+async function saveTicketSettings() {
+  savingTicketSettings.value = true
+  try {
+    await api.put('/tickets/settings/app', { default_assignee_id: defaultAssigneeId.value })
+    toast.add({ severity: 'success', summary: 'Настройки сохранены', life: 2000 })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+  } finally {
+    savingTicketSettings.value = false
+  }
+}
+
+onMounted(() => loadTicketSettings())
 
 // ─── Users management ────────────────────────────────────────────
 const users = ref<User[]>([])
@@ -275,6 +326,44 @@ onMounted(() => {
 
     <!-- Email section content -->
     <Transition name="slide-down">
+      <!-- Секция: Заявки -->
+      <Card v-if="activeSection === 'tickets'" class="settings-content">
+        <template #title>
+          <div class="content-title"><i class="pi pi-ticket" style="color:#10b981" /> Настройки заявок</div>
+        </template>
+        <template #content>
+          <div v-if="ticketSettingsLoading" class="text-center p-4">
+            <i class="pi pi-spin pi-spinner" style="font-size: 1.5rem; color: #94a3b8"></i>
+          </div>
+          <div v-else class="settings-form">
+            <div class="setting-row">
+              <div class="setting-info">
+                <div class="setting-label">Назначать новые заявки на</div>
+                <div class="setting-hint">Все входящие заявки (с портала, из почты, из Telegram) будут автоматически назначаться на выбранного агента. Если не выбрано — заявки попадают в общую очередь без назначения.</div>
+              </div>
+              <div class="setting-control" style="min-width: 300px;">
+                <Select
+                  v-model="defaultAssigneeId"
+                  :options="agentOptions"
+                  optionLabel="label"
+                  optionValue="value"
+                  placeholder="Выберите агента..."
+                  class="w-full"
+                />
+              </div>
+            </div>
+            <div class="setting-actions">
+              <Button
+                label="Сохранить"
+                icon="pi pi-check"
+                :loading="savingTicketSettings"
+                @click="saveTicketSettings"
+              />
+            </div>
+          </div>
+        </template>
+      </Card>
+
       <Card v-if="activeSection === 'email'" class="settings-content">
         <template #title>
           <div class="content-title"><i class="pi pi-envelope" style="color:#3b82f6" /> Подключение почты</div>
@@ -822,4 +911,18 @@ a { color: #3b82f6; }
 .dialog-form .field { display: flex; flex-direction: column; gap: 6px; }
 .dialog-form label { font-size: 13px; font-weight: 500; color: #334155; }
 .dialog-hint { color: #64748b; font-size: 13px; margin: 0 0 8px; }
+
+/* Ticket settings */
+.settings-form { display: flex; flex-direction: column; gap: 20px; }
+.setting-row { display: flex; align-items: flex-start; gap: 24px; justify-content: space-between; }
+.setting-info { flex: 1; }
+.setting-label { font-weight: 600; color: #1e293b; font-size: 14px; margin-bottom: 4px; }
+.setting-hint { color: #64748b; font-size: 13px; line-height: 1.5; }
+.setting-control { flex-shrink: 0; }
+.setting-actions { display: flex; justify-content: flex-end; padding-top: 8px; border-top: 1px solid #f1f5f9; }
+
+@media (max-width: 768px) {
+  .setting-row { flex-direction: column; gap: 12px; }
+  .setting-control { min-width: 100% !important; }
+}
 </style>

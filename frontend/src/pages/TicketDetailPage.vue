@@ -88,8 +88,14 @@ async function handleFileUploaded() {
   await loadTicket()
 }
 
-async function handleAssigned() {
-  await loadTicket()
+async function handleAssigned(assigneeId: string | null) {
+  if (!ticket.value) return
+  try {
+    await store.assignTicket(ticket.value.id, assigneeId)
+    toast.add({ severity: 'success', summary: assigneeId ? 'Назначено' : 'Назначение снято', life: 2000 })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+  }
 }
 
 async function handleMacroApplied() {

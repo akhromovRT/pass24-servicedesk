@@ -578,6 +578,12 @@ async def _handle_new_ticket(mail_data: dict) -> None:
         ticket.assign_priority_based_on_context()
         ticket.auto_assign_group()
 
+        # Автоназначение агента по умолчанию (если настроено)
+        from backend.app_settings import get_default_assignee_id
+        default_agent = await get_default_assignee_id()
+        if default_agent and not ticket.assignee_id:
+            ticket.assignee_id = default_agent
+
         event = TicketEvent(
             ticket_id=ticket.id,
             actor_id=str(user.id),

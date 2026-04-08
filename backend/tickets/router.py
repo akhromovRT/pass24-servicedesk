@@ -117,6 +117,12 @@ async def create_guest_ticket(
     ticket.assign_priority_based_on_context()
     ticket.auto_assign_group()
 
+    # Автоназначение агента по умолчанию (если настроено)
+    from backend.app_settings import get_default_assignee_id
+    default_agent = await get_default_assignee_id()
+    if default_agent and not ticket.assignee_id:
+        ticket.assignee_id = default_agent
+
     event = TicketEvent(
         ticket_id=ticket.id,
         actor_id=str(user.id),
@@ -263,6 +269,12 @@ async def create_ticket(
     ticket.auto_detect_category()
     ticket.assign_priority_based_on_context()
     ticket.auto_assign_group()
+
+    # Автоназначение агента по умолчанию (если настроено)
+    from backend.app_settings import get_default_assignee_id
+    default_agent = await get_default_assignee_id()
+    if default_agent and not ticket.assignee_id:
+        ticket.assignee_id = default_agent
 
     # Событие создания (actor — тот, кто реально создал через UI)
     actor_desc = "Тикет создан"
@@ -620,6 +632,50 @@ async def get_unread_notifications(
             for t in tickets
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# Настройки приложения (admin only) — ПЕРЕД /{ticket_id} чтобы не конфликтовать
+# ---------------------------------------------------------------------------
+
+
+class AppSettingsResponse(BaseModel):
+    default_assignee_id: Optional[str] = None
+
+
+class AppSettingsUpdate(BaseModel):
+    default_assignee_id: Optional[str] = None
+
+
+@router.get("/settings/app", response_model=AppSettingsResponse)
+async def get_app_settings(
+    current_user: User = Depends(get_current_user),
+):
+    """Получить настройки приложения (для админов и агентов)."""
+    from backend.auth.models import UserRole
+
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав")
+
+    from backend.app_settings import get_default_assignee_id
+    assignee_id = await get_default_assignee_id()
+    return AppSettingsResponse(default_assignee_id=assignee_id)
+
+
+@router.put("/settings/app", response_model=AppSettingsResponse)
+async def update_app_settings(
+    payload: AppSettingsUpdate,
+    current_user: User = Depends(get_current_user),
+):
+    """Обновить настройки приложения (только admin)."""
+    from backend.auth.models import UserRole
+
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Только администратор может менять настройки")
+
+    from backend.app_settings import set_setting, DEFAULT_ASSIGNEE_KEY
+    await set_setting(DEFAULT_ASSIGNEE_KEY, payload.default_assignee_id or "")
+    return AppSettingsResponse(default_assignee_id=payload.default_assignee_id)
 
 
 @router.get("/{ticket_id}", response_model=TicketRead)
