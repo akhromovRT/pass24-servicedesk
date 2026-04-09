@@ -92,6 +92,10 @@ def create_app() -> FastAPI:
         async def spa_forgot_password():
             return FileResponse(_index)
 
+        @app.get("/projects/analytics", response_class=FileResponse, include_in_schema=False)
+        async def spa_projects_analytics():
+            return FileResponse(_index)
+
         @app.get("/reset-password", response_class=FileResponse, include_in_schema=False)
         async def spa_reset_password():
             return FileResponse(_index)
