@@ -24,6 +24,7 @@ import ProjectTimeline from '../components/ProjectTimeline.vue'
 import PhaseCard from '../components/PhaseCard.vue'
 import PhaseApproval from '../components/project/PhaseApproval.vue'
 import RiskPanel from '../components/project/RiskPanel.vue'
+import GanttChart from '../components/project/GanttChart.vue'
 import { useProjectsStore } from '../stores/projects'
 import { useAuthStore } from '../stores/auth'
 import type {
@@ -377,6 +378,7 @@ onMounted(loadProject)
       <Tabs :value="activeTab" @update:value="(val) => loadTab(String(val))">
         <TabList>
           <Tab value="0">Этапы</Tab>
+          <Tab value="gantt">Gantt</Tab>
           <Tab value="timeline">Timeline</Tab>
           <Tab value="documents">Документы</Tab>
           <Tab value="team">Команда</Tab>
@@ -409,6 +411,15 @@ onMounted(loadProject)
                 />
               </div>
             </div>
+          </TabPanel>
+
+          <!-- Gantt -->
+          <TabPanel value="gantt">
+            <GanttChart
+              :phases="project.phases"
+              :planned-start="project.planned_start_date"
+              :planned-end="project.planned_end_date"
+            />
           </TabPanel>
 
           <!-- Timeline -->

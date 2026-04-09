@@ -112,6 +112,33 @@ def create_app() -> FastAPI:
     app.include_router(telegram_router)
     app.include_router(customers_router)
 
+    # WebSocket endpoint для real-time уведомлений
+    from fastapi import WebSocket, WebSocketDisconnect, Query as WSQuery
+    from .notifications.websocket import ws_manager
+
+    @app.websocket("/ws")
+    async def websocket_endpoint(websocket: WebSocket, token: str = WSQuery(default="")):
+        """WS подключение. Клиент передаёт JWT token в query: /ws?token=xxx"""
+        if not token:
+            await websocket.close(code=4001, reason="Token required")
+            return
+        # Валидация токена
+        try:
+            from jose import jwt
+            from .config import settings as app_settings
+            payload = jwt.decode(token, app_settings.secret_key, algorithms=[app_settings.algorithm])
+            user_id = payload.get("sub", "")
+        except Exception:
+            await websocket.close(code=4003, reason="Invalid token")
+            return
+
+        await ws_manager.connect(websocket, user_id)
+        try:
+            while True:
+                await websocket.receive_text()  # Keep alive, ignore client messages
+        except WebSocketDisconnect:
+            ws_manager.disconnect(websocket, user_id)
+
     @app.get("/health")
     async def health():
         return {"status": "ok"}

@@ -804,6 +804,17 @@ async def update_ticket_status(
                 actor_name=current_user.full_name or current_user.email,
             )
 
+    # WS real-time: уведомить всех подключённых о смене статуса
+    from backend.notifications.websocket import ws_manager
+    import asyncio
+    asyncio.ensure_future(ws_manager.broadcast_to_staff("ticket_status_changed", {
+        "ticket_id": ticket.id,
+        "title": ticket.title,
+        "old_status": old_status,
+        "new_status": new_status_val,
+        "actor": current_user.full_name or current_user.email,
+    }))
+
     # Перезагрузка со связями
     result = await session.execute(
         select(Ticket)
@@ -903,6 +914,16 @@ async def add_comment(
                     comment_text=payload.text,
                     author_name=current_user.full_name or current_user.email,
                 )
+
+    # WS real-time: уведомить о новом комментарии
+    from backend.notifications.websocket import ws_manager
+    import asyncio
+    asyncio.ensure_future(ws_manager.broadcast_to_staff("ticket_new_comment", {
+        "ticket_id": ticket.id,
+        "title": ticket.title,
+        "author": current_user.full_name or current_user.email,
+        "is_internal": payload.is_internal,
+    }))
 
     return CommentRead.model_validate(comment)
 
