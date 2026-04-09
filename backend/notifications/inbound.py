@@ -252,8 +252,10 @@ def _clean_body(body: str) -> str:
             continue
         cleaned.append(line)
     result = "\n".join(cleaned).strip()
-    # Убираем лишние пустые строки подряд (более 2)
     import re as _re
+    # Убираем CID-ссылки на inline-вложения: [cid:image001.png@XXXX]
+    result = _re.sub(r"\[cid:[^\]]+\]", "", result)
+    # Убираем лишние пустые строки подряд (более 2)
     result = _re.sub(r"\n{3,}", "\n\n", result)
     return result
 
