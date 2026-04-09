@@ -23,6 +23,7 @@ class Customer(SQLModel, table=True):
     industry: Optional[str] = Field(default=None, max_length=128)
     comment: Optional[str] = Field(default=None, max_length=2000)
     is_active: bool = Field(default=True)
+    is_permanent_client: bool = Field(default=False)
     synced_at: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

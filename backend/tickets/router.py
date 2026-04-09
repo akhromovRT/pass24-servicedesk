@@ -684,24 +684,24 @@ async def suggest_objects(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    """Автокомплит по уникальным названиям объектов из тикетов."""
-    from sqlalchemy import func
+    """Автокомплит по постоянным клиентам из справочника (синхронизация с Bitrix24)."""
+    from backend.customers.models import Customer
 
-    query = select(
-        Ticket.object_name,
-        func.max(Ticket.object_address).label("object_address"),
-    ).where(
-        Ticket.object_name.isnot(None),
-        Ticket.object_name != "",
-    ).group_by(Ticket.object_name)
+    query = select(Customer).where(
+        Customer.is_permanent_client == True,  # noqa: E712
+        Customer.is_active == True,  # noqa: E712
+    )
 
     if q.strip():
-        query = query.where(Ticket.object_name.ilike(f"%{q.strip()}%"))
+        query = query.where(Customer.name.ilike(f"%{q.strip()}%"))
 
-    query = query.order_by(Ticket.object_name).limit(20)
+    query = query.order_by(Customer.name).limit(20)
     result = await session.execute(query)
-    rows = result.all()
-    return [{"object_name": r.object_name, "object_address": r.object_address} for r in rows]
+    rows = result.scalars().all()
+    return [
+        {"id": r.id, "name": r.name, "address": r.address or "", "phone": r.phone or ""}
+        for r in rows
+    ]
 
 
 @router.get("/{ticket_id}", response_model=TicketRead)
@@ -1102,6 +1102,7 @@ async def update_assignment(
 
 
 class TicketObjectUpdate(BaseModel):
+    customer_id: Optional[str] = None
     object_name: Optional[str] = None
     object_address: Optional[str] = None
     access_point: Optional[str] = None
@@ -1127,6 +1128,9 @@ async def update_ticket_object(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Тикет не найден")
 
     changes = []
+    if payload.customer_id is not None and ticket.customer_id != payload.customer_id:
+        ticket.customer_id = payload.customer_id or None
+        changes.append(f"клиент: {payload.object_name or payload.customer_id or 'снят'}")
     if payload.object_name is not None and ticket.object_name != payload.object_name:
         ticket.object_name = payload.object_name or None
         changes.append(f"объект: {payload.object_name or '—'}")

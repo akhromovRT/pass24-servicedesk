@@ -66,6 +66,7 @@ const hasTechnicalData = computed(() => {
         :objectName="ticket.object_name"
         :objectAddress="ticket.object_address"
         :accessPoint="ticket.access_point"
+        :customerId="ticket.customer_id"
         :ticketId="ticket.id"
         :isStaff="isStaff"
         @updated="emit('objectUpdated')"

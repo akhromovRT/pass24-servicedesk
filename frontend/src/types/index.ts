@@ -50,6 +50,7 @@ export interface Ticket {
   contact_email: string | null
   contact_phone: string | null
   company: string | null
+  customer_id: string | null
   device_type: string | null
   app_version: string | null
   error_message: string | null

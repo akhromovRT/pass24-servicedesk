@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .auth.router import router as auth_router
 from .knowledge.router import router as knowledge_router
+from .customers.sync_scheduler import bitrix24_sync_loop
 from .notifications.inbound import email_polling_loop
 from .assistant.router import router as assistant_router
 from .projects.router import router as projects_router
@@ -46,10 +47,13 @@ async def lifespan(app: FastAPI):
     poll_task = asyncio.create_task(email_polling_loop())
     logger.info("Lifespan: starting SLA watcher")
     sla_task = asyncio.create_task(sla_watcher_loop())
+    logger.info("Lifespan: starting Bitrix24 sync scheduler")
+    b24_task = asyncio.create_task(bitrix24_sync_loop())
     logger.info("Lifespan: startup complete")
     yield
     poll_task.cancel()
     sla_task.cancel()
+    b24_task.cancel()
 
 
 def create_app() -> FastAPI:

@@ -140,6 +140,7 @@ async def sync_companies(inn_field: Optional[str] = None) -> dict:
     # Загружаем все компании
     companies = await _b24_list_all("crm.company.list", [
         "ID", "TITLE", "PHONE", "EMAIL", "ADDRESS", "COMMENTS", "INDUSTRY",
+        "UF_CRM_PERMANENT_CLIENT",
     ])
     logger.info("Loaded %d companies from Bitrix24", len(companies))
 
@@ -158,6 +159,8 @@ async def sync_companies(inn_field: Optional[str] = None) -> dict:
             address = c.get("ADDRESS", "")
             comment = c.get("COMMENTS", "")
             industry = c.get("INDUSTRY", "")
+
+            is_permanent = bool(c.get("UF_CRM_PERMANENT_CLIENT"))
 
             # Телефон / Email — массив в Bitrix24
             phone = ""
@@ -179,6 +182,7 @@ async def sync_companies(inn_field: Optional[str] = None) -> dict:
                 existing.email = email_val or existing.email
                 existing.industry = industry or existing.industry
                 existing.comment = comment or existing.comment
+                existing.is_permanent_client = is_permanent
                 existing.synced_at = datetime.utcnow()
                 existing.updated_at = datetime.utcnow()
                 session.add(existing)
@@ -193,6 +197,7 @@ async def sync_companies(inn_field: Optional[str] = None) -> dict:
                     email=email_val,
                     industry=industry,
                     comment=comment,
+                    is_permanent_client=is_permanent,
                     synced_at=datetime.utcnow(),
                 )
                 session.add(customer)
