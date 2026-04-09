@@ -22,7 +22,7 @@ def upgrade() -> None:
 
     # Find Andrey Filin's user ID by email
     result = conn.execute(
-        sa.text("SELECT id FROM \"user\" WHERE email = :email"),
+        sa.text("SELECT id FROM users WHERE email = :email"),
         {"email": FILIN_EMAIL},
     )
     row = result.fetchone()
@@ -48,7 +48,7 @@ def upgrade() -> None:
 
     # Assign all unassigned tickets to Filin
     result = conn.execute(
-        sa.text("UPDATE ticket SET assignee_id = :aid WHERE assignee_id IS NULL"),
+        sa.text("UPDATE tickets SET assignee_id = :aid WHERE assignee_id IS NULL"),
         {"aid": filin_id},
     )
     print(f"Assigned {result.rowcount} unassigned tickets to {FILIN_EMAIL} ({filin_id})")
