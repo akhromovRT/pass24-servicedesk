@@ -1043,11 +1043,12 @@ async def delete_task(
 # Шаблоны проектов: DB-backed CRUD (admin only)
 # ---------------------------------------------------------------------------
 
+from pydantic import BaseModel as PydanticBaseModel
 from backend.projects.models import ProjectTemplateDB
 import json as _json
 
 
-class TemplateDBCreate(BaseModel):
+class TemplateDBCreate(PydanticBaseModel):
     project_type: str
     title: str
     description: Optional[str] = None
@@ -1055,7 +1056,7 @@ class TemplateDBCreate(BaseModel):
     phases_json: str = "[]"
 
 
-class TemplateDBUpdate(BaseModel):
+class TemplateDBUpdate(PydanticBaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     total_duration_days: Optional[int] = None
@@ -1063,7 +1064,7 @@ class TemplateDBUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
-class TemplateDBRead(BaseModel):
+class TemplateDBRead(PydanticBaseModel):
     id: str
     project_type: str
     title: str
@@ -1190,7 +1191,7 @@ async def delete_db_template(
 # ---------------------------------------------------------------------------
 
 
-class AnalyticsResponse(BaseModel):
+class AnalyticsResponse(PydanticBaseModel):
     total_projects: int
     active_projects: int
     completed_projects: int
