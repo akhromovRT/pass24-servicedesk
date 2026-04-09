@@ -54,4 +54,4 @@ jobs:
             docker image prune -f
             sleep 5
             echo "=== Container logs (last 30 lines) ==="
-            docker logs site-pass24-servicedesk --tail=30 2>&1 || true
+            docker logs site-pass24-servicedesk --tail=60 2>&1 || true
