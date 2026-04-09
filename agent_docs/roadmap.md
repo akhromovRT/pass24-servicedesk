@@ -18,23 +18,19 @@
 - **Связь User↔Customer↔Ticket**: автоматическая привязка
 - **Password reset**: сброс пароля через email-ссылку
 
-## v0.8 — Approvals & Risk Management (планируется)
+## v0.8 — Agent Interface Redesign + Approvals & Risk Management (завершён 2026-04-09)
 
-**Цель:** дать клиенту возможность подписывать этапы и формализовать управление рисками.
+**Phase 1 (2026-04-07):** Редизайн интерфейса агента
+- 2-колоночный layout тикета (чат + сайдбар), 18 компонентов + 4 composables
+- 7 статусов FSM (+on_hold, +engineer_visit), автостатус new→in_progress
+- Email threading (body tag + In-Reply-To headers), inline-вложения
+- Назначение по умолчанию, вкладка «Открытые» по умолчанию
 
-- **Approvals workflow**: клиент (property_manager) подписывает завершение фазы / deliverable
-  - Модель `ProjectApproval` (approvable_type, approvable_id, status: pending/approved/rejected, feedback)
-  - UI: кнопка "Утвердить" на PhaseCard для PM, badge "Ожидает подтверждения"
-  - Email-уведомление при запросе approval
-- **Risk tracker**: управление рисками проекта
-  - Модель `ProjectRisk` (severity: red/yellow/green, probability, impact, mitigation_plan, owner_id, status)
-  - UI: панель рисков на ProjectDetailPage, создание/закрытие
-- **Редактор шаблонов в админке**: CRUD шаблонов проектов через SettingsPage
-  - Миграция: таблица `project_templates` в БД (замена Python-констант)
-  - UI: админ создаёт/редактирует/клонирует шаблоны
-- **Project analytics dashboard**: метрики для PASS24 staff
-  - Time-to-Go-Live по типам проектов, On-Time Delivery Rate, Health Score
-  - ECharts графики на отдельной странице /projects/analytics
+**Phase 2 (2026-04-09):** Approvals, Risks, Templates, Analytics
+- Approvals workflow: утверждение фаз клиентом (property_manager), email-уведомления
+- Risk tracker: severity/probability/impact, mitigation plan, CRUD
+- Template editor: шаблоны в БД (auto-seed из Python-констант), CRUD для админов
+- Project analytics: метрики (duration, on-time rate, by type/status, risks, approvals)
 
 ## v0.9 — Gantt & Real-time (планируется)
 

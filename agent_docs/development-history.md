@@ -9,6 +9,29 @@
 
 ## Записи
 
+### 2026-04-09 — v0.8 Phase 2: Approvals, Risks, Templates, Analytics
+
+**Что сделано:**
+- **Approvals workflow**: модель `ProjectApproval` (pending/approved/rejected), API endpoints запроса/утверждения/отклонения, email-уведомление клиенту, компонент `PhaseApproval.vue` с бейджами и кнопками
+- **Risk tracker**: модель `ProjectRisk` (severity/probability/impact/mitigation/status), CRUD API, компонент `RiskPanel.vue` с цветовыми карточками, создание/редактирование/удаление
+- **Template editor**: модель `ProjectTemplateDB` — шаблоны проектов в БД вместо Python-констант, auto-seed из существующих шаблонов, CRUD API (admin only), soft delete
+- **Project analytics**: endpoint `GET /projects/analytics` — метрики: total/active/completed, средняя длительность, on-time delivery rate, распределение по типам/статусам, открытые риски, ожидающие утверждения
+- **Миграции**: 016 (project_approvals), 017 (project_risks), 018 (project_templates_db)
+
+**Также исправлено (7-8 апреля):**
+- Обрезание email-писем в комментариях (убран лимит 4000, сохраняются цитирования)
+- Спам-фильтр: заменили `PASS24.online` на `PASS24` в шаблонах писем
+- HTML-теги в text/plain от Яндекс Почты (снижен порог детекции с 3 до 1 тега)
+- Кнопка «Взять себе» не сохраняла назначение (UI не вызывал API)
+- Настройка «Назначать новые заявки на» в разделе Настройки → Заявки
+- Вкладка по умолчанию — «Открытые» вместо «Все»
+
+**Файлы:**
+- Backend: `projects/models.py`, `projects/router.py`, `projects/workspace_router.py`
+- Frontend: `PhaseApproval.vue`, `RiskPanel.vue`, `types/index.ts`
+- Миграции: 016-018
+- Spec: `docs/superpowers/specs/2026-04-09-v08-approvals-risks-templates-analytics.md`
+
 ### 2026-04-07 — v0.8 Phase 1: Редизайн интерфейса агента
 
 **Что сделано:**
