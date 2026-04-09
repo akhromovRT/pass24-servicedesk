@@ -194,7 +194,7 @@ function slaProgress(ticket: Ticket): { pct: number; remaining: string; breach: 
     return { pct: 100, remaining: 'завершено', breach: false }
   }
   const now = Date.now()
-  const created = new Date(ticket.created_at).getTime()
+  const created = new Date(ticket.created_at.endsWith('Z') ? ticket.created_at : ticket.created_at + 'Z').getTime()
   const pauseMs = (ticket.sla_total_pause_seconds || 0) * 1000
   const totalHours = ticket.sla_resolve_hours || 24
   const deadline = created + totalHours * 3600 * 1000 + pauseMs
@@ -224,7 +224,7 @@ function slaColor(pct: number, breach: boolean): string {
 }
 
 function formatDate(dateStr: string): string {
-  const d = new Date(dateStr)
+  const d = new Date(dateStr.endsWith('Z') ? dateStr : dateStr + 'Z')
   const diffMs = Date.now() - d.getTime()
   const diffH = diffMs / 3600000
   if (diffH < 1) return 'только что'

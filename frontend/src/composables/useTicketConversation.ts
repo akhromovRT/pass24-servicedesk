@@ -1,5 +1,6 @@
 import { computed, type Ref } from 'vue'
 import type { Ticket, TicketComment, TicketEvent } from '../types'
+import { parseUTC } from '../utils/date'
 
 export interface TimelineItem {
   type: 'comment' | 'event'
@@ -18,7 +19,7 @@ export function useTicketConversation(ticket: Ref<Ticket | null>) {
       items.push({
         type: 'comment',
         data: comment,
-        timestamp: new Date(comment.created_at),
+        timestamp: parseUTC(comment.created_at),
       })
     }
 
@@ -27,7 +28,7 @@ export function useTicketConversation(ticket: Ref<Ticket | null>) {
       items.push({
         type: 'event',
         data: event,
-        timestamp: new Date(event.created_at),
+        timestamp: parseUTC(event.created_at),
       })
     }
 

@@ -14,6 +14,7 @@ import { useTicketsStore } from '../stores/tickets'
 import { useAuthStore } from '../stores/auth'
 import { useTicketPreview } from '../composables/useTicketPreview'
 import type { TicketStatus } from '../types'
+import { formatDate } from '../utils/date'
 
 const route = useRoute()
 const router = useRouter()
@@ -44,15 +45,6 @@ const categoryLabels: Record<string, string> = {
   consultation: 'Консультация',
   feature_request: 'Предложение',
   other: 'Другое',
-}
-
-function formatDate(dateStr: string): string {
-  return new Intl.DateTimeFormat('ru-RU', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(dateStr))
 }
 
 async function loadTicket() {

@@ -2,17 +2,18 @@
 import { computed } from 'vue'
 import ProgressBar from 'primevue/progressbar'
 import type { Ticket } from '../../types'
+import { parseUTC } from '../../utils/date'
 
 const props = defineProps<{
   ticket: Ticket
 }>()
 
 function calcElapsedHours(createdAt: string, completedAt: string | null, pausedAt: string | null, totalPauseSeconds: number): number {
-  const start = new Date(createdAt).getTime()
-  const end = completedAt ? new Date(completedAt).getTime() : Date.now()
+  const start = parseUTC(createdAt).getTime()
+  const end = completedAt ? parseUTC(completedAt).getTime() : Date.now()
   let pauseMs = totalPauseSeconds * 1000
   if (pausedAt && !completedAt) {
-    pauseMs += Date.now() - new Date(pausedAt).getTime()
+    pauseMs += Date.now() - parseUTC(pausedAt).getTime()
   }
   return Math.max(0, (end - start - pauseMs) / (1000 * 60 * 60))
 }

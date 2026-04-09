@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { TicketComment, Attachment } from '../../types'
 import TicketInlineAttachments from './TicketInlineAttachments.vue'
+import { parseUTC } from '../../utils/date'
 
 const props = defineProps<{
   comment: TicketComment
@@ -14,13 +15,11 @@ const emit = defineEmits<{
 }>()
 
 function formatTime(dateStr: string): string {
-  const d = new Date(dateStr)
-  return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  return parseUTC(dateStr).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
 }
 
 function formatDate(dateStr: string): string {
-  const d = new Date(dateStr)
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
+  return parseUTC(dateStr).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
 }
 
 function bubbleClass(): string {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, computed } from 'vue'
 import type { Ticket, Attachment, TicketComment, TicketEvent } from '../../types'
+import { parseUTC } from '../../utils/date'
 import { useTicketConversation, type TimelineItem } from '../../composables/useTicketConversation'
 import { useAuthStore } from '../../stores/auth'
 import TicketTimelineDivider from './TicketTimelineDivider.vue'
@@ -60,8 +61,8 @@ function isEvent(item: TimelineItem): item is TimelineItem & { data: TicketEvent
   return item.type === 'event'
 }
 
-function formatTimestamp(date: Date): string {
-  return date.toLocaleString('ru-RU', {
+function formatTimestamp(dateStr: string): string {
+  return parseUTC(dateStr).toLocaleString('ru-RU', {
     day: 'numeric',
     month: 'short',
     hour: '2-digit',
@@ -78,7 +79,7 @@ function formatTimestamp(date: Date): string {
         <div class="bubble-header">
           <span class="author-name">{{ ticket.contact_name || 'Автор' }}</span>
           <span class="message-time" :title="ticket.created_at">
-            {{ formatTimestamp(new Date(ticket.created_at)) }}
+            {{ formatTimestamp(ticket.created_at) }}
           </span>
         </div>
         <div class="bubble-title">{{ ticket.title }}</div>
@@ -96,7 +97,7 @@ function formatTimestamp(date: Date): string {
       <TicketTimelineDivider
         v-if="isEvent(item)"
         :description="(item.data as TicketEvent).description"
-        :timestamp="formatTimestamp(item.timestamp)"
+        :timestamp="formatTimestamp(item.data.created_at)"
       />
 
       <TicketMessageBubble
