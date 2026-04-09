@@ -21,6 +21,7 @@ const emit = defineEmits<{
   statusChanged: [newStatus: TicketStatus]
   assigned: [agentId: string | null]
   macroApplied: [macroId: string]
+  objectUpdated: []
 }>()
 
 const hasTechnicalData = computed(() => {
@@ -65,6 +66,9 @@ const hasTechnicalData = computed(() => {
         :objectName="ticket.object_name"
         :objectAddress="ticket.object_address"
         :accessPoint="ticket.access_point"
+        :ticketId="ticket.id"
+        :isStaff="isStaff"
+        @updated="emit('objectUpdated')"
       />
     </Panel>
 

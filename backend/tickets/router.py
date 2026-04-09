@@ -678,6 +678,32 @@ async def update_app_settings(
     return AppSettingsResponse(default_assignee_id=payload.default_assignee_id)
 
 
+@router.get("/objects/suggest")
+async def suggest_objects(
+    q: str = Query("", min_length=0, description="Поисковая строка"),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Автокомплит по уникальным названиям объектов из тикетов."""
+    from sqlalchemy import func
+
+    query = select(
+        Ticket.object_name,
+        func.max(Ticket.object_address).label("object_address"),
+    ).where(
+        Ticket.object_name.isnot(None),
+        Ticket.object_name != "",
+    ).group_by(Ticket.object_name)
+
+    if q.strip():
+        query = query.where(Ticket.object_name.ilike(f"%{q.strip()}%"))
+
+    query = query.order_by(Ticket.object_name).limit(20)
+    result = await session.execute(query)
+    rows = result.all()
+    return [{"object_name": r.object_name, "object_address": r.object_address} for r in rows]
+
+
 @router.get("/{ticket_id}", response_model=TicketRead)
 async def get_ticket(
     ticket_id: str,
@@ -1061,6 +1087,62 @@ async def update_assignment(
             ticket_id=ticket.id,
             actor_id=str(current_user.id),
             description=f"Назначение: {', '.join(changes)}",
+        )
+        session.add(event)
+        session.add(ticket)
+        await session.commit()
+        await session.refresh(ticket)
+
+    return TicketRead.model_validate(ticket)
+
+
+# ---------------------------------------------------------------------------
+# Объект тикета — редактирование + автокомплит
+# ---------------------------------------------------------------------------
+
+
+class TicketObjectUpdate(BaseModel):
+    object_name: Optional[str] = None
+    object_address: Optional[str] = None
+    access_point: Optional[str] = None
+
+
+@router.put("/{ticket_id}/object", response_model=TicketRead)
+async def update_ticket_object(
+    ticket_id: str,
+    payload: TicketObjectUpdate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> TicketRead:
+    """Обновить информацию об объекте в тикете (только для staff)."""
+    from backend.auth.models import UserRole
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Только агент может редактировать объект")
+
+    result = await session.execute(
+        select(Ticket).where(Ticket.id == ticket_id).options(*_ticket_load_options())
+    )
+    ticket = result.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Тикет не найден")
+
+    changes = []
+    if payload.object_name is not None and ticket.object_name != payload.object_name:
+        ticket.object_name = payload.object_name or None
+        changes.append(f"объект: {payload.object_name or '—'}")
+    if payload.object_address is not None and ticket.object_address != payload.object_address:
+        ticket.object_address = payload.object_address or None
+        changes.append(f"адрес: {payload.object_address or '—'}")
+    if payload.access_point is not None and ticket.access_point != payload.access_point:
+        ticket.access_point = payload.access_point or None
+        changes.append(f"точка доступа: {payload.access_point or '—'}")
+
+    if changes:
+        ticket.updated_at = datetime.utcnow()
+        event = TicketEvent(
+            ticket_id=ticket.id,
+            actor_id=str(current_user.id),
+            description=f"Объект обновлён: {', '.join(changes)}",
         )
         session.add(event)
         session.add(ticket)

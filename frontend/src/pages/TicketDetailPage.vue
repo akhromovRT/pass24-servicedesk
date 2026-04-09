@@ -198,6 +198,7 @@ onUnmounted(() => {
           @status-changed="handleStatusChange"
           @assigned="handleAssigned"
           @macro-applied="handleMacroApplied"
+          @object-updated="loadTicket"
         />
       </div>
     </div>
