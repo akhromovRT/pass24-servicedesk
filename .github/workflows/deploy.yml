@@ -53,16 +53,5 @@ jobs:
             docker compose -f /opt/sites/pass24-servicedesk/docker-compose.yml up -d --remove-orphans
             docker image prune -f
             sleep 5
-            echo "=== Running one-time Bitrix24 sync ==="
-            docker exec site-pass24-servicedesk python -c "
-            import asyncio
-            from backend.customers.bitrix24_sync import sync_companies, sync_contacts
-            async def run():
-                c = await sync_companies()
-                u = await sync_contacts()
-                print(f'Companies: {c}')
-                print(f'Contacts: {u}')
-            asyncio.run(run())
-            " 2>&1 || true
             echo "=== Container logs (last 30 lines) ==="
             docker logs site-pass24-servicedesk --tail=30 2>&1 || true
