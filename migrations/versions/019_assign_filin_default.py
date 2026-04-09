@@ -28,7 +28,7 @@ def upgrade() -> None:
     row = result.fetchone()
     if not row:
         raise RuntimeError(f"User with email {FILIN_EMAIL} not found")
-    filin_id = row[0]
+    filin_id = str(row[0])
 
     # Set default assignee in app_settings (upsert)
     existing = conn.execute(
