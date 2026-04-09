@@ -32,17 +32,15 @@
 - Template editor: шаблоны в БД (auto-seed из Python-констант), CRUD для админов
 - Project analytics: метрики (duration, on-time rate, by type/status, risks, approvals)
 
-## v0.9 — Gantt & Real-time (планируется)
+## v0.9 — Gantt & Real-time (завершён 2026-04-09)
 
-- **Gantt chart**: горизонтальная визуализация с зависимостями между фазами/задачами
-  - Библиотека: frappe-gantt или кастомный SVG
-  - Drag-n-drop сроков, критический путь
-- **CRM webhook**: Bitrix24 сделки → автосоздание проектов
-  - Webhook при закрытии сделки → POST /projects с данными из CRM
-- **WebSocket real-time**: обновления проекта в реальном времени
-  - При изменении статуса задачи/фазы → push всем участникам
-  - Замена polling → WS для NotificationBell и ProjectDetailPage
-- **Push-уведомления / PWA**: Service Workers, offline-доступ к dashboard проекта
+- **Gantt chart**: ECharts-based горизонтальная визуализация фаз с цветовой кодировкой по статусу, tooltip, DataZoom
+- **WebSocket real-time**: ConnectionManager + /ws endpoint (JWT auth), broadcast при смене статуса тикета и новых комментариях, useWebSocket composable с auto-reconnect
+- **Project Analytics page**: /projects/analytics с 8 метриками + ECharts pie/bar графики
+
+**Осталось на будущее:**
+- CRM webhook: Bitrix24 сделки → автосоздание проектов
+- Push-уведомления / PWA: Service Workers, offline-доступ
 
 ## v1.0 — Scale & Optimization (будущее)
 
