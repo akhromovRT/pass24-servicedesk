@@ -39,6 +39,7 @@ const sections = computed<SettingsSection[]>(() => {
     { id: 'telegram', title: 'Telegram-бот', icon: 'pi pi-send', description: 'Настройка бота для приёма заявок из Telegram', color: '#0ea5e9' },
   ]
   if (isAdmin.value) {
+    base.push({ id: 'templates', title: 'Шаблоны проектов', icon: 'pi pi-copy', description: 'Создание и редактирование шаблонов проектов внедрения', color: '#f59e0b', adminOnly: true })
     base.push({ id: 'users', title: 'Пользователи и агенты', icon: 'pi pi-users', description: 'Управление учётными записями, ролями, паролями', color: '#8b5cf6', adminOnly: true })
   }
   return base
@@ -50,6 +51,7 @@ function toggleSection(id: string) {
   activeSection.value = activeSection.value === id ? null : id
   if (id === 'users' && activeSection.value === 'users') loadUsers()
   if (id === 'tickets' && activeSection.value === 'tickets') loadTicketSettings()
+  if (id === 'templates' && activeSection.value === 'templates') loadTemplates()
 }
 
 // ─── Ticket settings (default assignee) ─────────────────────────
@@ -91,6 +93,82 @@ async function saveTicketSettings() {
   } finally {
     savingTicketSettings.value = false
   }
+}
+
+// ─── Template editor ─────────────────────────────────────────────
+interface TemplateItem {
+  id: string
+  project_type: string
+  title: string
+  description: string | null
+  total_duration_days: number
+  phases_json: string
+  is_active: boolean
+  created_at: string
+}
+
+const templatesLoading = ref(false)
+const templatesList = ref<TemplateItem[]>([])
+const editTemplateDialog = ref(false)
+const editingTemplate = ref<TemplateItem | null>(null)
+const editTitle = ref('')
+const editDescription = ref('')
+const editDuration = ref(0)
+const savingTemplate = ref(false)
+
+async function loadTemplates() {
+  templatesLoading.value = true
+  try {
+    templatesList.value = await api.get<TemplateItem[]>('/projects/templates/db')
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+  } finally {
+    templatesLoading.value = false
+  }
+}
+
+function openEditTemplate(tmpl: TemplateItem) {
+  editingTemplate.value = tmpl
+  editTitle.value = tmpl.title
+  editDescription.value = tmpl.description || ''
+  editDuration.value = tmpl.total_duration_days
+  editTemplateDialog.value = true
+}
+
+async function saveTemplate() {
+  if (!editingTemplate.value) return
+  savingTemplate.value = true
+  try {
+    await api.put(`/projects/templates/db/${editingTemplate.value.id}`, {
+      title: editTitle.value,
+      description: editDescription.value || null,
+      total_duration_days: editDuration.value,
+    })
+    editTemplateDialog.value = false
+    await loadTemplates()
+    toast.add({ severity: 'success', summary: 'Шаблон обновлён', life: 2000 })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+  } finally {
+    savingTemplate.value = false
+  }
+}
+
+async function deactivateTemplate(id: string) {
+  try {
+    await api.delete(`/projects/templates/db/${id}`)
+    await loadTemplates()
+    toast.add({ severity: 'success', summary: 'Шаблон деактивирован', life: 2000 })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message, life: 4000 })
+  }
+}
+
+const typeLabels: Record<string, string> = {
+  residential: 'Стандартный ЖК',
+  commercial: 'Стандартный БЦ',
+  cameras_only: 'Только камеры',
+  large_construction: 'Большая стройка',
 }
 
 onMounted(() => loadTicketSettings())
@@ -552,6 +630,58 @@ onMounted(() => {
       </Card>
     </Transition>
 
+    <!-- Templates editor (admin only) -->
+    <Transition name="slide-down">
+      <Card v-if="activeSection === 'templates' && isAdmin" class="settings-content">
+        <template #title>
+          <div class="content-title"><i class="pi pi-copy" style="color:#f59e0b" /> Шаблоны проектов внедрения</div>
+        </template>
+        <template #content>
+          <div v-if="templatesLoading" class="text-center p-4">
+            <i class="pi pi-spin pi-spinner" style="font-size: 1.5rem; color: #94a3b8"></i>
+          </div>
+          <div v-else>
+            <div v-for="tmpl in templatesList" :key="tmpl.id" class="template-card" :class="{ inactive: !tmpl.is_active }">
+              <div class="template-header">
+                <div class="template-info">
+                  <div class="template-title">{{ tmpl.title }}</div>
+                  <div class="template-type">{{ typeLabels[tmpl.project_type] || tmpl.project_type }} · {{ tmpl.total_duration_days }} дн.</div>
+                </div>
+                <div class="template-actions">
+                  <Button icon="pi pi-pencil" text size="small" @click="openEditTemplate(tmpl)" />
+                  <Button v-if="tmpl.is_active" icon="pi pi-trash" text severity="danger" size="small" @click="deactivateTemplate(tmpl.id)" />
+                </div>
+              </div>
+              <div v-if="tmpl.description" class="template-desc">{{ tmpl.description }}</div>
+            </div>
+            <p v-if="!templatesList.length" class="text-center" style="color: #94a3b8;">Шаблоны загружаются при первом обращении</p>
+          </div>
+        </template>
+      </Card>
+    </Transition>
+
+    <!-- Edit template dialog -->
+    <Dialog v-model:visible="editTemplateDialog" header="Редактировать шаблон" modal :style="{ width: '500px' }">
+      <div class="dialog-form">
+        <div class="field">
+          <label>Название</label>
+          <InputText v-model="editTitle" class="w-full" />
+        </div>
+        <div class="field">
+          <label>Описание</label>
+          <Textarea v-model="editDescription" rows="3" class="w-full" />
+        </div>
+        <div class="field">
+          <label>Длительность (дни)</label>
+          <InputText v-model.number="editDuration" type="number" class="w-full" />
+        </div>
+      </div>
+      <template #footer>
+        <Button label="Отмена" severity="secondary" @click="editTemplateDialog = false" />
+        <Button label="Сохранить" :loading="savingTemplate" @click="saveTemplate" />
+      </template>
+    </Dialog>
+
     <!-- Users management (admin only) -->
     <Transition name="slide-down">
       <Card v-if="activeSection === 'users' && isAdmin" class="settings-content">
@@ -919,4 +1049,21 @@ a { color: #3b82f6; }
   .setting-row { flex-direction: column; gap: 12px; }
   .setting-control { min-width: 100% !important; }
 }
+
+/* Template cards */
+.template-card {
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  transition: background 0.15s;
+}
+.template-card:hover { background: #f8fafc; }
+.template-card.inactive { opacity: 0.5; }
+.template-header { display: flex; justify-content: space-between; align-items: flex-start; }
+.template-info { flex: 1; }
+.template-title { font-weight: 600; color: #1e293b; font-size: 14px; }
+.template-type { font-size: 12px; color: #64748b; margin-top: 2px; }
+.template-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.template-desc { font-size: 13px; color: #475569; margin-top: 8px; line-height: 1.5; }
 </style>

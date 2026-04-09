@@ -110,6 +110,12 @@ const router = createRouter({
       meta: { auth: true },
     },
     {
+      path: '/projects/analytics',
+      name: 'project-analytics',
+      component: () => import('../pages/ProjectAnalyticsPage.vue'),
+      meta: { auth: true, roles: ['support_agent', 'admin'] },
+    },
+    {
       path: '/projects/create',
       name: 'project-create',
       component: () => import('../pages/ProjectCreatePage.vue'),

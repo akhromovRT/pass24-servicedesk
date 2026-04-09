@@ -22,6 +22,8 @@ import ProjectStatusBadge from '../components/ProjectStatusBadge.vue'
 import ProjectTypeBadge from '../components/ProjectTypeBadge.vue'
 import ProjectTimeline from '../components/ProjectTimeline.vue'
 import PhaseCard from '../components/PhaseCard.vue'
+import PhaseApproval from '../components/project/PhaseApproval.vue'
+import RiskPanel from '../components/project/RiskPanel.vue'
 import { useProjectsStore } from '../stores/projects'
 import { useAuthStore } from '../stores/auth'
 import type {
@@ -46,6 +48,7 @@ const project = computed(() => store.currentProject)
 const isStaff = computed(() =>
   auth.user?.role === 'support_agent' || auth.user?.role === 'admin',
 )
+const isPropertyManager = computed(() => auth.user?.role === 'property_manager')
 const canEdit = computed(() => isStaff.value)
 
 const activeTab = ref('0')
@@ -377,6 +380,7 @@ onMounted(loadProject)
           <Tab value="timeline">Timeline</Tab>
           <Tab value="documents">Документы</Tab>
           <Tab value="team">Команда</Tab>
+          <Tab value="risks" v-if="isStaff">Риски</Tab>
           <Tab value="tickets">Тикеты</Tab>
           <Tab value="comments">Комментарии</Tab>
           <Tab value="events">История</Tab>
@@ -385,24 +389,36 @@ onMounted(loadProject)
           <!-- Этапы + задачи -->
           <TabPanel value="0">
             <div class="phases-list">
-              <PhaseCard
-                v-for="phase in project.phases"
-                :key="phase.id"
-                :phase="phase"
-                :can-edit="canEdit"
-                @start="onStartPhase"
-                @complete="onCompletePhase"
-                @task-complete="onCompleteTask"
-                @task-cancel="onCancelTask"
-                @add-task="onAddTask"
-                @update-dates="onUpdateDates"
-              />
+              <div v-for="phase in project.phases" :key="phase.id" class="phase-with-approval">
+                <PhaseCard
+                  :phase="phase"
+                  :can-edit="canEdit"
+                  @start="onStartPhase"
+                  @complete="onCompletePhase"
+                  @task-complete="onCompleteTask"
+                  @task-cancel="onCancelTask"
+                  @add-task="onAddTask"
+                  @update-dates="onUpdateDates"
+                />
+                <PhaseApproval
+                  :project-id="projectId"
+                  :phase-id="phase.id"
+                  :phase-status="phase.status"
+                  :is-property-manager="isPropertyManager"
+                  :is-staff="isStaff"
+                />
+              </div>
             </div>
           </TabPanel>
 
           <!-- Timeline -->
           <TabPanel value="timeline">
             <ProjectTimeline :phases="project.phases" />
+          </TabPanel>
+
+          <!-- Risks -->
+          <TabPanel v-if="isStaff" value="risks">
+            <RiskPanel :project-id="projectId" />
           </TabPanel>
 
           <!-- Documents -->
