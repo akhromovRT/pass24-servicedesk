@@ -673,7 +673,7 @@ onMounted(() => {
         </div>
         <div class="field">
           <label>Длительность (дни)</label>
-          <InputText v-model.number="editDuration" type="number" class="w-full" />
+          <InputText :model-value="String(editDuration)" @update:model-value="editDuration = Number($event)" type="number" class="w-full" />
         </div>
       </div>
       <template #footer>
