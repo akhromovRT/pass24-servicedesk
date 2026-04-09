@@ -30,7 +30,7 @@ function formatFileSize(bytes: number): string {
 }
 
 function thumbnailUrl(attachment: Attachment): string {
-  return `/api/tickets/${attachment.ticket_id}/attachments/${attachment.id}`
+  return `/tickets/${attachment.ticket_id}/attachments/${attachment.id}`
 }
 
 function authHeaders(): Record<string, string> {
