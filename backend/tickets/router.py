@@ -859,7 +859,9 @@ async def add_comment(
     # Авто-переход статуса + флаг unread
     if not is_internal:
         if is_staff:
-            # Первый ответ агента → переводим в работу (агент сам решит когда ждать ответа)
+            # Агент ответил клиенту:
+            # NEW → IN_PROGRESS (первый ответ, берём в работу)
+            # IN_PROGRESS → WAITING_FOR_USER (ответили, ждём ответа клиента)
             if ticket.status == TicketStatus.NEW:
                 try:
                     event = ticket.transition(
@@ -869,9 +871,18 @@ async def add_comment(
                     session.add(event)
                 except ValueError:
                     pass
+            elif ticket.status == TicketStatus.IN_PROGRESS:
+                try:
+                    event = ticket.transition(
+                        actor_id=str(current_user.id),
+                        new_status=TicketStatus.WAITING_FOR_USER,
+                    )
+                    session.add(event)
+                except ValueError:
+                    pass
             ticket.has_unread_reply = False  # агент обработал
         else:
-            # Клиент ответил → агентам нужно работать
+            # Клиент ответил → переводим в работу + уведомляем агентов
             if ticket.status == TicketStatus.WAITING_FOR_USER:
                 try:
                     event = ticket.transition(
