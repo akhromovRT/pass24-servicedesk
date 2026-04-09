@@ -432,3 +432,110 @@ class ProjectComment(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     project: Optional["ImplementationProject"] = Relationship(back_populates="comments")
+
+
+# ---------------------------------------------------------------------------
+# Утверждения фаз клиентом
+# ---------------------------------------------------------------------------
+
+
+class ApprovalStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class ProjectApproval(SQLModel, table=True):
+    """Утверждение завершения фазы клиентом (property_manager)."""
+
+    __tablename__ = "project_approvals"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    project_id: str = Field(foreign_key="implementation_projects.id", index=True)
+    phase_id: str = Field(foreign_key="project_phases.id", index=True)
+
+    status: str = Field(default=ApprovalStatus.PENDING, sa_column=Column(String, index=True, default="pending"))
+    requested_by: str = Field(description="User.id — менеджер PASS24")
+    reviewed_by: Optional[str] = Field(default=None, description="User.id — клиент")
+    feedback: Optional[str] = Field(default=None, max_length=2000)
+
+    requested_at: datetime = Field(default_factory=datetime.utcnow)
+    reviewed_at: Optional[datetime] = Field(default=None)
+
+    project: Optional["ImplementationProject"] = Relationship()
+
+
+# ---------------------------------------------------------------------------
+# Риски проекта
+# ---------------------------------------------------------------------------
+
+
+class RiskSeverity(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class RiskProbability(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class RiskStatus(str, Enum):
+    OPEN = "open"
+    MITIGATED = "mitigated"
+    OCCURRED = "occurred"
+    CLOSED = "closed"
+
+
+class ProjectRisk(SQLModel, table=True):
+    """Риск проекта внедрения."""
+
+    __tablename__ = "project_risks"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    project_id: str = Field(foreign_key="implementation_projects.id", index=True)
+
+    title: str = Field(max_length=200)
+    description: Optional[str] = Field(default=None, max_length=4000)
+    severity: str = Field(default=RiskSeverity.MEDIUM, sa_column=Column(String, index=True, default="medium"))
+    probability: str = Field(default=RiskProbability.MEDIUM, sa_column=Column(String, default="medium"))
+    impact: str = Field(default="medium", sa_column=Column(String, default="medium"))
+    mitigation_plan: Optional[str] = Field(default=None, max_length=4000)
+
+    owner_id: Optional[str] = Field(default=None, index=True)
+    status: str = Field(default=RiskStatus.OPEN, sa_column=Column(String, index=True, default="open"))
+
+    created_by: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    project: Optional["ImplementationProject"] = Relationship()
+
+
+# ---------------------------------------------------------------------------
+# Шаблоны проектов в БД (редактируемые через UI)
+# ---------------------------------------------------------------------------
+
+
+class ProjectTemplateDB(SQLModel, table=True):
+    """Шаблон проекта внедрения, хранимый в БД (вместо Python-констант)."""
+
+    __tablename__ = "project_templates_db"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    project_type: str = Field(
+        sa_column=Column(String, unique=True, index=True, nullable=False),
+        description="Уникальный ключ шаблона (residential, commercial, ...)",
+    )
+    title: str = Field(max_length=200)
+    description: Optional[str] = Field(default=None)
+    total_duration_days: int = Field(default=0)
+    phases_json: str = Field(default="[]", description="JSON array фаз с задачами")
+    is_active: bool = Field(default=True)
+
+    created_by: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
