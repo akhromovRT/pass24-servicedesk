@@ -265,8 +265,16 @@ def _is_sufficient(subject: str, body: str) -> bool:
     return has_title and has_description
 
 
+_processed_message_ids: set[str] = set()
+
+
 def _fetch_unseen_emails() -> list[dict]:
-    """Подключается к IMAP и читает непрочитанные письма (sync)."""
+    """Подключается к IMAP и читает новые письма за последний час.
+
+    Использует SINCE + дедупликацию по Message-ID вместо UNSEEN,
+    потому что почтовые клиенты (Яндекс Почта) помечают письма
+    прочитанными до того как polling их обработает.
+    """
     if not settings.smtp_password:
         return []
 
@@ -276,7 +284,10 @@ def _fetch_unseen_emails() -> list[dict]:
         mail.login(settings.smtp_user, settings.smtp_password)
         mail.select("INBOX")
 
-        _, message_nums = mail.search(None, "UNSEEN")
+        # Ищем письма за последние 2 дня (IMAP SINCE не поддерживает часы)
+        from datetime import datetime, timedelta
+        since_date = (datetime.utcnow() - timedelta(days=2)).strftime("%d-%b-%Y")
+        _, message_nums = mail.search(None, f"SINCE {since_date}")
         if not message_nums[0]:
             mail.logout()
             return []
@@ -288,6 +299,16 @@ def _fetch_unseen_emails() -> list[dict]:
 
             raw_email = msg_data[0][1]
             msg = email.message_from_bytes(raw_email)
+
+            # Дедупликация по Message-ID
+            message_id = msg.get("Message-ID", "")
+            if message_id and message_id in _processed_message_ids:
+                continue
+            if message_id:
+                _processed_message_ids.add(message_id)
+                # Ограничиваем размер кеша (последние 500)
+                if len(_processed_message_ids) > 500:
+                    _processed_message_ids.clear()
 
             subject = _decode_mime_header(msg.get("Subject", ""))
             from_header = msg.get("From", "")
@@ -549,6 +570,20 @@ async def _handle_new_ticket(mail_data: dict) -> None:
             """,
         )
         return
+
+    # Дедупликация: проверяем нет ли уже тикета с таким title + email
+    async with async_session_factory() as check_session:
+        title_to_check = subject[:200] if subject else f"Обращение от {from_name}"
+        dup_check = await check_session.execute(
+            select(Ticket).where(
+                Ticket.title == title_to_check,
+                Ticket.contact_email == from_email,
+                Ticket.source == "email",
+            )
+        )
+        if dup_check.scalar_one_or_none():
+            logger.info("Дубликат тикета: %s / %s — пропускаем", from_email, title_to_check[:40])
+            return
 
     category = _detect_category(f"{subject} {body}")
     title = subject.strip() if subject.strip() else body[:100].strip()
