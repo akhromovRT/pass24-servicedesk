@@ -1037,3 +1037,245 @@ async def delete_task(
 
     await _recalculate_and_persist_progress(session, project_id)
     await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Шаблоны проектов: DB-backed CRUD (admin only)
+# ---------------------------------------------------------------------------
+
+from backend.projects.models import ProjectTemplateDB
+import json as _json
+
+
+class TemplateDBCreate(BaseModel):
+    project_type: str
+    title: str
+    description: Optional[str] = None
+    total_duration_days: int = 0
+    phases_json: str = "[]"
+
+
+class TemplateDBUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    total_duration_days: Optional[int] = None
+    phases_json: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class TemplateDBRead(BaseModel):
+    id: str
+    project_type: str
+    title: str
+    description: Optional[str] = None
+    total_duration_days: int
+    phases_json: str
+    is_active: bool
+    created_at: str
+    model_config = {"from_attributes": True}
+
+
+@router.get("/templates/db", response_model=List[TemplateDBRead])
+async def list_db_templates(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_pass24_staff),
+):
+    """Список шаблонов проектов из БД (для редактора)."""
+    result = await session.execute(
+        select(ProjectTemplateDB).order_by(ProjectTemplateDB.project_type)
+    )
+    templates = result.scalars().all()
+
+    # Seed: если в БД пусто — загружаем из Python-констант
+    if not templates:
+        for pt, tmpl in PROJECT_TEMPLATES.items():
+            phases_data = [
+                {
+                    "order": p.order,
+                    "name": p.name,
+                    "description": p.description,
+                    "duration_days": p.duration_days,
+                    "weight": p.weight,
+                    "tasks": [
+                        {"title": t.title, "description": t.description, "is_milestone": t.is_milestone, "estimated_hours": t.estimated_hours}
+                        for t in p.tasks
+                    ],
+                }
+                for p in tmpl.phases
+            ]
+            db_tmpl = ProjectTemplateDB(
+                project_type=pt,
+                title=tmpl.title,
+                description=tmpl.description,
+                total_duration_days=tmpl.total_duration_days,
+                phases_json=_json.dumps(phases_data, ensure_ascii=False),
+                created_by=str(current_user.id),
+            )
+            session.add(db_tmpl)
+        await session.commit()
+        result = await session.execute(
+            select(ProjectTemplateDB).order_by(ProjectTemplateDB.project_type)
+        )
+        templates = result.scalars().all()
+
+    return [TemplateDBRead.model_validate(t) for t in templates]
+
+
+@router.post("/templates/db", response_model=TemplateDBRead, status_code=status.HTTP_201_CREATED)
+async def create_db_template(
+    payload: TemplateDBCreate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_admin),
+):
+    """Создать шаблон проекта."""
+    tmpl = ProjectTemplateDB(
+        project_type=payload.project_type,
+        title=payload.title,
+        description=payload.description,
+        total_duration_days=payload.total_duration_days,
+        phases_json=payload.phases_json,
+        created_by=str(current_user.id),
+    )
+    session.add(tmpl)
+    await session.commit()
+    await session.refresh(tmpl)
+    return TemplateDBRead.model_validate(tmpl)
+
+
+@router.put("/templates/db/{template_id}", response_model=TemplateDBRead)
+async def update_db_template(
+    template_id: str,
+    payload: TemplateDBUpdate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_admin),
+):
+    """Обновить шаблон."""
+    result = await session.execute(
+        select(ProjectTemplateDB).where(ProjectTemplateDB.id == template_id)
+    )
+    tmpl = result.scalar_one_or_none()
+    if not tmpl:
+        raise HTTPException(status_code=404, detail="Шаблон не найден")
+
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(tmpl, field, value)
+    tmpl.updated_at = datetime.utcnow()
+    session.add(tmpl)
+    await session.commit()
+    await session.refresh(tmpl)
+    return TemplateDBRead.model_validate(tmpl)
+
+
+@router.delete("/templates/db/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_db_template(
+    template_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_admin),
+):
+    """Деактивировать шаблон (soft delete)."""
+    result = await session.execute(
+        select(ProjectTemplateDB).where(ProjectTemplateDB.id == template_id)
+    )
+    tmpl = result.scalar_one_or_none()
+    if not tmpl:
+        raise HTTPException(status_code=404, detail="Шаблон не найден")
+    tmpl.is_active = False
+    tmpl.updated_at = datetime.utcnow()
+    session.add(tmpl)
+    await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Project Analytics (staff only)
+# ---------------------------------------------------------------------------
+
+
+class AnalyticsResponse(BaseModel):
+    total_projects: int
+    active_projects: int
+    completed_projects: int
+    on_hold_projects: int
+    avg_duration_days: Optional[float] = None
+    on_time_rate: Optional[float] = None
+    by_type: dict
+    by_status: dict
+    open_risks_count: int
+    pending_approvals_count: int
+
+
+@router.get("/analytics", response_model=AnalyticsResponse)
+async def get_project_analytics(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_pass24_staff),
+):
+    """Аналитика по проектам внедрения."""
+    from backend.projects.models import ProjectApproval, ProjectRisk
+
+    total = (await session.execute(
+        select(func.count()).select_from(ImplementationProject)
+    )).scalar_one()
+
+    active = (await session.execute(
+        select(func.count()).select_from(ImplementationProject)
+        .where(ImplementationProject.status == "in_progress")
+    )).scalar_one()
+
+    completed = (await session.execute(
+        select(func.count()).select_from(ImplementationProject)
+        .where(ImplementationProject.status == "completed")
+    )).scalar_one()
+
+    on_hold = (await session.execute(
+        select(func.count()).select_from(ImplementationProject)
+        .where(ImplementationProject.status == "on_hold")
+    )).scalar_one()
+
+    # Средняя длительность завершённых
+    avg_duration = None
+    completed_list = (await session.execute(
+        select(ImplementationProject).where(
+            ImplementationProject.status == "completed",
+            ImplementationProject.actual_start_date.is_not(None),
+            ImplementationProject.actual_end_date.is_not(None),
+        )
+    )).scalars().all()
+    if completed_list:
+        durations = [(p.actual_end_date - p.actual_start_date).days for p in completed_list]
+        avg_duration = round(sum(durations) / len(durations), 1)
+
+    # On-time rate
+    on_time_rate = None
+    if completed_list:
+        on_time = sum(1 for p in completed_list if p.planned_end_date and p.actual_end_date and p.actual_end_date <= p.planned_end_date)
+        on_time_rate = round(on_time / len(completed_list) * 100, 1)
+
+    by_type_result = await session.execute(
+        select(ImplementationProject.project_type, func.count()).group_by(ImplementationProject.project_type)
+    )
+    by_type = {row[0]: row[1] for row in by_type_result.all()}
+
+    by_status_result = await session.execute(
+        select(ImplementationProject.status, func.count()).group_by(ImplementationProject.status)
+    )
+    by_status = {row[0].value if hasattr(row[0], 'value') else row[0]: row[1] for row in by_status_result.all()}
+
+    open_risks = (await session.execute(
+        select(func.count()).select_from(ProjectRisk).where(ProjectRisk.status == "open")
+    )).scalar_one()
+
+    pending_approvals = (await session.execute(
+        select(func.count()).select_from(ProjectApproval).where(ProjectApproval.status == "pending")
+    )).scalar_one()
+
+    return AnalyticsResponse(
+        total_projects=total,
+        active_projects=active,
+        completed_projects=completed,
+        on_hold_projects=on_hold,
+        avg_duration_days=avg_duration,
+        on_time_rate=on_time_rate,
+        by_type=by_type,
+        by_status=by_status,
+        open_risks_count=open_risks,
+        pending_approvals_count=pending_approvals,
+    )

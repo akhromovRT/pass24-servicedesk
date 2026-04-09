@@ -364,3 +364,39 @@ export interface LinkedTicket {
   created_at: string
   creator_id: string
 }
+
+// Approvals
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected'
+
+export interface ProjectApproval {
+  id: string
+  project_id: string
+  phase_id: string
+  status: ApprovalStatus
+  requested_by: string
+  reviewed_by: string | null
+  feedback: string | null
+  requested_at: string
+  reviewed_at: string | null
+}
+
+// Risks
+export type RiskSeverity = 'low' | 'medium' | 'high' | 'critical'
+export type RiskProbability = 'low' | 'medium' | 'high'
+export type RiskStatus = 'open' | 'mitigated' | 'occurred' | 'closed'
+
+export interface ProjectRisk {
+  id: string
+  project_id: string
+  title: string
+  description: string | null
+  severity: RiskSeverity
+  probability: RiskProbability
+  impact: string
+  mitigation_plan: string | null
+  owner_id: string | null
+  status: RiskStatus
+  created_by: string
+  created_at: string
+  updated_at: string
+}

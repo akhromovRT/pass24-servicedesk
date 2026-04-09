@@ -551,3 +551,351 @@ async def unlink_ticket(
         )
     )
     await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Approvals — утверждение фаз клиентом
+# ---------------------------------------------------------------------------
+
+from backend.projects.models import ProjectApproval, ApprovalStatus, PhaseStatus
+from pydantic import BaseModel as PydanticBaseModel
+
+
+class ApprovalRead(PydanticBaseModel):
+    id: str
+    project_id: str
+    phase_id: str
+    status: str
+    requested_by: str
+    reviewed_by: Optional[str] = None
+    feedback: Optional[str] = None
+    requested_at: str
+    reviewed_at: Optional[str] = None
+    model_config = {"from_attributes": True}
+
+
+class RejectPayload(PydanticBaseModel):
+    feedback: str
+
+
+@router.get("/{project_id}/approvals", response_model=List[ApprovalRead])
+async def list_approvals(
+    project_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+    _project=Depends(get_project_with_access),
+):
+    """Список всех утверждений проекта."""
+    result = await session.execute(
+        select(ProjectApproval)
+        .where(ProjectApproval.project_id == project_id)
+        .order_by(ProjectApproval.requested_at.desc())
+    )
+    approvals = result.scalars().all()
+    return [ApprovalRead.model_validate(a) for a in approvals]
+
+
+@router.post("/{project_id}/phases/{phase_id}/request-approval", response_model=ApprovalRead, status_code=status.HTTP_201_CREATED)
+async def request_approval(
+    project_id: str,
+    phase_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+    _=Depends(require_pass24_staff),
+):
+    """Запрос утверждения завершённой фазы у клиента."""
+    from backend.projects.models import ProjectPhase
+
+    # Проверяем фазу
+    result = await session.execute(
+        select(ProjectPhase).where(ProjectPhase.id == phase_id, ProjectPhase.project_id == project_id)
+    )
+    phase = result.scalar_one_or_none()
+    if not phase:
+        raise HTTPException(status_code=404, detail="Фаза не найдена")
+    if phase.status != PhaseStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="Фаза должна быть завершена перед запросом утверждения")
+
+    # Проверяем нет ли уже pending approval
+    existing = await session.execute(
+        select(ProjectApproval).where(
+            ProjectApproval.phase_id == phase_id,
+            ProjectApproval.status == "pending",
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Утверждение уже запрошено")
+
+    approval = ProjectApproval(
+        project_id=project_id,
+        phase_id=phase_id,
+        requested_by=str(current_user.id),
+    )
+    session.add(approval)
+
+    session.add(ProjectEvent(
+        project_id=project_id,
+        actor_id=str(current_user.id),
+        event_type="approval_requested",
+        description=f"Запрошено утверждение фазы «{phase.name}»",
+    ))
+    await session.commit()
+    await session.refresh(approval)
+
+    # Email клиенту
+    from backend.projects.models import ImplementationProject
+    proj_result = await session.execute(
+        select(ImplementationProject).where(ImplementationProject.id == project_id)
+    )
+    project = proj_result.scalar_one_or_none()
+    if project:
+        from backend.auth.models import User as AuthUser
+        client_result = await session.execute(
+            select(AuthUser).where(AuthUser.id == project.customer_id)
+        )
+        client = client_result.scalar_one_or_none()
+        if client:
+            from backend.notifications.email import _send_email
+            await _send_email(
+                to=client.email,
+                subject=f"Этап «{phase.name}» завершён — подтвердите",
+                html_body=f"""
+                <div style="font-family: -apple-system, Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <div style="background: #0f172a; color: #f8fafc; padding: 16px 24px; border-radius: 8px 8px 0 0;">
+                        <strong>PASS24 Service Desk</strong>
+                    </div>
+                    <div style="padding: 24px; background: #fff; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px;">
+                        <h2 style="margin: 0 0 16px; color: #1e293b;">Этап завершён — требуется подтверждение</h2>
+                        <p style="color: #475569;">Проект: <strong>{project.name}</strong></p>
+                        <p style="color: #475569;">Этап: <strong>{phase.name}</strong></p>
+                        <p style="color: #475569;">Пожалуйста, войдите на портал и подтвердите завершение этапа.</p>
+                        <div style="margin-top: 20px; text-align: center;">
+                            <a href="https://support.pass24pro.ru/projects/{project_id}" style="display:inline-block;background:#0f172a;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:500;">Открыть проект</a>
+                        </div>
+                    </div>
+                </div>
+                """,
+            )
+
+    return ApprovalRead.model_validate(approval)
+
+
+@router.post("/{project_id}/approvals/{approval_id}/approve", response_model=ApprovalRead)
+async def approve_phase(
+    project_id: str,
+    approval_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+    _project=Depends(get_project_with_access),
+):
+    """Клиент утверждает завершение фазы."""
+    result = await session.execute(
+        select(ProjectApproval).where(ProjectApproval.id == approval_id, ProjectApproval.project_id == project_id)
+    )
+    approval = result.scalar_one_or_none()
+    if not approval:
+        raise HTTPException(status_code=404, detail="Утверждение не найдено")
+    if approval.status != "pending":
+        raise HTTPException(status_code=400, detail="Утверждение уже обработано")
+
+    from datetime import datetime
+    approval.status = "approved"
+    approval.reviewed_by = str(current_user.id)
+    approval.reviewed_at = datetime.utcnow()
+    session.add(approval)
+
+    session.add(ProjectEvent(
+        project_id=project_id,
+        actor_id=str(current_user.id),
+        event_type="approval_approved",
+        description=f"Фаза утверждена клиентом",
+    ))
+    await session.commit()
+    await session.refresh(approval)
+    return ApprovalRead.model_validate(approval)
+
+
+@router.post("/{project_id}/approvals/{approval_id}/reject", response_model=ApprovalRead)
+async def reject_phase(
+    project_id: str,
+    approval_id: str,
+    payload: RejectPayload,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+    _project=Depends(get_project_with_access),
+):
+    """Клиент отклоняет завершение фазы (с комментарием)."""
+    result = await session.execute(
+        select(ProjectApproval).where(ProjectApproval.id == approval_id, ProjectApproval.project_id == project_id)
+    )
+    approval = result.scalar_one_or_none()
+    if not approval:
+        raise HTTPException(status_code=404, detail="Утверждение не найдено")
+    if approval.status != "pending":
+        raise HTTPException(status_code=400, detail="Утверждение уже обработано")
+
+    from datetime import datetime
+    approval.status = "rejected"
+    approval.reviewed_by = str(current_user.id)
+    approval.feedback = payload.feedback
+    approval.reviewed_at = datetime.utcnow()
+    session.add(approval)
+
+    # Вернуть фазу в in_progress
+    from backend.projects.models import ProjectPhase
+    phase_result = await session.execute(
+        select(ProjectPhase).where(ProjectPhase.id == approval.phase_id)
+    )
+    phase = phase_result.scalar_one_or_none()
+    if phase:
+        phase.status = PhaseStatus.IN_PROGRESS
+        session.add(phase)
+
+    session.add(ProjectEvent(
+        project_id=project_id,
+        actor_id=str(current_user.id),
+        event_type="approval_rejected",
+        description=f"Фаза отклонена клиентом: {payload.feedback}",
+    ))
+    await session.commit()
+    await session.refresh(approval)
+    return ApprovalRead.model_validate(approval)
+
+
+# ---------------------------------------------------------------------------
+# Риски проекта
+# ---------------------------------------------------------------------------
+
+from backend.projects.models import ProjectRisk
+
+
+class RiskCreate(PydanticBaseModel):
+    title: str
+    description: Optional[str] = None
+    severity: str = "medium"
+    probability: str = "medium"
+    impact: str = "medium"
+    mitigation_plan: Optional[str] = None
+    owner_id: Optional[str] = None
+
+
+class RiskUpdate(PydanticBaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    severity: Optional[str] = None
+    probability: Optional[str] = None
+    impact: Optional[str] = None
+    mitigation_plan: Optional[str] = None
+    owner_id: Optional[str] = None
+    status: Optional[str] = None
+
+
+class RiskRead(PydanticBaseModel):
+    id: str
+    project_id: str
+    title: str
+    description: Optional[str] = None
+    severity: str
+    probability: str
+    impact: str
+    mitigation_plan: Optional[str] = None
+    owner_id: Optional[str] = None
+    status: str
+    created_by: str
+    created_at: str
+    updated_at: str
+    model_config = {"from_attributes": True}
+
+
+@router.get("/{project_id}/risks", response_model=List[RiskRead])
+async def list_risks(
+    project_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+    _=Depends(require_pass24_staff),
+):
+    """Список рисков проекта (только для staff)."""
+    result = await session.execute(
+        select(ProjectRisk)
+        .where(ProjectRisk.project_id == project_id)
+        .order_by(ProjectRisk.created_at.desc())
+    )
+    return [RiskRead.model_validate(r) for r in result.scalars().all()]
+
+
+@router.post("/{project_id}/risks", response_model=RiskRead, status_code=status.HTTP_201_CREATED)
+async def create_risk(
+    project_id: str,
+    payload: RiskCreate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+    _=Depends(require_pass24_staff),
+):
+    """Создать риск проекта."""
+    risk = ProjectRisk(
+        project_id=project_id,
+        title=payload.title,
+        description=payload.description,
+        severity=payload.severity,
+        probability=payload.probability,
+        impact=payload.impact,
+        mitigation_plan=payload.mitigation_plan,
+        owner_id=payload.owner_id,
+        created_by=str(current_user.id),
+    )
+    session.add(risk)
+    session.add(ProjectEvent(
+        project_id=project_id,
+        actor_id=str(current_user.id),
+        event_type="risk_created",
+        description=f"Риск «{payload.title}» создан (severity: {payload.severity})",
+    ))
+    await session.commit()
+    await session.refresh(risk)
+    return RiskRead.model_validate(risk)
+
+
+@router.put("/{project_id}/risks/{risk_id}", response_model=RiskRead)
+async def update_risk(
+    project_id: str,
+    risk_id: str,
+    payload: RiskUpdate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+    _=Depends(require_pass24_staff),
+):
+    """Обновить риск."""
+    result = await session.execute(
+        select(ProjectRisk).where(ProjectRisk.id == risk_id, ProjectRisk.project_id == project_id)
+    )
+    risk = result.scalar_one_or_none()
+    if not risk:
+        raise HTTPException(status_code=404, detail="Риск не найден")
+
+    from datetime import datetime
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(risk, field, value)
+    risk.updated_at = datetime.utcnow()
+    session.add(risk)
+    await session.commit()
+    await session.refresh(risk)
+    return RiskRead.model_validate(risk)
+
+
+@router.delete("/{project_id}/risks/{risk_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_risk(
+    project_id: str,
+    risk_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+    _=Depends(require_pass24_staff),
+):
+    """Удалить риск."""
+    result = await session.execute(
+        select(ProjectRisk).where(ProjectRisk.id == risk_id, ProjectRisk.project_id == project_id)
+    )
+    risk = result.scalar_one_or_none()
+    if not risk:
+        raise HTTPException(status_code=404, detail="Риск не найден")
+    await session.delete(risk)
+    await session.commit()

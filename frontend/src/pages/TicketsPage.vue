@@ -15,6 +15,7 @@ import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import { useTicketsStore, type SavedView } from '../stores/tickets'
 import { useAuthStore } from '../stores/auth'
+import { useAgentTools } from '../composables/useAgentTools'
 import type { Ticket } from '../types'
 
 const router = useRouter()
@@ -22,6 +23,7 @@ const toast = useToast()
 const confirm = useConfirm()
 const store = useTicketsStore()
 const auth = useAuthStore()
+const { agents, loadAll: loadAgentTools } = useAgentTools()
 
 const isStaff = computed(() => auth.user?.role === 'support_agent' || auth.user?.role === 'admin')
 
@@ -169,6 +171,18 @@ const productLabels: Record<string, string> = {
   pass24_control: 'PASS24.control', pass24_auto: 'PASS24.auto',
   equipment: 'Оборудование', integration: 'Интеграция', other: 'Другое',
 }
+const sourceLabels: Record<string, string> = {
+  web: 'Веб', email: 'Email', telegram: 'Telegram', api: 'API', phone: 'Телефон',
+}
+const sourceIcons: Record<string, string> = {
+  web: 'pi pi-globe', email: 'pi pi-envelope', telegram: 'pi pi-send', api: 'pi pi-code', phone: 'pi pi-phone',
+}
+
+const agentMap = computed(() => {
+  const m = new Map<string, string>()
+  for (const a of agents.value) m.set(a.id, a.full_name)
+  return m
+})
 
 // ─── SLA calculations ───────────────────────────────────────────
 function slaProgress(ticket: Ticket): { pct: number; remaining: string; breach: boolean } {
@@ -332,6 +346,7 @@ onMounted(() => {
   if (!isStaff.value) activeView.value = 'open'
   loadTickets(1)
   if (auth.isLoggedIn) store.fetchSavedViews()
+  if (isStaff.value) loadAgentTools()
 })
 </script>
 
@@ -499,6 +514,18 @@ onMounted(() => {
             <span v-if="ticket.comments?.length" class="meta-item"><i class="pi pi-comment" />{{ ticket.comments.length }}</span>
             <span v-if="ticket.attachments?.length" class="meta-sep">·</span>
             <span v-if="ticket.attachments?.length" class="meta-item"><i class="pi pi-paperclip" />{{ ticket.attachments.length }}</span>
+            <template v-if="isStaff && ticket.assignee_id">
+              <span class="meta-sep">·</span>
+              <span class="meta-item meta-assignee" :title="'Ответственный: ' + (agentMap.get(ticket.assignee_id) || '')">
+                <i class="pi pi-shield" />{{ agentMap.get(ticket.assignee_id) || 'Назначен' }}
+              </span>
+            </template>
+            <template v-if="isStaff && ticket.source">
+              <span class="meta-sep">·</span>
+              <span class="meta-item meta-source" :title="'Канал: ' + (sourceLabels[ticket.source] || ticket.source)">
+                <i :class="sourceIcons[ticket.source] || 'pi pi-inbox'" />{{ sourceLabels[ticket.source] || ticket.source }}
+              </span>
+            </template>
           </div>
         </div>
 
