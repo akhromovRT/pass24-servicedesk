@@ -9,6 +9,7 @@ import TicketContactInfo from './TicketContactInfo.vue'
 import TicketObjectInfo from './TicketObjectInfo.vue'
 import TicketClassification from './TicketClassification.vue'
 import TicketTechnicalInfo from './TicketTechnicalInfo.vue'
+import TicketPriorityDropdown from './TicketPriorityDropdown.vue'
 import TicketMacros from './TicketMacros.vue'
 import TicketEventsLog from './TicketEventsLog.vue'
 
@@ -19,6 +20,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   statusChanged: [newStatus: TicketStatus]
+  priorityChanged: []
   assigned: [agentId: string | null]
   macroApplied: [macroId: string]
   objectUpdated: []
@@ -37,6 +39,12 @@ const hasTechnicalData = computed(() => {
         v-if="isStaff"
         :currentStatus="ticket.status"
         @changeStatus="emit('statusChanged', $event)"
+      />
+      <TicketPriorityDropdown
+        v-if="isStaff"
+        :ticket-id="ticket.id"
+        :current-priority="ticket.priority"
+        @changed="emit('priorityChanged')"
       />
       <TicketSlaProgress v-if="isStaff" :ticket="ticket" />
     </div>

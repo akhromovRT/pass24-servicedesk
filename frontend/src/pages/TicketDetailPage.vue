@@ -188,6 +188,7 @@ onUnmounted(() => {
           :ticket="ticket"
           :is-staff="isStaff"
           @status-changed="handleStatusChange"
+          @priority-changed="loadTicket"
           @assigned="handleAssigned"
           @macro-applied="handleMacroApplied"
           @object-updated="loadTicket"
