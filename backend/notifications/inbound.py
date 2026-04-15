@@ -234,12 +234,93 @@ def _detect_category(text: str) -> str:
     return "general"
 
 
-def _clean_body(body: str) -> str:
-    """Очистка тела письма от подписей, сервисных строк и лишних пробелов.
+# Текстовые маркеры начала цитируемого предыдущего письма.
+# От более специфичных (однострочные заголовки с "wrote:" / "пишет:") к общим.
+_QUOTE_HEADER_PATTERNS = [
+    # Gmail EN: "On Mon, Apr 13, 2026 at 10:30 AM, John Doe <john@example.com> wrote:"
+    re.compile(r"^On .{1,250}wrote:\s*$", re.IGNORECASE),
+    # Gmail RU: "В понедельник, 13 апреля 2026 г., John Doe <...> пишет:"
+    re.compile(r"^В .{1,250}(пишет|написал\(а\)|написал|написала):\s*$", re.IGNORECASE),
+    # Apple Mail / Яндекс / Outlook RU: "13 апреля 2026 г., 10:30, Иван Петров <...> написал(а):"
+    re.compile(
+        r"^\d{1,2}\s+\S+\s+\d{4}.{0,150}(написал\(а\)|написал|написала|пишет):\s*$",
+        re.IGNORECASE,
+    ),
+    # Outlook EN separator: "-----Original Message-----"
+    re.compile(r"^-{3,}\s*Original Message\s*-{3,}\s*$", re.IGNORECASE),
+    # Outlook RU separator: "-----Исходное сообщение-----"
+    re.compile(r"^-{3,}\s*Исходное сообщение\s*-{3,}\s*$", re.IGNORECASE),
+    # Outlook forward separator: строка из подчёркиваний
+    re.compile(r"^\s*_{5,}\s*$"),
+    # "Forwarded message" / "Пересланное сообщение"
+    re.compile(
+        r"^-{3,}\s*(Пересланное сообщение|Forwarded message)\s*-{3,}\s*$",
+        re.IGNORECASE,
+    ),
+]
 
-    Не обрезает текст — письмо сохраняется целиком. Цитирования (строки с '>')
-    сохраняются, чтобы не терять контекст переписки.
-    Подпись отсекается только по стандартному RFC-маркеру '-- ' (два дефиса + пробел).
+# Заголовки Outlook forward: From:/От:/Sent:/Отправлено:/To:/Кому:/Subject:/Тема:
+_OUTLOOK_HEADER_RE = re.compile(
+    r"^\s*(From|От|Sent|Отправлено|To|Кому|Cc|Копия|Subject|Тема):\s",
+    re.IGNORECASE,
+)
+
+
+def _strip_quoted_reply(body: str) -> str:
+    """Отрезает цитирование предыдущего письма от свежего ответа клиента.
+
+    Ищет первый маркер начала цитаты сверху вниз и обрезает всё от него.
+    Распознаёт Gmail/Apple Mail/Outlook/Яндекс в EN и RU, классическое '>'
+    quoting и блок заголовков Outlook forward (две и более подряд строк
+    вида "From:", "Sent:", "To:", "Subject:").
+
+    Цель — оставить только свежий текст клиента, чтобы длинные переписки
+    не копились лестницей в комментариях тикета. Inline-комментарии клиента
+    "внутри цитаты" могут потеряться — это приемлемый компромисс (оригинал
+    остаётся в предыдущих комментариях тикета).
+    """
+    if not body:
+        return body
+
+    lines = body.split("\n")
+    cut_at = len(lines)
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+
+        # Пустые строки сами по себе не триггерят срез
+        if not stripped:
+            continue
+
+        # 1. Явные однострочные маркеры цитаты ("On ... wrote:", "В ... пишет:", separators)
+        if any(pat.match(line) for pat in _QUOTE_HEADER_PATTERNS):
+            cut_at = i
+            break
+
+        # 2. Классическое '>' quoting — первая же строка, начинающаяся с >
+        if stripped.startswith(">"):
+            cut_at = i
+            break
+
+        # 3. Блок заголовков Outlook forward: текущая строка + хотя бы ещё одна
+        #    такая же в ближайших 4 строках
+        if _OUTLOOK_HEADER_RE.match(line):
+            look_ahead = lines[i + 1 : i + 5]
+            if any(_OUTLOOK_HEADER_RE.match(ln) for ln in look_ahead):
+                cut_at = i
+                break
+
+    # Убираем trailing пустые строки перед срезом
+    while cut_at > 0 and not lines[cut_at - 1].strip():
+        cut_at -= 1
+
+    return "\n".join(lines[:cut_at])
+
+
+def _clean_body(body: str) -> str:
+    """Очистка тела письма: срез подписи по RFC 3676, удаление цитируемого
+    предыдущего письма, удаление служебной строки PASS24-тега, CID-ссылок
+    и схлопывание лишних пустых строк.
     """
     lines = body.split("\n")
     cleaned = []
@@ -252,12 +333,13 @@ def _clean_body(body: str) -> str:
             continue
         cleaned.append(line)
     result = "\n".join(cleaned).strip()
-    import re as _re
+    # Режем цитируемое предыдущее письмо (Gmail/Outlook/Apple/Яндекс reply quoting)
+    result = _strip_quoted_reply(result)
     # Убираем CID-ссылки на inline-вложения: [cid:image001.png@XXXX]
-    result = _re.sub(r"\[cid:[^\]]+\]", "", result)
+    result = re.sub(r"\[cid:[^\]]+\]", "", result)
     # Убираем лишние пустые строки подряд (более 2)
-    result = _re.sub(r"\n{3,}", "\n\n", result)
-    return result
+    result = re.sub(r"\n{3,}", "\n\n", result)
+    return result.strip()
 
 
 def _is_sufficient(subject: str, body: str) -> bool:
