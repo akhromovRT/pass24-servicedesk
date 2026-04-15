@@ -30,7 +30,7 @@ const priorityOptions = [
 const priorityToParams: Record<string, { impact: string; urgency: string }> = {
   critical: { impact: 'high', urgency: 'high' },
   high: { impact: 'medium', urgency: 'high' },
-  normal: { impact: 'low', urgency: 'medium' },
+  normal: { impact: 'medium', urgency: 'medium' },
   low: { impact: 'low', urgency: 'low' },
 }
 
