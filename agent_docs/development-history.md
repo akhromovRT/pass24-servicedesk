@@ -9,6 +9,24 @@
 
 ## Записи
 
+### 2026-04-17 — fix: идемпотентность inbound email — один Message-ID = один комментарий
+
+**Проблема:** В тикетах (пример #D6393659) дублируются клиентские сообщения из email-ответов. Корневая причина — единственной защитой от повторной обработки был in-memory `set _processed_message_ids` в процессе воркера:
+- Любой рестарт обнуляет set → IMAP-polling проходит `SINCE = 2 дня` и создаёт повторные комментарии.
+- На 501-м уникальном Message-ID выполнялся опасный `set.clear()` — не LRU, а полный сброс.
+- Письма без `Message-ID` не добавлялись в set, то есть обрабатывались каждые 60 сек.
+- `_handle_reply` / `_handle_reply_by_subject` не имели никакой идемпотентности на стороне БД.
+
+**Что сделано:**
+- Миграция `022_ticket_comment_email_message_id.py`: колонка `ticket_comments.email_message_id VARCHAR(998) NULL` + частичный unique-индекс `WHERE email_message_id IS NOT NULL`. Авторитетная защита от дублей теперь в БД.
+- `_fetch_unseen_emails` передаёт `message_id` в `mail_data`; для писем без заголовка генерируется стабильный synthetic `<synthetic-sha1(from+date+subject+body)@pass24-local>`.
+- `_handle_reply` и `_handle_reply_by_subject` пишут `email_message_id` в комментарий, делают `session.flush()` и ловят `IntegrityError` **до** записи вложений на диск — дубль не создаёт orphan-файлов. Возвращают `True`, чтобы polling не скатывался в ветку создания нового тикета.
+- In-memory кеш переведён на `OrderedDict`-LRU (обрезает самый старый при превышении 500), `.clear()` на 500 удалён.
+- Интеграционные тесты: повторный вызов с тем же `message_id` оставляет 1 комментарий и не создаёт повторное вложение.
+- Backfill-скрипт `backend/scripts/dedup_ticket_comments.py` для чистки уже накопленных дублей в старых тикетах (группирует по `(author_id, text.strip())`, оставляет самый ранний; `--dry-run`, `--ticket <prefix>`, `--all`).
+
+**Файлы:** `migrations/versions/022_ticket_comment_email_message_id.py`, `backend/tickets/models.py`, `backend/notifications/inbound.py`, `backend/scripts/dedup_ticket_comments.py`, `tests/test_inbound_email_integration.py`
+
 ### 2026-04-17 — feat: message-driven SLA pause
 
 **Что сделано:**

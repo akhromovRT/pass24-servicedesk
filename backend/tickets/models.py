@@ -444,6 +444,11 @@ class TicketComment(SQLModel, table=True):
     text: str
     is_internal: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    # Идентификатор исходного email для идемпотентности inbound-обработки.
+    # Уникальный частичный индекс (`email_message_id IS NOT NULL`, миграция 022)
+    # гарантирует «одно письмо = один комментарий», даже если IMAP SINCE-окно
+    # повторно отдаст это письмо после рестарта воркера.
+    email_message_id: Optional[str] = Field(default=None, max_length=998)
 
     ticket: Optional["Ticket"] = Relationship(back_populates="comments")
 
