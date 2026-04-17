@@ -208,19 +208,60 @@ async def cb_kb_open(callback: CallbackQuery, state: FSMContext, **data) -> None
 
 @router.callback_query(F.data.startswith("kb:helpful:"))
 async def cb_kb_helpful(callback: CallbackQuery, state: FSMContext, **data) -> None:
-    """Record feedback intent. ArticleFeedback persistence deferred.
-
-    Same rationale as Task 8's KB deflection: the feedback model requires a
-    ``session_id`` (localStorage UUID) the bot doesn't possess, and adding a
-    telegram-source row has uniqueness questions to resolve first. For now,
-    acknowledge the click with a toast and leave the article view in place.
-    """
+    """Persist 👍/👎 into ArticleFeedback; idempotent per (user, article)."""
     parts = (callback.data or "").split(":")
-    verdict = parts[-1] if len(parts) >= 4 else ""
-    if verdict == "yes":
-        await callback.answer("Спасибо!", show_alert=False)
-    else:
-        await callback.answer("Учли.", show_alert=False)
+    # kb:helpful:<slug>:<yes|no>
+    if len(parts) < 4:
+        await callback.answer()
+        return
+    slug = ":".join(parts[2:-1])  # slugs may contain colons (edge case)
+    verdict = parts[-1]
+    helpful = verdict == "yes"
+
+    user = data.get("user")
+    if user is None:
+        await callback.answer("Нужна авторизация.", show_alert=True)
+        return
+
+    session_key = f"tg:{user.id}"  # one row per (user, article) — unique constraint in DB
+    try:
+        from sqlmodel import select
+
+        from backend.database import async_session_factory
+        from backend.knowledge.models import Article, ArticleFeedback
+
+        async with async_session_factory() as session:
+            article = (await session.execute(
+                select(Article).where(Article.slug == slug, Article.is_published == True)  # noqa: E712
+            )).scalar_one_or_none()
+            if article is None:
+                await callback.answer("Статья не найдена.", show_alert=True)
+                return
+            # Idempotency: if this user already voted on this article, don't double-count.
+            existing = (await session.execute(
+                select(ArticleFeedback).where(
+                    ArticleFeedback.session_id == session_key,
+                    ArticleFeedback.article_id == str(article.id),
+                )
+            )).scalar_one_or_none()
+            if existing is None:
+                session.add(ArticleFeedback(
+                    article_id=str(article.id),
+                    session_id=session_key,
+                    user_id=str(user.id),
+                    helpful=helpful,
+                    source="telegram",
+                ))
+                if helpful:
+                    article.helpful_count += 1
+                else:
+                    article.not_helpful_count += 1
+                session.add(article)
+                await session.commit()
+    except Exception:  # noqa: BLE001 — feedback capture must never break the flow
+        logger.exception("kb_helpful persist failed for slug=%s", slug)
+
+    await callback.answer("Спасибо!" if helpful else "Учли.", show_alert=False)
 
 
 # --- kb:mkticket:<slug|none|query-stub> ---------------------------------
