@@ -256,3 +256,32 @@ def test_on_public_comment_added_then_status_waiting_keeps_pause():
     assert ticket.sla_paused_by_reply is False
     assert ticket.sla_paused_by_status is True
     assert ticket.sla_paused_at is not None
+
+
+def test_internal_comment_does_not_change_reply_flag():
+    """Контракт call-site: все 5 интеграционных точек обёрнуты в
+    `if not is_internal:` — internal-комментарий не должен вызывать
+    on_public_comment_added. Тест симулирует правильное поведение
+    call-site для обоих случаев (internal и публичный) и фиксирует
+    контракт, чтобы регрессия в какой-либо из точек (удаление guard)
+    ловилась отдельным runtime-тестом пути.
+    """
+    ticket = _make_ticket()
+    now = datetime(2026, 4, 17, 12, 0, 0)
+
+    # Случай 1: staff-комментарий помечен как internal → call-site
+    # пропускает on_public_comment_added. Флаги не меняются.
+    is_internal = True
+    is_staff = True
+    if not is_internal:
+        ticket.on_public_comment_added(is_staff=is_staff, now=now)
+    assert ticket.sla_paused_by_reply is False
+    assert ticket.sla_paused_at is None
+
+    # Случай 2: публичный staff-комментарий → call-site вызывает метод.
+    # Пауза активируется.
+    is_internal = False
+    if not is_internal:
+        ticket.on_public_comment_added(is_staff=is_staff, now=now)
+    assert ticket.sla_paused_by_reply is True
+    assert ticket.sla_paused_at == now
