@@ -7,6 +7,8 @@ def register_all_routers(dp: Dispatcher) -> None:
     from backend.telegram.handlers.tickets_list import router as tickets_list_router
     from backend.telegram.handlers.tickets_reply import router as tickets_reply_router
     from backend.telegram.handlers.csat import router as csat_router
+    from backend.telegram.handlers.kb import router as kb_router
+    from backend.telegram.handlers.ai import router as ai_router
     from backend.telegram.handlers.menu import router as menu_router
 
     dp.include_router(start_router)
@@ -19,6 +21,11 @@ def register_all_routers(dp: Dispatcher) -> None:
     dp.include_router(tickets_list_router)
     dp.include_router(tickets_reply_router)
     dp.include_router(csat_router)
+    # kb + ai own `kb:*`, `ai:*`, `mm:kb`, `mm:ai`, `ft:kb`, `ft:ai` and their
+    # respective FSM text handlers. Register them before menu so awaiting_query
+    # and chatting text handlers match before menu's catch-all F.text.
+    dp.include_router(kb_router)
+    dp.include_router(ai_router)
     # Menu router MUST be last: it contains a catch-all F.text handler for the
     # free-text fallback. Routers registered after it would never receive text
     # messages that fall through FSM states.
