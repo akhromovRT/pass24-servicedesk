@@ -75,7 +75,10 @@ async def generate_token(user_id: str) -> dict:
     return {
         "token": token,
         "deeplink": f"{DEEP_LINK_BASE}{token}",
-        "expires_at": expires_at.isoformat(),
+        # Suffix "Z" tells browsers the timestamp is UTC; without it JS
+        # Date.parse() treats naive ISO strings as LOCAL time, which puts
+        # the expiry in the past for any non-UTC client (e.g. Moscow +3).
+        "expires_at": expires_at.isoformat() + "Z",
     }
 
 
