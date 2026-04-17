@@ -31,7 +31,7 @@ from .tickets.router import router as tickets_router
 from .tickets.templates_router import router as templates_router
 from .tickets.views_router import router as views_router
 from .tickets.sla_watcher import sla_watcher_loop
-from .notifications.telegram import router as telegram_router
+from .telegram.webhook import router as telegram_router
 from .customers.router import router as customers_router
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -43,6 +43,9 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Запуск фоновых задач. Миграции запускаются вручную через alembic upgrade."""
+    logger.info("Lifespan: creating telegram bot + dispatcher")
+    from .telegram.bot import create_bot_and_dispatcher
+    create_bot_and_dispatcher()
     logger.info("Lifespan: starting email polling")
     poll_task = asyncio.create_task(email_polling_loop())
     logger.info("Lifespan: starting SLA watcher")
