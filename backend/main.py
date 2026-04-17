@@ -31,6 +31,7 @@ from .tickets.router import router as tickets_router
 from .tickets.templates_router import router as templates_router
 from .tickets.views_router import router as views_router
 from .tickets.sla_watcher import sla_watcher_loop
+from .tickets.csat_scheduler import csat_scheduler_loop
 from .telegram.webhook import router as telegram_router
 from .customers.router import router as customers_router
 
@@ -52,11 +53,14 @@ async def lifespan(app: FastAPI):
     sla_task = asyncio.create_task(sla_watcher_loop())
     logger.info("Lifespan: starting Bitrix24 sync scheduler")
     b24_task = asyncio.create_task(bitrix24_sync_loop())
+    logger.info("Lifespan: starting CSAT scheduler")
+    csat_task = asyncio.create_task(csat_scheduler_loop())
     logger.info("Lifespan: startup complete")
     yield
     poll_task.cancel()
     sla_task.cancel()
     b24_task.cancel()
+    csat_task.cancel()
 
 
 def create_app() -> FastAPI:
