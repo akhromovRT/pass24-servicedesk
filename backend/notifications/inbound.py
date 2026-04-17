@@ -18,6 +18,7 @@ import imaplib
 import logging
 import re
 import uuid
+from datetime import datetime
 from email.header import decode_header
 from email.utils import parseaddr
 from html.parser import HTMLParser
@@ -532,6 +533,8 @@ async def _handle_reply(mail_data: dict, ticket_id_prefix: str) -> bool:
             )
             session.add(comment)
             comment_id = comment.id
+            # Message-driven SLA pause: ответ клиента снимает reply-паузу.
+            ticket.on_public_comment_added(is_staff=False, now=datetime.utcnow())
 
         # Сохранить вложения с привязкой к созданному комментарию
         for att in attachments:
@@ -611,6 +614,7 @@ async def _handle_reply_by_subject(mail_data: dict) -> bool:
             )
             session.add(comment)
             comment_id = comment.id
+            ticket.on_public_comment_added(is_staff=False, now=datetime.utcnow())
 
         for att in attachments:
             await _save_attachment(ticket.id, str(user.id), att, session, comment_id=comment_id)

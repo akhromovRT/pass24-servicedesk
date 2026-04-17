@@ -263,6 +263,43 @@ class TestReplyByTag:
         finally:
             await _cleanup_ticket(ticket.id)
 
+    async def test_reply_clears_sla_reply_pause(self):
+        """Клиент ответил по email → sla_paused_by_reply = false, пауза накопилась."""
+        from datetime import datetime, timedelta
+        from backend.notifications.inbound import _handle_reply
+        from backend.database import async_session_factory
+        from backend.tickets.models import Ticket
+
+        user = await _get_or_create_user("test-inbound@example.com", "Тест Ответ")
+        ticket = await _create_ticket(str(user.id), "Проверка снятия reply-паузы")
+
+        # Искусственно ставим reply-паузу на 1 час назад
+        async with async_session_factory() as s:
+            t = await s.get(Ticket, ticket.id)
+            t.sla_paused_by_reply = True
+            t.sla_paused_at = datetime.utcnow() - timedelta(hours=1)
+            s.add(t)
+            await s.commit()
+
+        try:
+            mail_data = {
+                "subject": f"Re: [PASS24-{ticket.id[:8]}] Тест",
+                "from_email": "test-inbound@example.com",
+                "from_name": "Тест Ответ",
+                "body": "Отвечаю",
+                "attachments": [],
+            }
+            await _handle_reply(mail_data, ticket.id[:8])
+
+            updated = await _get_ticket(ticket.id)
+            assert updated.sla_paused_by_reply is False, "reply-флаг должен сняться"
+            assert updated.sla_paused_at is None, "сводная пауза должна сняться"
+            assert updated.sla_total_pause_seconds >= 3500, (
+                f"пауза должна накопиться (~3600), получено {updated.sla_total_pause_seconds}"
+            )
+        finally:
+            await _cleanup_ticket(ticket.id)
+
     async def test_reply_nonexistent_ticket(self):
         from backend.notifications.inbound import _handle_reply
 

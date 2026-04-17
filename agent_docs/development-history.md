@@ -9,6 +9,26 @@
 
 ## Записи
 
+### 2026-04-17 — feat: message-driven SLA pause
+
+**Что сделано:**
+- SLA «Решение» теперь автоматически встаёт на паузу, когда последний публичный комментарий в тикете — от сотрудника поддержки, и снимается при ответе клиента. Статус при этом не меняется.
+- Новые поля `Ticket.sla_paused_by_status` / `sla_paused_by_reply` + единый метод `recompute_sla_pause` с OR-семантикой. `transition` и `on_public_comment_added` — единственные точки, которые обновляют флаги.
+- Интеграция во все 5 путей создания публичного комментария: web (`add_comment`, macros), email (`_handle_reply`, `_handle_reply_by_subject`), Telegram.
+- Фикс скрытого бага в `sla_watcher`: активная пауза теперь учитывается в расчёте дедлайна (раньше watcher мог ложно предупреждать, пока тикет на паузе по статусу/reply).
+- UI: в `TicketSlaProgress.vue` добавлен бейдж «⏸ SLA на паузе — ждём ответ клиента» / «статус «{label}»» с серой заливкой прогресс-бара.
+- Миграция `021_add_sla_pause_flags.py` + backfill `paused_by_status` из текущих статусов; `paused_by_reply` исторически оставляем `false`.
+- Регламент `support-operations.md` обновлён: ручной перевод в «Ожидает ответа» больше не обязателен для паузы.
+
+**Файлы:**
+- Backend: `backend/tickets/models.py`, `schemas.py`, `router.py`, `sla_watcher.py`, `notifications/inbound.py`, `notifications/telegram.py`
+- Frontend: `TicketSlaProgress.vue`, `types/index.ts`
+- Миграция: `021`
+- Тесты: `test_tickets_models.py`, `test_inbound_email_integration.py`, new `test_sla_watcher.py`
+- Документация: `agent_docs/guides/support-operations.md`
+- Spec: `docs/superpowers/specs/2026-04-17-message-driven-sla-pause-design.md`
+- Plan: `docs/superpowers/plans/2026-04-17-message-driven-sla-pause.md`
+
 ### 2026-04-17 — fix: вложения из email-ответов отображаются внутри пузыря сообщения
 
 **Проблема:** Вложения, отправленные клиентом в ответном письме на тикет, не отображались в переписке рядом с сообщением — попадали в «описание тикета» в самом верху (или визуально «исчезали» из контекста ответа).

@@ -61,6 +61,26 @@ const resolveProgress = computed(() => {
     completed: !!t.resolved_at,
   }
 })
+
+type PauseSource = 'reply' | 'status'
+
+interface PauseInfo {
+  source: PauseSource
+  label: string
+}
+
+const pauseInfo = computed<PauseInfo | null>(() => {
+  const t = props.ticket
+  // Статус-пауза имеет приоритет в тексте (точнее описывает причину).
+  if (t.sla_paused_by_status) {
+    const statusLabel = t.status === 'on_hold' ? 'Отложена' : 'Ожидает ответа'
+    return { source: 'status', label: `⏸ SLA на паузе — статус «${statusLabel}»` }
+  }
+  if (t.sla_paused_by_reply) {
+    return { source: 'reply', label: '⏸ SLA на паузе — ждём ответ клиента' }
+  }
+  return null
+})
 </script>
 
 <template>
@@ -82,16 +102,17 @@ const resolveProgress = computed(() => {
     <div v-if="resolveProgress" class="sla-item">
       <div class="sla-header">
         <span class="sla-label">Решение</span>
-        <span class="sla-remaining" :style="{ color: resolveProgress.completed ? '#10b981' : resolveProgress.color }">
-          {{ resolveProgress.remaining }}
+        <span class="sla-remaining" :style="{ color: pauseInfo ? '#94a3b8' : (resolveProgress.completed ? '#10b981' : resolveProgress.color) }">
+          {{ pauseInfo ? 'На паузе' : resolveProgress.remaining }}
         </span>
       </div>
       <ProgressBar
         :value="resolveProgress.pct"
         :showValue="false"
         :style="{ height: '6px' }"
-        :pt="{ value: { style: { backgroundColor: resolveProgress.color } } }"
+        :pt="{ value: { style: { backgroundColor: pauseInfo ? '#94a3b8' : resolveProgress.color } } }"
       />
+      <div v-if="pauseInfo" class="sla-pause-badge">{{ pauseInfo.label }}</div>
     </div>
     <div v-if="!responseProgress && !resolveProgress" class="sla-empty">
       SLA не настроен
@@ -133,5 +154,15 @@ const resolveProgress = computed(() => {
   font-size: 0.8125rem;
   color: #94a3b8;
   font-style: italic;
+}
+
+.sla-pause-badge {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 500;
 }
 </style>
