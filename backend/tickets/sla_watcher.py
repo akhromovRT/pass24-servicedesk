@@ -94,7 +94,10 @@ async def _check_sla_breaches() -> int:
             if not t.sla_resolve_hours:
                 continue
             pause_sec = t.sla_total_pause_seconds or 0
-            # Дедлайн с учётом рабочих часов + пауз в WAITING_FOR_USER
+            # Учёт активной паузы (любой источник: статус или reply): без этого
+            # при paused_at != None дедлайн не растёт и warning срабатывает ложно.
+            if t.sla_paused_at is not None:
+                pause_sec += int((now - t.sla_paused_at).total_seconds())
             deadline = deadline_with_business_hours(t.created_at, t.sla_resolve_hours)
             deadline = deadline + timedelta(seconds=pause_sec)
             time_to_breach = deadline - now
