@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -274,6 +275,8 @@ async def telegram_webhook(secret: str, request: Request):
                     text=text,
                 )
                 session.add(comment)
+                # Message-driven SLA pause: клиент ответил → reply-флаг снимается.
+                active_ticket.on_public_comment_added(is_staff=False, now=datetime.utcnow())
 
             # Сохраняем вложение
             saved_filename = None
