@@ -184,6 +184,7 @@ async def migrate_ghost(
             User.telegram_chat_id == chat_id,
             User.email.like("%@telegram.pass24.local"),
             User.id != uuid.UUID(real_user_id),
+            User.is_active == True,  # noqa: E712 — exclude previously deactivated ghosts
         ).limit(1)
     )
     ghost = ghost_result.scalar_one_or_none()
