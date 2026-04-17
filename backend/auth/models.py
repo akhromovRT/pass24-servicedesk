@@ -4,7 +4,8 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-from sqlmodel import Field, SQLModel
+from sqlalchemy import JSON
+from sqlmodel import Column, Field, SQLModel
 
 
 class UserRole(str, Enum):
@@ -28,6 +29,11 @@ class User(SQLModel, table=True):
     role: UserRole = Field(default=UserRole.RESIDENT)
     is_active: bool = Field(default=True)
     telegram_chat_id: int | None = Field(default=None, index=True)
+    telegram_linked_at: datetime | None = Field(default=None)
+    telegram_preferences: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSON, nullable=False, server_default="{}"),
+    )
     customer_id: str | None = Field(default=None, index=True)  # FK → customers.id
     created_at: datetime = Field(default_factory=datetime.utcnow)
     password_reset_token: str | None = Field(default=None)
