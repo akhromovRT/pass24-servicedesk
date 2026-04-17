@@ -11,8 +11,6 @@ on:
 jobs:
   logs:
     runs-on: ubuntu-latest
-    env:
-      TAIL: ${{ inputs.tail }}
     steps:
       - name: Dump container logs via SSH
         uses: appleboy/ssh-action@v1
@@ -24,7 +22,6 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD }}
           envs: TAIL
           script: |
-            # Validate: TAIL must be a positive integer (prevents shell injection)
             if ! [[ "$TAIL" =~ ^[0-9]+$ ]]; then
               echo "invalid tail value; using 500"
               TAIL=500
@@ -32,8 +29,11 @@ jobs:
             echo "=== docker ps ==="
             docker ps --filter name=site-pass24-servicedesk --format "{{.Names}}: {{.Status}}"
             echo ""
-            echo "=== docker logs --tail=$TAIL ==="
-            docker logs site-pass24-servicedesk --tail="$TAIL" 2>&1 || true
+            echo "=== all /auth/ calls in last 2000 lines ==="
+            docker logs site-pass24-servicedesk --tail=2000 2>&1 | grep -E "/auth/" | tail -40 || true
             echo ""
-            echo "=== errors/exceptions/traceback (last 1000 lines) ==="
-            docker logs site-pass24-servicedesk --tail=1000 2>&1 | grep -iE "error|exception|traceback|500|failed" | tail -40 || true
+            echo "=== all 4xx/5xx responses in last 2000 lines ==="
+            docker logs site-pass24-servicedesk --tail=2000 2>&1 | grep -E "HTTP/1.1\" [45][0-9]{2}" | tail -40 || true
+            echo ""
+            echo "=== errors/exceptions/traceback (last 2000 lines) ==="
+            docker logs site-pass24-servicedesk --tail=2000 2>&1 | grep -iE "error|exception|traceback|failed|critical" | tail -30 || true
