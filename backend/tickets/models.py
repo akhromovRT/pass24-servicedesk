@@ -377,14 +377,14 @@ class Ticket(SQLModel, table=True):
         self.status = new_status.value if hasattr(new_status, 'value') else new_status
         self.updated_at = now
 
-        # SLA pause: при входе в WAITING_FOR_USER или ON_HOLD — ставим на паузу
-        if new_status in (TicketStatus.WAITING_FOR_USER, TicketStatus.ON_HOLD) and self.sla_paused_at is None:
-            self.sla_paused_at = now
-        # При выходе из WAITING_FOR_USER или ON_HOLD — суммируем паузу и сбрасываем
-        if prev_status in (TicketStatus.WAITING_FOR_USER, TicketStatus.ON_HOLD) and self.sla_paused_at is not None:
-            pause_seconds = int((now - self.sla_paused_at).total_seconds())
-            self.sla_total_pause_seconds += pause_seconds
-            self.sla_paused_at = None
+        # Источник паузы «статус»: обновляем флаг и пересчитываем сводное состояние.
+        # Пауза также может быть активна по reply-флагу, поэтому централизованный
+        # recompute_sla_pause решает, нужно ли сейчас держать sla_paused_at.
+        self.sla_paused_by_status = new_status in (
+            TicketStatus.WAITING_FOR_USER,
+            TicketStatus.ON_HOLD,
+        )
+        self.recompute_sla_pause(now)
 
         if new_status == TicketStatus.IN_PROGRESS and self.first_response_at is None:
             self.first_response_at = now

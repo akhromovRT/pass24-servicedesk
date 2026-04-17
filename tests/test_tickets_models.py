@@ -192,3 +192,28 @@ def test_recompute_sla_pause_noop_when_state_unchanged():
     ticket.recompute_sla_pause(now + timedelta(hours=2))
     assert ticket.sla_paused_at == now
     assert ticket.sla_total_pause_seconds == 0
+
+
+def test_transition_to_waiting_sets_paused_by_status_flag():
+    ticket = _make_ticket()
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.IN_PROGRESS)
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.WAITING_FOR_USER)
+    assert ticket.sla_paused_by_status is True
+    assert ticket.sla_paused_at is not None
+
+
+def test_transition_out_of_waiting_clears_paused_by_status_flag():
+    ticket = _make_ticket()
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.IN_PROGRESS)
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.WAITING_FOR_USER)
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.IN_PROGRESS)
+    assert ticket.sla_paused_by_status is False
+    assert ticket.sla_paused_at is None
+    assert ticket.sla_total_pause_seconds >= 0
+
+
+def test_transition_on_hold_also_pauses():
+    ticket = _make_ticket()
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.ON_HOLD)
+    assert ticket.sla_paused_by_status is True
+    assert ticket.sla_paused_at is not None
