@@ -9,6 +9,36 @@
 
 ## Записи
 
+### 2026-04-17 — feat: Telegram Bot v2 (ветка `feature/telegram-bot-v2`)
+
+Переписан Telegram-бот с минимального text-only интерфейса (390 строк на raw httpx) в полнофункциональный menu-driven канал на aiogram 3.
+
+**Масштаб:** 14 задач по плану `docs/superpowers/plans/2026-04-17-telegram-bot-v2.md`, ~2500 строк в `backend/telegram/`, 11+ коммитов.
+
+**Ключевые компоненты:**
+- aiogram 3 + `PostgresStorage` для FSM (таблица `telegram_fsm_state`, без Redis)
+- Deep link account binding (`telegram_link_tokens`, TTL 10 мин) с ghost-миграцией тикетов/комментариев/событий от старого бота
+- Wizard создания заявок: продукт → категория → описание → KB-deflection → impact/urgency → подтверждение
+- Список «мои заявки» с фильтрами (active/all/closed) и пагинацией, карточка с комментариями
+- Ответы / закрытие / CSAT flow с inline-кнопками
+- KB-поиск и AI-чат (RAG через `assistant/rag.py`)
+- PM-workspace: проекты, фазы, approvals (утверждение/отклонение с причиной)
+- Push-уведомления с inline-кнопками + авто-отвязка аккаунта при 403 от Bot API
+- Настройки уведомлений (7 тумблеров в `User.telegram_preferences`), отвязка аккаунта
+- Compat mode (`TELEGRAM_COMPAT_MODE` в `backend/telegram/config.py`) на 2 недели для unlinked-пользователей через `backend/telegram/handlers/compat.py` — ghost-flow из старого бота портирован 1-в-1
+
+**Миграция:** `023_telegram_bot_v2.py` (после конфликта с 021/022 в main — ветка ребейзнута).
+
+**Удалено:** `backend/notifications/telegram.py` (функционал перенесён).
+
+**ADR:** ADR-011.
+
+**Тесты:** `tests/test_telegram_bot.py` (PostgresStorage + pure-unit formatters/keyboards + linking integration), `tests/test_telegram_webhook.py` (smoke integration: 403 на wrong secret, 200 на минимальный update, ghost-ticket в compat mode, /start для linked-юзера).
+
+**Follow-up TODO (отдельный PR):**
+- Подключить продьюсеры уведомлений для approval-запросов, milestones и risks (сейчас в `notify.py` есть отправка, но триггеры на стороне `backend/projects/` ещё не вызывают).
+- Персист `ArticleFeedback` (👍/👎 на KB-статьях из бота) — модель есть, handler ещё не пишет в БД.
+
 ### 2026-04-17 — fix: идемпотентность inbound email — один Message-ID = один комментарий
 
 **Проблема:** В тикетах (пример #D6393659) дублируются клиентские сообщения из email-ответов. Корневая причина — единственной защитой от повторной обработки был in-memory `set _processed_message_ids` в процессе воркера:

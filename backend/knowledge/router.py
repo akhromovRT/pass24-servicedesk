@@ -24,7 +24,6 @@ from .schemas import (
     FeedbackCreate,
     FeedbackResponse,
 )
-from .synonyms import expand_query
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
@@ -152,102 +151,23 @@ async def search_articles(
     per_page: int = Query(default=20, ge=1, le=100, description="Статей на страницу"),
     session: AsyncSession = Depends(get_session),
 ) -> ArticleListResponse:
+    """Полнотекстовый поиск по статьям базы знаний.
+
+    Пайплайн вынесен в ``backend.knowledge.services.search_articles_with_fts``,
+    чтобы Telegram-бот использовал ту же логику без дублирования SQL.
     """
-    Полнотекстовый поиск по статьям базы знаний.
+    from .services import search_articles_with_fts
 
-    Пайплайн:
-    1. Query expansion: раскрываем синонимы ("смс" → "смс SMS код")
-    2. FTS search по title (вес A) + synonyms (A) + tags (B) + content (C)
-    3. Ранжирование через ts_rank_cd
-    4. Fallback на ILIKE если FTS пустой
-    """
-    # 1. Query expansion через словарь синонимов
-    expanded_query = expand_query(query)
-
-    # 2. FTS с весами по полям: title (A), synonyms (A), tags (B), content (C)
-    #    JSONB tags/synonyms конвертируем в текст через jsonb_array_elements_text
-    fts_condition = sa_text("""
-        (
-            setweight(to_tsvector('russian', coalesce(title, '')), 'A') ||
-            setweight(to_tsvector('russian', coalesce(
-                (SELECT string_agg(value, ' ') FROM jsonb_array_elements_text(synonyms) AS value),
-                ''
-            )), 'A') ||
-            setweight(to_tsvector('russian', coalesce(
-                (SELECT string_agg(value, ' ') FROM jsonb_array_elements_text(tags) AS value),
-                ''
-            )), 'B') ||
-            setweight(to_tsvector('russian', coalesce(content, '')), 'C')
-        ) @@ websearch_to_tsquery('russian', :query)
-    """).bindparams(query=expanded_query)
-
-    base_filter = (Article.is_published == True) & fts_condition  # noqa: E712
-
-    stmt = select(Article).where(base_filter)
-    count_stmt = select(func.count()).select_from(Article).where(base_filter)
-
-    if article_type is not None:
-        stmt = stmt.where(Article.article_type == article_type)
-        count_stmt = count_stmt.where(Article.article_type == article_type)
-    if category is not None:
-        stmt = stmt.where(Article.category == category)
-        count_stmt = count_stmt.where(Article.category == category)
-    if tag:
-        tag_filter = sa_text("tags @> CAST(:tag_arr AS jsonb)").bindparams(tag_arr=f'["{tag}"]')
-        stmt = stmt.where(tag_filter)
-        count_stmt = count_stmt.where(tag_filter)
-
-    # Общее количество
-    total_result = await session.execute(count_stmt)
-    total = total_result.scalar_one()
-
-    # Если FTS не дал результатов — fallback на ILIKE (по оригинальному запросу)
-    if total == 0:
-        search_pattern = f"%{query}%"
-        ilike_filter = (
-            (Article.is_published == True)  # noqa: E712
-            & (Article.title.ilike(search_pattern) | Article.content.ilike(search_pattern))
-        )
-        stmt = select(Article).where(ilike_filter)
-        count_stmt = select(func.count()).select_from(Article).where(ilike_filter)
-        if article_type is not None:
-            stmt = stmt.where(Article.article_type == article_type)
-            count_stmt = count_stmt.where(Article.article_type == article_type)
-        if category is not None:
-            stmt = stmt.where(Article.category == category)
-            count_stmt = count_stmt.where(Article.category == category)
-        if tag:
-            tag_filter = sa_text("tags @> CAST(:tag_arr AS jsonb)").bindparams(tag_arr=f'["{tag}"]')
-            stmt = stmt.where(tag_filter)
-            count_stmt = count_stmt.where(tag_filter)
-        total_result = await session.execute(count_stmt)
-        total = total_result.scalar_one()
-
-    # Ранжирование по релевантности FTS (ts_rank_cd DESC), fallback на created_at
-    rank_expr = sa_text("""
-        ts_rank_cd(
-            setweight(to_tsvector('russian', coalesce(title, '')), 'A') ||
-            setweight(to_tsvector('russian', coalesce(
-                (SELECT string_agg(value, ' ') FROM jsonb_array_elements_text(synonyms) AS value),
-                ''
-            )), 'A') ||
-            setweight(to_tsvector('russian', coalesce(
-                (SELECT string_agg(value, ' ') FROM jsonb_array_elements_text(tags) AS value),
-                ''
-            )), 'B') ||
-            setweight(to_tsvector('russian', coalesce(content, '')), 'C'),
-            websearch_to_tsquery('russian', :query)
-        ) DESC
-    """).bindparams(query=expanded_query)
-
-    offset = (page - 1) * per_page
-    stmt = stmt.order_by(rank_expr, Article.created_at.desc()).offset(offset).limit(per_page)
-
-    result = await session.execute(stmt)
-    articles = result.scalars().all()
-
+    articles, total = await search_articles_with_fts(
+        session,
+        query,
+        limit=per_page,
+        offset=(page - 1) * per_page,
+        article_type=article_type,
+        category=category,
+        tag=tag,
+    )
     items = [await _build_article_read(a, session) for a in articles]
-
     return ArticleListResponse(
         items=items,
         total=total,

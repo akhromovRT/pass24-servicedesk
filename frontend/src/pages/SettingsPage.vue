@@ -17,6 +17,7 @@ import ConfirmDialog from 'primevue/confirmdialog'
 import { api } from '../api/client'
 import { useAuthStore } from '../stores/auth'
 import type { User } from '../types'
+import TelegramLinkCard from '../components/TelegramLinkCard.vue'
 
 const auth = useAuthStore()
 const toast = useToast()
@@ -525,107 +526,115 @@ onMounted(() => {
           <div class="content-title"><i class="pi pi-send" style="color:#0ea5e9" /> Telegram-бот</div>
         </template>
         <template #content>
-          <p class="intro">Telegram-бот принимает заявки от пользователей через Telegram и создаёт тикеты в Service Desk.</p>
+          <!-- User-facing link card — always visible -->
+          <TelegramLinkCard />
 
-          <Divider />
+          <!-- Admin setup info — below, only for admins -->
+          <template v-if="isAdmin">
+            <Divider />
 
-          <h3 class="subsection-title">Статус интеграции</h3>
-          <div class="config-grid">
-            <div class="config-item">
-              <span class="config-label">Бот</span>
-              <span class="config-value">@PASS24ROBOT</span>
+            <p class="intro">Telegram-бот принимает заявки от пользователей через Telegram и создаёт тикеты в Service Desk.</p>
+
+            <Divider />
+
+            <h3 class="subsection-title">Статус интеграции</h3>
+            <div class="config-grid">
+              <div class="config-item">
+                <span class="config-label">Бот</span>
+                <span class="config-value">@PASS24ROBOT</span>
+              </div>
+              <div class="config-item">
+                <span class="config-label">Статус</span>
+                <Tag value="Требует настройки" severity="warn" />
+              </div>
             </div>
-            <div class="config-item">
-              <span class="config-label">Статус</span>
-              <Tag value="Требует настройки" severity="warn" />
-            </div>
-          </div>
 
-          <Divider />
+            <Divider />
 
-          <h3 class="subsection-title">Как подключить Telegram-бота</h3>
-          <ol class="steps-list">
-            <li>
-              <strong>Создайте бота через @BotFather</strong>
-              <ul>
-                <li>Откройте Telegram и найдите <a href="https://t.me/BotFather" target="_blank">@BotFather</a></li>
-                <li>Отправьте команду <code>/newbot</code></li>
-                <li>Укажите имя бота (например: PASS24 Support)</li>
-                <li>Укажите username (должен заканчиваться на <code>bot</code>, например: <code>pass24_support_bot</code>)</li>
-                <li>Сохраните полученный <strong>токен</strong> — он понадобится для настройки</li>
-              </ul>
-            </li>
-            <li>
-              <strong>Настройте приветственное сообщение</strong>
-              <ul>
-                <li>В @BotFather: <code>/setdescription</code> — описание бота</li>
-                <li><code>/setabouttext</code> — короткое описание в профиле</li>
-                <li><code>/setcommands</code> — список команд (start, help, new_ticket)</li>
-              </ul>
-            </li>
-            <li>
-              <strong>Добавьте токен в настройки сервера</strong>
-              <pre class="code-block">environment:
+            <h3 class="subsection-title">Как подключить Telegram-бота</h3>
+            <ol class="steps-list">
+              <li>
+                <strong>Создайте бота через @BotFather</strong>
+                <ul>
+                  <li>Откройте Telegram и найдите <a href="https://t.me/BotFather" target="_blank">@BotFather</a></li>
+                  <li>Отправьте команду <code>/newbot</code></li>
+                  <li>Укажите имя бота (например: PASS24 Support)</li>
+                  <li>Укажите username (должен заканчиваться на <code>bot</code>, например: <code>pass24_support_bot</code>)</li>
+                  <li>Сохраните полученный <strong>токен</strong> — он понадобится для настройки</li>
+                </ul>
+              </li>
+              <li>
+                <strong>Настройте приветственное сообщение</strong>
+                <ul>
+                  <li>В @BotFather: <code>/setdescription</code> — описание бота</li>
+                  <li><code>/setabouttext</code> — короткое описание в профиле</li>
+                  <li><code>/setcommands</code> — список команд (start, help, new_ticket)</li>
+                </ul>
+              </li>
+              <li>
+                <strong>Добавьте токен в настройки сервера</strong>
+                <pre class="code-block">environment:
   TELEGRAM_BOT_TOKEN: 123456:ABC-DEF...</pre>
-            </li>
-            <li>
-              <strong>Перезапустите контейнер</strong>
-              <pre class="code-block">docker compose -f /opt/sites/pass24-servicedesk/docker-compose.yml up -d</pre>
-            </li>
-            <li>
-              <strong>Проверьте работу бота</strong>
-              <ul>
-                <li>Найдите бота в Telegram по username</li>
-                <li>Отправьте <code>/start</code></li>
-                <li>Создайте тестовую заявку через бота</li>
-                <li>Убедитесь, что заявка появилась в Service Desk</li>
-              </ul>
-            </li>
-          </ol>
+              </li>
+              <li>
+                <strong>Перезапустите контейнер</strong>
+                <pre class="code-block">docker compose -f /opt/sites/pass24-servicedesk/docker-compose.yml up -d</pre>
+              </li>
+              <li>
+                <strong>Проверьте работу бота</strong>
+                <ul>
+                  <li>Найдите бота в Telegram по username</li>
+                  <li>Отправьте <code>/start</code></li>
+                  <li>Создайте тестовую заявку через бота</li>
+                  <li>Убедитесь, что заявка появилась в Service Desk</li>
+                </ul>
+              </li>
+            </ol>
 
-          <Divider />
+            <Divider />
 
-          <h3 class="subsection-title">Как работает бот</h3>
-          <ul class="info-list">
-            <li>Пользователь отправляет <code>/start</code> — бот просит представиться</li>
-            <li>Пользователь выбирает тему из меню (пропуска, приложение, шлагбаум и т.д.)</li>
-            <li>Бот задаёт уточняющие вопросы (как AI-помощник на портале)</li>
-            <li>Если проблема не решается — бот создаёт заявку с email пользователя из Telegram</li>
-            <li>Все обновления по заявке бот присылает в Telegram</li>
-          </ul>
+            <h3 class="subsection-title">Как работает бот</h3>
+            <ul class="info-list">
+              <li>Пользователь отправляет <code>/start</code> — бот просит представиться</li>
+              <li>Пользователь выбирает тему из меню (пропуска, приложение, шлагбаум и т.д.)</li>
+              <li>Бот задаёт уточняющие вопросы (как AI-помощник на портале)</li>
+              <li>Если проблема не решается — бот создаёт заявку с email пользователя из Telegram</li>
+              <li>Все обновления по заявке бот присылает в Telegram</li>
+            </ul>
 
-          <Divider />
+            <Divider />
 
-          <h3 class="subsection-title">Команды бота</h3>
-          <div class="commands-list">
-            <div class="command-item">
-              <code>/start</code>
-              <span>Начало работы с ботом</span>
+            <h3 class="subsection-title">Команды бота</h3>
+            <div class="commands-list">
+              <div class="command-item">
+                <code>/start</code>
+                <span>Начало работы с ботом</span>
+              </div>
+              <div class="command-item">
+                <code>/help</code>
+                <span>Справка и список команд</span>
+              </div>
+              <div class="command-item">
+                <code>/new_ticket</code>
+                <span>Создать новую заявку</span>
+              </div>
+              <div class="command-item">
+                <code>/my_tickets</code>
+                <span>Мои заявки</span>
+              </div>
+              <div class="command-item">
+                <code>/status &lt;ID&gt;</code>
+                <span>Статус заявки по номеру</span>
+              </div>
             </div>
-            <div class="command-item">
-              <code>/help</code>
-              <span>Справка и список команд</span>
-            </div>
-            <div class="command-item">
-              <code>/new_ticket</code>
-              <span>Создать новую заявку</span>
-            </div>
-            <div class="command-item">
-              <code>/my_tickets</code>
-              <span>Мои заявки</span>
-            </div>
-            <div class="command-item">
-              <code>/status &lt;ID&gt;</code>
-              <span>Статус заявки по номеру</span>
-            </div>
-          </div>
 
-          <div class="warning-box info-box">
-            <i class="pi pi-info-circle" />
-            <div>
-              <strong>Текущий KB-бот.</strong> На сервере уже работает бот <code>pass24-kb-bot</code> для базы знаний (отвечает на вопросы через Claude + Qdrant). Новый бот Service Desk создаётся отдельно, чтобы не пересекаться с базой знаний.
+            <div class="warning-box info-box">
+              <i class="pi pi-info-circle" />
+              <div>
+                <strong>Текущий KB-бот.</strong> На сервере уже работает бот <code>pass24-kb-bot</code> для базы знаний (отвечает на вопросы через Claude + Qdrant). Новый бот Service Desk создаётся отдельно, чтобы не пересекаться с базой знаний.
+              </div>
             </div>
-          </div>
+          </template>
         </template>
       </Card>
     </Transition>

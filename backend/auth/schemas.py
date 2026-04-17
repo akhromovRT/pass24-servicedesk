@@ -35,6 +35,8 @@ class UserRead(BaseModel):
     customer_id: str | None = None
     customer_name: str | None = None
     created_at: datetime
+    telegram_chat_id: int | None = None
+    telegram_linked_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

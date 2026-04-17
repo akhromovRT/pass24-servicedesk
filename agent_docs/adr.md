@@ -286,4 +286,33 @@ while accumulated_work_minutes < target:
 
 ---
 
+### [2026-04-17] ADR-011: Telegram Bot v2 — aiogram 3 + PG FSM + отдельный домен
+
+#### Статус
+Принято
+
+#### Контекст
+Минимальный бот (`backend/notifications/telegram.py`, ~390 строк на raw httpx) умел только text-flow: «первое сообщение → тикет, последующие → комментарии». Не поддерживал inline keyboards, wizard'ы (multi-step create), FSM, account linking, уведомления с действиями, KB-deflection, CSAT. Для полноценного клиентского канала нужна проработанная архитектура обработчиков, хранилище состояний, и раздельный домен от notifications.
+
+#### Решение
+Переписать бот на **aiogram 3** с интеграцией через FastAPI webhook (`dp.feed_update(bot, update)`), **PostgreSQL FSM storage** (без Redis), deep link account binding с ghost-миграцией. Вынести код в отдельный пакет `backend/telegram/` (config, bot, webhook, handlers, middlewares, services, keyboards, storage, formatters). Старый модуль `backend/notifications/telegram.py` удалить, `notify_telegram_*` перенести в `backend/telegram/services/notify.py` с inline-кнопками и авто-отвязкой при 403.
+
+#### Обоснование
+- **aiogram 3** — современный async-фреймворк, удобные роутеры, FSM, middlewares, типизированные фильтры; активно поддерживается.
+- **Raw httpx** — слишком много boilerplate для wizard'ов, FSM, inline-кнопок и их роутинга.
+- **python-telegram-bot** — тяжелее, async-поддержка исторически хуже.
+- **PostgreSQL FSM storage** — в проекте уже есть PG; Redis тащить ради FSM — лишняя зависимость.
+- **Отдельный пакет** `backend/telegram/` — чётко отделяет канал от `notifications/` (email, websocket, projects).
+
+#### Последствия
+- (+) Menu-driven UX: создание заявок (wizard с KB-deflection), «мои заявки» с пагинацией, ответы/закрытие/CSAT, KB-поиск, AI-чат, PM-workspace (approvals).
+- (+) Push-уведомления с inline-кнопками (ответить, открыть, оценить).
+- (+) Account linking через deep link (токен, TTL 10 мин), миграция ghost-пользователей из старого бота.
+- (-) +1 зависимость (`aiogram>=3.15`).
+- (-) +2 таблицы (`telegram_fsm_state`, `telegram_link_tokens`) + 2 колонки в `users` (`telegram_linked_at`, `telegram_preferences`).
+- (-) Объём кода: `backend/telegram/` ~2500 строк, 20+ файлов.
+- Compat mode на 2 недели (`TELEGRAM_COMPAT_MODE` в `backend/telegram/config.py`): unlinked-пользователи продолжают работать по старому text-flow через `backend/telegram/handlers/compat.py`. После периода флаг вручную переводится в False.
+
+---
+
 Шаблон записи: `agent_docs/templates/adr.md`

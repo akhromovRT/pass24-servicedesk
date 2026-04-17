@@ -819,6 +819,15 @@ async def complete_phase(
             manager_email=manager_email,
         )
 
+    # Telegram milestone push — PM only, best-effort.
+    from backend.telegram.services.notify import notify_pm_milestone
+    background_tasks.add_task(
+        notify_pm_milestone,
+        project_id=project_id,
+        project_name=updated_project.name,
+        phase_name=phase.name,
+    )
+
     phase = await _load_phase_with_tasks(session, phase_id)
     read = PhaseRead.model_validate(phase)
     read.tasks.sort(key=lambda t: (t.order_num, t.created_at))

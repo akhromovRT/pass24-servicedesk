@@ -9,6 +9,8 @@ export interface User {
   customer_id: string | null
   customer_name: string | null
   created_at: string
+  telegram_chat_id?: number | null
+  telegram_linked_at?: string | null
 }
 
 export type UserRole = 'resident' | 'property_manager' | 'support_agent' | 'admin'
