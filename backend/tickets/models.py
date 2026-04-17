@@ -373,7 +373,6 @@ class Ticket(SQLModel, table=True):
             )
 
         now = datetime.utcnow()
-        prev_status = self.status
         self.status = new_status.value if hasattr(new_status, 'value') else new_status
         self.updated_at = now
 
