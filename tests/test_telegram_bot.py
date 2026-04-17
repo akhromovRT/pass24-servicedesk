@@ -4,9 +4,9 @@
 Запуск на сервере:
   docker exec site-pass24-servicedesk python -m pytest tests/test_telegram_bot.py -v
 
-Требуют живой PostgreSQL с применённой миграцией 021 для класса
-TestPostgresStorage. Классы TestFormatters и TestKeyboards — pure unit tests,
-могут запускаться без БД.
+Требуют живой PostgreSQL с применённой миграцией 023 (telegram bot v2)
+для класса TestPostgresStorage. Классы TestFormatters и TestKeyboards —
+pure unit tests, могут запускаться без БД.
 """
 from __future__ import annotations
 

@@ -1,16 +1,20 @@
 """Telegram bot v2 — FSM storage, link tokens, user telegram fields.
 
-Revision ID: 021
-Revises: 020
+Revision ID: 023
+Revises: 022
 Create Date: 2026-04-17
+
+Исходно файл создавался как 021, но в main параллельно приехали миграции
+021 (SLA pause flags) и 022 (ticket_comment email_message_id). Эта миграция
+пронумерована 023, чтобы встать в линейный порядок поверх текущего head'а main.
 """
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = "021"
-down_revision: Union[str, None] = "020"
+revision: str = "023"
+down_revision: Union[str, None] = "022"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
