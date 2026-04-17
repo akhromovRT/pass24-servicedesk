@@ -784,7 +784,7 @@ async def update_ticket_status(
     if creator_user:
         new_status_val = payload.new_status.value if hasattr(payload.new_status, 'value') else str(payload.new_status)
         if ticket.source == "telegram" and creator_user.telegram_chat_id:
-            from backend.notifications.telegram import notify_telegram_status
+            from backend.telegram.services.notify import notify_telegram_status
             background_tasks.add_task(
                 notify_telegram_status,
                 chat_id=creator_user.telegram_chat_id,
@@ -792,6 +792,7 @@ async def update_ticket_status(
                 ticket_title=ticket.title,
                 old_status=old_status,
                 new_status=new_status_val,
+                user=creator_user,
             )
         else:
             background_tasks.add_task(
@@ -910,7 +911,7 @@ async def add_comment(
             # Telegram — если источник Telegram и есть chat_id
             if (ticket.source == "telegram"
                     and creator_user.telegram_chat_id):
-                from backend.notifications.telegram import notify_telegram_comment
+                from backend.telegram.services.notify import notify_telegram_comment
                 background_tasks.add_task(
                     notify_telegram_comment,
                     chat_id=creator_user.telegram_chat_id,
@@ -918,6 +919,7 @@ async def add_comment(
                     ticket_title=ticket.title,
                     comment_text=payload.text,
                     author_name=current_user.full_name or current_user.email,
+                    user=creator_user,
                 )
             else:
                 # Email — для всех остальных источников

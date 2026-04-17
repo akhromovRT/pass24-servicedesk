@@ -73,6 +73,7 @@ def deadline_with_business_hours(start: datetime, sla_hours: int) -> datetime:
 
 async def _check_sla_breaches() -> int:
     """Находит тикеты, которые нарушат SLA через 30 мин, и помечает их."""
+    from backend.auth.models import User
     from backend.notifications.email import _send_email, ticket_subject_tag, STATUS_LABELS
 
     now = datetime.utcnow()
@@ -129,6 +130,30 @@ async def _check_sla_breaches() -> int:
                     """,
                 )
                 logger.info("SLA warning sent for ticket %s (%d min left)", t.id[:8], mins_left)
+
+                # Telegram-предупреждение создателю (best-effort, не блокирует коммит).
+                try:
+                    cr = await session.execute(
+                        select(User).where(User.id == t.creator_id)
+                    )
+                    creator = cr.scalar_one_or_none()
+                    if creator and creator.telegram_chat_id:
+                        prefs = creator.telegram_preferences or {}
+                        if prefs.get("notify_sla", True):
+                            from backend.telegram.services.notify import (
+                                notify_telegram_sla_warning,
+                            )
+                            await notify_telegram_sla_warning(
+                                chat_id=creator.telegram_chat_id,
+                                ticket_id=t.id,
+                                ticket_title=t.title,
+                                deadline=deadline,
+                                user=creator,
+                            )
+                except Exception as exc:  # noqa: BLE001 — уведомление не должно падать SLA-луп
+                    logger.warning(
+                        "TG SLA warning failed for ticket %s: %s", t.id[:8], exc
+                    )
             elif time_to_breach <= timedelta(0) and not t.sla_breached:
                 # Нарушение — ставим флаг breached
                 t.sla_breached = True

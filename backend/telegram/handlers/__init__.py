@@ -11,6 +11,7 @@ def register_all_routers(dp: Dispatcher) -> None:
     from backend.telegram.handlers.ai import router as ai_router
     from backend.telegram.handlers.projects import router as projects_router
     from backend.telegram.handlers.approvals import router as approvals_router
+    from backend.telegram.handlers.settings import router as settings_router
     from backend.telegram.handlers.menu import router as menu_router
 
     dp.include_router(start_router)
@@ -33,6 +34,9 @@ def register_all_routers(dp: Dispatcher) -> None:
     # (reject reason) to match before menu's catch-all.
     dp.include_router(projects_router)
     dp.include_router(approvals_router)
+    # Settings owns `mm:st` and `st:*` callbacks. Must register before menu so
+    # `mm:st` is routed here instead of the (non-existent) menu fallback.
+    dp.include_router(settings_router)
     # Menu router MUST be last: it contains a catch-all F.text handler for the
     # free-text fallback. Routers registered after it would never receive text
     # messages that fall through FSM states.
