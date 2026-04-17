@@ -217,3 +217,42 @@ def test_transition_on_hold_also_pauses():
     ticket.transition(actor_id="agent-1", new_status=TicketStatus.ON_HOLD)
     assert ticket.sla_paused_by_status is True
     assert ticket.sla_paused_at is not None
+
+
+# ---------------------------------------------------------------------------
+# on_public_comment_added — message-driven SLA pause
+# ---------------------------------------------------------------------------
+
+
+def test_on_public_comment_added_staff_starts_reply_pause():
+    ticket = _make_ticket()
+    now = datetime(2026, 4, 17, 12, 0, 0)
+    ticket.on_public_comment_added(is_staff=True, now=now)
+    assert ticket.sla_paused_by_reply is True
+    assert ticket.sla_paused_at == now
+
+
+def test_on_public_comment_added_client_ends_reply_pause_and_accumulates():
+    ticket = _make_ticket()
+    start = datetime(2026, 4, 17, 12, 0, 0)
+    ticket.on_public_comment_added(is_staff=True, now=start)
+    ticket.on_public_comment_added(is_staff=False, now=start + timedelta(hours=2))
+    assert ticket.sla_paused_by_reply is False
+    assert ticket.sla_paused_at is None
+    assert ticket.sla_total_pause_seconds == 7200
+
+
+def test_on_public_comment_added_then_status_waiting_keeps_pause():
+    """Агент написал → reply-пауза. Затем перевёл в waiting → статус-пауза добавляется.
+    Затем клиент ответил → reply снят, но статус держит паузу."""
+    ticket = _make_ticket()
+    t0 = datetime(2026, 4, 17, 12, 0, 0)
+    ticket.on_public_comment_added(is_staff=True, now=t0)
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.IN_PROGRESS)
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.WAITING_FOR_USER)
+    assert ticket.sla_paused_at is not None
+    ticket.on_public_comment_added(is_staff=False, now=t0 + timedelta(hours=1))
+    # reply=false, но status=true → пауза не снимается
+    assert ticket.sla_paused_by_reply is False
+    assert ticket.sla_paused_by_status is True
+    assert ticket.sla_paused_at is not None

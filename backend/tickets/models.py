@@ -348,6 +348,18 @@ class Ticket(SQLModel, table=True):
             self.sla_total_pause_seconds += max(0, elapsed)
             self.sla_paused_at = None
 
+    def on_public_comment_added(self, is_staff: bool, now: datetime) -> None:
+        """Вызывается после создания публичного (не internal) комментария.
+
+        Message-driven SLA pause: если комментарий от сотрудника поддержки —
+        ставим флаг reply-паузы; если от клиента — снимаем. Сводное состояние
+        пересчитывается через recompute_sla_pause (OR с флагом статуса).
+
+        Internal-комментарии этот метод вызывать не должны.
+        """
+        self.sla_paused_by_reply = bool(is_staff)
+        self.recompute_sla_pause(now)
+
     def transition(self, actor_id: str, new_status: TicketStatus) -> "TicketEvent":
         """FSM переходов статусов."""
         if self.status == TicketStatus.CLOSED:
