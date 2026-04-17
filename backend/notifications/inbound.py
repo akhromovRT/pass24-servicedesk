@@ -574,6 +574,9 @@ async def _handle_reply(mail_data: dict, ticket_id_prefix: str) -> bool:
         if not (body.strip() or attachments):
             return True
 
+        # Кешируем нужные для лога поля ДО flush — после rollback
+        # ORM-атрибуты expire'ятся, и ticket.id вызовет lazy-reload → MissingGreenlet.
+        ticket_tag = ticket.id[:8]
         comment = TicketComment(
             ticket_id=ticket.id,
             author_id=author_id,
@@ -590,7 +593,7 @@ async def _handle_reply(mail_data: dict, ticket_id_prefix: str) -> bool:
             await session.rollback()
             logger.info(
                 "Дубликат email-ответа (message_id=%s) к тикету %s — пропущено",
-                message_id, ticket.id[:8],
+                message_id, ticket_tag,
             )
             return True
 
@@ -671,6 +674,8 @@ async def _handle_reply_by_subject(mail_data: dict) -> bool:
         if not (body.strip() or attachments):
             return True
 
+        # Кешируем для лога до flush: после rollback ticket expired.
+        ticket_tag = ticket.id[:8]
         comment = TicketComment(
             ticket_id=ticket.id,
             author_id=str(user.id),
@@ -685,7 +690,7 @@ async def _handle_reply_by_subject(mail_data: dict) -> bool:
             await session.rollback()
             logger.info(
                 "Дубликат email-ответа по теме (message_id=%s) к тикету %s — пропущено",
-                message_id, ticket.id[:8],
+                message_id, ticket_tag,
             )
             return True
 
