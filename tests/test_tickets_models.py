@@ -127,3 +127,68 @@ def test_transition_creates_event():
     assert event is not None
     assert event.actor_id == "agent-1"
     assert "in_progress" in event.description
+
+
+# ---------------------------------------------------------------------------
+# SLA pause — OR-семантика двух источников
+# ---------------------------------------------------------------------------
+
+from datetime import datetime, timedelta
+
+
+def test_recompute_sla_pause_reply_flag_starts_pause():
+    ticket = _make_ticket()
+    now = datetime(2026, 4, 17, 12, 0, 0)
+    ticket.sla_paused_by_reply = True
+    ticket.recompute_sla_pause(now)
+    assert ticket.sla_paused_at == now
+    assert ticket.sla_total_pause_seconds == 0
+
+
+def test_recompute_sla_pause_status_flag_starts_pause():
+    ticket = _make_ticket()
+    now = datetime(2026, 4, 17, 12, 0, 0)
+    ticket.sla_paused_by_status = True
+    ticket.recompute_sla_pause(now)
+    assert ticket.sla_paused_at == now
+
+
+def test_recompute_sla_pause_both_false_ends_pause_and_accumulates():
+    ticket = _make_ticket()
+    start = datetime(2026, 4, 17, 12, 0, 0)
+    end = start + timedelta(hours=1)
+    ticket.sla_paused_by_reply = True
+    ticket.recompute_sla_pause(start)
+
+    ticket.sla_paused_by_reply = False
+    ticket.recompute_sla_pause(end)
+
+    assert ticket.sla_paused_at is None
+    assert ticket.sla_total_pause_seconds == 3600
+
+
+def test_recompute_sla_pause_one_flag_active_keeps_pause():
+    """Если reply-флаг снят, но статус-флаг ещё активен — пауза продолжается."""
+    ticket = _make_ticket()
+    start = datetime(2026, 4, 17, 12, 0, 0)
+    ticket.sla_paused_by_status = True
+    ticket.sla_paused_by_reply = True
+    ticket.recompute_sla_pause(start)
+
+    # reply снят, status ещё активен
+    ticket.sla_paused_by_reply = False
+    ticket.recompute_sla_pause(start + timedelta(minutes=30))
+
+    assert ticket.sla_paused_at == start  # не обнулили
+    assert ticket.sla_total_pause_seconds == 0  # ничего не накопили
+
+
+def test_recompute_sla_pause_noop_when_state_unchanged():
+    ticket = _make_ticket()
+    now = datetime(2026, 4, 17, 12, 0, 0)
+    ticket.sla_paused_by_reply = True
+    ticket.recompute_sla_pause(now)
+    # повторный вызов без изменения флагов не должен ничего портить
+    ticket.recompute_sla_pause(now + timedelta(hours=2))
+    assert ticket.sla_paused_at == now
+    assert ticket.sla_total_pause_seconds == 0
