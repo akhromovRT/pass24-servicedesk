@@ -79,7 +79,7 @@ async def free_text_fallback(message: Message, state: FSMContext, **data) -> Non
 
 # Placeholder stubs for ft:* so clicks do not show "unhandled callback" until
 # later tasks register the real handlers. They clear state and route back.
-@router.callback_query(F.data.in_({"ft:ticket", "ft:ai", "ft:kb"}))
+@router.callback_query(F.data.in_({"ft:ai", "ft:kb"}))
 async def cb_free_text_placeholder(callback: CallbackQuery, state: FSMContext, **data) -> None:
     await callback.answer(
         "Эта команда будет доступна после обновления. Пока возвращаю в меню.",
