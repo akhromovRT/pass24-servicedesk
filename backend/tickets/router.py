@@ -1588,6 +1588,10 @@ async def apply_macro(
             is_internal=bool(actions.get("is_internal_comment")),
         )
         session.add(comment)
+        # Message-driven SLA pause (internal-комментарий не влияет).
+        if not comment.is_internal:
+            is_staff = current_user.role in (UserRole.SUPPORT_AGENT, UserRole.ADMIN)
+            ticket.on_public_comment_added(is_staff=is_staff, now=datetime.utcnow())
 
     if actions.get("assign_self"):
         ticket.assignee_id = str(current_user.id)
