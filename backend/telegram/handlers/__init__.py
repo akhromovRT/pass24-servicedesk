@@ -12,6 +12,7 @@ def register_all_routers(dp: Dispatcher) -> None:
     from backend.telegram.handlers.projects import router as projects_router
     from backend.telegram.handlers.approvals import router as approvals_router
     from backend.telegram.handlers.settings import router as settings_router
+    from backend.telegram.handlers.compat import router as compat_router
     from backend.telegram.handlers.menu import router as menu_router
 
     dp.include_router(start_router)
@@ -37,6 +38,13 @@ def register_all_routers(dp: Dispatcher) -> None:
     # Settings owns `mm:st` and `st:*` callbacks. Must register before menu so
     # `mm:st` is routed here instead of the (non-existent) menu fallback.
     dp.include_router(settings_router)
+    # Compat router handles media from unlinked users in compat mode (Task 14).
+    # Its text path is triggered from menu.free_text_fallback; the router-level
+    # handlers only catch photo/document/video/voice (menu's F.text doesn't).
+    # Registered BEFORE menu so its media filters match before anything else
+    # falls through; each handler self-guards with ``is_linked/compat_mode``
+    # so linked users' media is never stolen.
+    dp.include_router(compat_router)
     # Menu router MUST be last: it contains a catch-all F.text handler for the
     # free-text fallback. Routers registered after it would never receive text
     # messages that fall through FSM states.

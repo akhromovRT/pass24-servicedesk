@@ -67,9 +67,15 @@ async def free_text_fallback(message: Message, state: FSMContext, **data) -> Non
         # Let other routers handle text inside their FSM states.
         return
     if not data.get("is_linked"):
-        # Unlinked users hit /start welcome logic instead; this path guards late arrivals.
+        # Compat mode: feed the legacy ghost-user flow so pre-v2 conversations
+        # (text-only → ticket/comment) keep working during rollout.
+        if data.get("compat_mode"):
+            from backend.telegram.handlers.compat import handle_unlinked_text
+            await handle_unlinked_text(message, **data)
+            return
+        # Strict mode: unlinked users only get the welcome / link prompt.
         from backend.telegram.handlers.start import _send_welcome_unlinked
-        await _send_welcome_unlinked(message)
+        await _send_welcome_unlinked(message, compat_mode=False)
         return
     # Save the text so Task 7 (ticket wizard) and Task 11 (AI chat) can prefill it.
     await state.update_data(pending_text=message.text or "")

@@ -8,12 +8,16 @@ from sqlmodel import select
 
 from backend.auth.models import User
 from backend.database import async_session_factory
+from backend.telegram.config import TELEGRAM_COMPAT_MODE
 
 
 class AuthMiddleware(BaseMiddleware):
-    """Populate data['user'] and data['is_linked'] from telegram_chat_id lookup.
+    """Populate data['user'] / data['is_linked'] / data['compat_mode'].
 
-    Never blocks: ghost flow (Task 14) relies on unlinked users reaching handlers.
+    Never blocks: the ghost flow (Task 14 compat handler) relies on unlinked
+    users reaching handlers. ``compat_mode`` is True only for *unlinked* users
+    while the global flag is on — linked users always see ``compat_mode=False``
+    so the compat branches never steal their text.
     """
 
     async def __call__(
@@ -31,8 +35,10 @@ class AuthMiddleware(BaseMiddleware):
                 )
                 user = result.scalar_one_or_none()
 
+        is_linked = bool(user and user.telegram_linked_at is not None)
         data["user"] = user
-        data["is_linked"] = bool(user and user.telegram_linked_at is not None)
+        data["is_linked"] = is_linked
+        data["compat_mode"] = TELEGRAM_COMPAT_MODE and not is_linked
         return await handler(event, data)
 
     @staticmethod
