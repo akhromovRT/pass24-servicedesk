@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from backend.projects.models import (
     ImplementationProject,
     PhaseStatus,
+    ProjectApproval,
     ProjectEvent,
     ProjectPhase,
     ProjectTask,
@@ -19,6 +20,14 @@ from backend.projects.models import (
     TaskStatus,
 )
 from backend.projects.templates import TemplateDefinition, get_template
+
+
+# ApprovalStatus values — дублируем строковые литералы, чтобы не тащить
+# enum внутрь сервисов: поле ProjectApproval.status хранится как String.
+class ApprovalStatusValue:
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
 
 
 async def generate_project_code(session: AsyncSession) -> str:
@@ -213,3 +222,139 @@ async def count_open_tasks(session: AsyncSession, project_id: str) -> int:
         )
     )
     return result.scalar_one()
+
+
+# ---------------------------------------------------------------------------
+# Approvals — клиентское утверждение фаз
+# ---------------------------------------------------------------------------
+#
+# Поведение извлечено из workspace_router.approve_phase/reject_phase. HTTP-endpoint
+# теперь делегирует этим функциям; Telegram-бот вызывает их напрямую, чтобы
+# логика не дублировалась.
+#
+# Функции НЕ коммитят сессию — вызывающий endpoint/хендлер решает, когда
+# завершать транзакцию. `ProjectEvent` создаётся вместе с approval, чтобы
+# история событий оставалась единой.
+
+
+async def approve_phase(
+    session: AsyncSession,
+    approval_id: str,
+    user_id: str,
+) -> dict:
+    """Утвердить pending ProjectApproval.
+
+    Возвращает ``{"approval": approval, "phase": phase | None, "project": project | None}``.
+
+    Raises ValueError:
+      - ``not_found`` — approval не существует
+      - ``not_pending`` — approval уже обработан (approved/rejected)
+    """
+    result = await session.execute(
+        select(ProjectApproval).where(ProjectApproval.id == approval_id)
+    )
+    approval = result.scalar_one_or_none()
+    if approval is None:
+        raise ValueError("not_found")
+    if approval.status != ApprovalStatusValue.PENDING:
+        raise ValueError("not_pending")
+
+    approval.status = ApprovalStatusValue.APPROVED
+    approval.reviewed_by = user_id
+    approval.reviewed_at = datetime.utcnow()
+    session.add(approval)
+
+    session.add(
+        ProjectEvent(
+            project_id=approval.project_id,
+            actor_id=user_id,
+            event_type="approval_approved",
+            description="Фаза утверждена клиентом",
+        )
+    )
+
+    # Подтягиваем phase/project для формирования ответа/уведомлений, но без
+    # побочных эффектов — в текущем HTTP-API endpoint approve НЕ меняет статус фазы.
+    phase = None
+    if approval.phase_id:
+        phase_res = await session.execute(
+            select(ProjectPhase).where(ProjectPhase.id == approval.phase_id)
+        )
+        phase = phase_res.scalar_one_or_none()
+
+    project = None
+    if approval.project_id:
+        proj_res = await session.execute(
+            select(ImplementationProject).where(
+                ImplementationProject.id == approval.project_id
+            )
+        )
+        project = proj_res.scalar_one_or_none()
+
+    return {"approval": approval, "phase": phase, "project": project}
+
+
+async def reject_phase(
+    session: AsyncSession,
+    approval_id: str,
+    user_id: str,
+    reason: str,
+) -> dict:
+    """Отклонить pending ProjectApproval с текстовым комментарием.
+
+    Возвращает ``{"approval": approval, "phase": phase | None, "project": project | None}``.
+
+    Raises ValueError:
+      - ``not_found`` — approval не существует
+      - ``not_pending`` — approval уже обработан
+      - ``empty_reason`` — reason пустой
+    """
+    reason = (reason or "").strip()
+    if not reason:
+        raise ValueError("empty_reason")
+
+    result = await session.execute(
+        select(ProjectApproval).where(ProjectApproval.id == approval_id)
+    )
+    approval = result.scalar_one_or_none()
+    if approval is None:
+        raise ValueError("not_found")
+    if approval.status != ApprovalStatusValue.PENDING:
+        raise ValueError("not_pending")
+
+    approval.status = ApprovalStatusValue.REJECTED
+    approval.reviewed_by = user_id
+    approval.feedback = reason
+    approval.reviewed_at = datetime.utcnow()
+    session.add(approval)
+
+    # Вернуть фазу в in_progress (сохраняем поведение HTTP endpoint).
+    phase = None
+    if approval.phase_id:
+        phase_res = await session.execute(
+            select(ProjectPhase).where(ProjectPhase.id == approval.phase_id)
+        )
+        phase = phase_res.scalar_one_or_none()
+        if phase is not None:
+            phase.status = PhaseStatus.IN_PROGRESS
+            session.add(phase)
+
+    session.add(
+        ProjectEvent(
+            project_id=approval.project_id,
+            actor_id=user_id,
+            event_type="approval_rejected",
+            description=f"Фаза отклонена клиентом: {reason}",
+        )
+    )
+
+    project = None
+    if approval.project_id:
+        proj_res = await session.execute(
+            select(ImplementationProject).where(
+                ImplementationProject.id == approval.project_id
+            )
+        )
+        project = proj_res.scalar_one_or_none()
+
+    return {"approval": approval, "phase": phase, "project": project}

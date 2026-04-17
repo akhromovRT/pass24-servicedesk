@@ -688,29 +688,29 @@ async def approve_phase(
     current_user: User = Depends(get_current_user),
     _project=Depends(get_project_with_access),
 ):
-    """Клиент утверждает завершение фазы."""
-    result = await session.execute(
-        select(ProjectApproval).where(ProjectApproval.id == approval_id, ProjectApproval.project_id == project_id)
+    """Клиент утверждает завершение фазы. Делегирует в services.approve_phase."""
+    # Проверка принадлежности approval проекту (раньше — в SQL where-clause).
+    belongs = await session.execute(
+        select(ProjectApproval.id).where(
+            ProjectApproval.id == approval_id,
+            ProjectApproval.project_id == project_id,
+        )
     )
-    approval = result.scalar_one_or_none()
-    if not approval:
+    if belongs.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Утверждение не найдено")
-    if approval.status != "pending":
-        raise HTTPException(status_code=400, detail="Утверждение уже обработано")
 
-    from datetime import datetime
-    approval.status = "approved"
-    approval.reviewed_by = str(current_user.id)
-    approval.reviewed_at = datetime.utcnow()
-    session.add(approval)
-
-    session.add(ProjectEvent(
-        project_id=project_id,
-        actor_id=str(current_user.id),
-        event_type="approval_approved",
-        description=f"Фаза утверждена клиентом",
-    ))
+    from backend.projects.services import approve_phase as approve_service
+    try:
+        result = await approve_service(session, approval_id, str(current_user.id))
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            raise HTTPException(status_code=404, detail="Утверждение не найдено")
+        if code == "not_pending":
+            raise HTTPException(status_code=400, detail="Утверждение уже обработано")
+        raise HTTPException(status_code=400, detail=code)
     await session.commit()
+    approval = result["approval"]
     await session.refresh(approval)
     return ApprovalRead.model_validate(approval)
 
@@ -724,40 +724,32 @@ async def reject_phase(
     current_user: User = Depends(get_current_user),
     _project=Depends(get_project_with_access),
 ):
-    """Клиент отклоняет завершение фазы (с комментарием)."""
-    result = await session.execute(
-        select(ProjectApproval).where(ProjectApproval.id == approval_id, ProjectApproval.project_id == project_id)
+    """Клиент отклоняет завершение фазы (с комментарием). Делегирует в services."""
+    belongs = await session.execute(
+        select(ProjectApproval.id).where(
+            ProjectApproval.id == approval_id,
+            ProjectApproval.project_id == project_id,
+        )
     )
-    approval = result.scalar_one_or_none()
-    if not approval:
+    if belongs.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Утверждение не найдено")
-    if approval.status != "pending":
-        raise HTTPException(status_code=400, detail="Утверждение уже обработано")
 
-    from datetime import datetime
-    approval.status = "rejected"
-    approval.reviewed_by = str(current_user.id)
-    approval.feedback = payload.feedback
-    approval.reviewed_at = datetime.utcnow()
-    session.add(approval)
-
-    # Вернуть фазу в in_progress
-    from backend.projects.models import ProjectPhase
-    phase_result = await session.execute(
-        select(ProjectPhase).where(ProjectPhase.id == approval.phase_id)
-    )
-    phase = phase_result.scalar_one_or_none()
-    if phase:
-        phase.status = PhaseStatus.IN_PROGRESS
-        session.add(phase)
-
-    session.add(ProjectEvent(
-        project_id=project_id,
-        actor_id=str(current_user.id),
-        event_type="approval_rejected",
-        description=f"Фаза отклонена клиентом: {payload.feedback}",
-    ))
+    from backend.projects.services import reject_phase as reject_service
+    try:
+        result = await reject_service(
+            session, approval_id, str(current_user.id), payload.feedback
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "not_found":
+            raise HTTPException(status_code=404, detail="Утверждение не найдено")
+        if code == "not_pending":
+            raise HTTPException(status_code=400, detail="Утверждение уже обработано")
+        if code == "empty_reason":
+            raise HTTPException(status_code=400, detail="Укажите причину отклонения")
+        raise HTTPException(status_code=400, detail=code)
     await session.commit()
+    approval = result["approval"]
     await session.refresh(approval)
     return ApprovalRead.model_validate(approval)
 

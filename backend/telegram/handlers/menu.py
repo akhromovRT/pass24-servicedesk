@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
@@ -8,6 +10,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from backend.auth.models import UserRole
 from backend.telegram.keyboards.main_menu import main_menu_kb
 from backend.telegram.services.ticket_service import count_active_tickets
+
+logger = logging.getLogger(__name__)
 
 router = Router(name="menu")
 
@@ -23,8 +27,12 @@ async def show_main_menu(
     active = await count_active_tickets(str(user.id)) if user else 0
     pending = 0
     if user and user.role == UserRole.PROPERTY_MANAGER and getattr(user, "customer_id", None):
-        # Approvals count service lands in Task 12; stub as 0 for now.
-        pending = 0
+        try:
+            from backend.telegram.services.project_service import pending_approvals_count
+            pending = await pending_approvals_count(user.customer_id)
+        except Exception as exc:
+            logger.warning("pending_approvals_count failed: %s", exc)
+            pending = 0
     text = "🏠 <b>Главное меню</b>\n\nВыберите действие:"
     kb = main_menu_kb(user, active_tickets=active, pending_approvals=pending)
     if isinstance(event, CallbackQuery):
