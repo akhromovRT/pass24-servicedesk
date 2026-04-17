@@ -255,6 +255,11 @@ class TestReplyByTag:
             assert len(updated.attachments) == 1, f"Ожидалось 1 вложение, получено {len(updated.attachments)}"
             assert updated.attachments[0].filename == "screenshot.png"
             assert updated.attachments[0].size == 2048
+            # Вложение должно быть привязано к комментарию, чтобы UI
+            # отображал его внутри пузыря ответа, а не в описании тикета.
+            assert updated.attachments[0].comment_id == updated.comments[0].id, (
+                "comment_id вложения должен совпадать с id созданного комментария"
+            )
         finally:
             await _cleanup_ticket(ticket.id)
 

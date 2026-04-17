@@ -9,6 +9,20 @@
 
 ## Записи
 
+### 2026-04-17 — fix: вложения из email-ответов отображаются внутри пузыря сообщения
+
+**Проблема:** Вложения, отправленные клиентом в ответном письме на тикет, не отображались в переписке рядом с сообщением — попадали в «описание тикета» в самом верху (или визуально «исчезали» из контекста ответа).
+
+**Первопричина:** После редизайна UI 7 апреля (v0.8 Phase 1) вложения отображаются inline внутри пузыря сообщения по полю `Attachment.comment_id`. Однако функция `_save_attachment` в `backend/notifications/inbound.py` не принимала `comment_id`, и обработчики `_handle_reply` / `_handle_reply_by_subject` не передавали его при сохранении вложений из ответных email. В итоге у всех таких вложений `comment_id = NULL`, и фронтенд (`TicketConversation.vue`) показывал их как вложения описания тикета.
+
+**Что сделано:**
+- `_save_attachment(...)` получил необязательный параметр `comment_id: Optional[str] = None` и пишет его в модель `Attachment`.
+- `_handle_reply` / `_handle_reply_by_subject` создают `TicketComment` также при пустом теле, если есть вложения (чтобы было к чему привязать), и передают `comment.id` в `_save_attachment`. `TicketComment.id` доступен сразу после конструктора благодаря `default_factory=uuid4`.
+- Обработчик создания нового тикета из email оставлен без изменений — там вложения корректно относятся к описанию (`comment_id=None`).
+- Тест `test_reply_with_attachment` в `tests/test_inbound_email_integration.py` расширен: проверяет, что `attachment.comment_id == comment.id`.
+
+**Файлы:** `backend/notifications/inbound.py`, `tests/test_inbound_email_integration.py`
+
 ### 2026-04-09 — v0.8 Phase 2: Approvals, Risks, Templates, Analytics
 
 **Что сделано:**

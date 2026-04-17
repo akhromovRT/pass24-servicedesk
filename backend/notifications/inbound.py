@@ -427,8 +427,19 @@ def _fetch_unseen_emails() -> list[dict]:
     return results
 
 
-async def _save_attachment(ticket_id: str, uploader_id: str, att_data: dict, session) -> None:
-    """Сохраняет вложение из email на диск и в БД."""
+async def _save_attachment(
+    ticket_id: str,
+    uploader_id: str,
+    att_data: dict,
+    session,
+    comment_id: Optional[str] = None,
+) -> None:
+    """Сохраняет вложение из email на диск и в БД.
+
+    Если передан ``comment_id`` — вложение привязывается к конкретному
+    комментарию (для inline-отображения внутри пузыря сообщения).
+    ``comment_id=None`` означает, что вложение относится к описанию тикета.
+    """
     from backend.tickets.models import Attachment
 
     file_id = str(uuid.uuid4())
@@ -445,6 +456,7 @@ async def _save_attachment(ticket_id: str, uploader_id: str, att_data: dict, ses
         content_type=att_data["content_type"],
         size=att_data["size"],
         storage_path=storage_path,
+        comment_id=comment_id,
     )
     session.add(attachment)
 
@@ -505,9 +517,13 @@ async def _handle_reply(mail_data: dict, ticket_id_prefix: str) -> bool:
         author_name = user.full_name if user else mail_data["from_name"]
         author_id = str(user.id) if user else "email"
 
-        # Добавить комментарий
+        # Добавить комментарий. Создаём его также если текст пуст, но есть
+        # вложения — чтобы файлы отображались внутри пузыря этого ответа,
+        # а не приклеивались к описанию тикета (comment_id=None).
         body = mail_data["body"]
-        if body.strip():
+        attachments = mail_data.get("attachments", [])
+        comment_id: Optional[str] = None
+        if body.strip() or attachments:
             comment = TicketComment(
                 ticket_id=ticket.id,
                 author_id=author_id,
@@ -515,10 +531,11 @@ async def _handle_reply(mail_data: dict, ticket_id_prefix: str) -> bool:
                 text=body,
             )
             session.add(comment)
+            comment_id = comment.id
 
-        # Сохранить вложения
-        for att in mail_data.get("attachments", []):
-            await _save_attachment(ticket.id, author_id, att, session)
+        # Сохранить вложения с привязкой к созданному комментарию
+        for att in attachments:
+            await _save_attachment(ticket.id, author_id, att, session, comment_id=comment_id)
 
         # Клиент ответил → флаг unread + переход в IN_PROGRESS
         ticket.has_unread_reply = True
@@ -535,7 +552,7 @@ async def _handle_reply(mail_data: dict, ticket_id_prefix: str) -> bool:
 
         await session.commit()
 
-        att_count = len(mail_data.get("attachments", []))
+        att_count = len(attachments)
         logger.info(
             "Email-ответ → комментарий к тикету %s от %s (%d вложений)",
             ticket.id[:8], mail_data["from_email"], att_count,
@@ -583,7 +600,9 @@ async def _handle_reply_by_subject(mail_data: dict) -> bool:
 
         author_name = user.full_name
         body = mail_data["body"]
-        if body.strip():
+        attachments = mail_data.get("attachments", [])
+        comment_id: Optional[str] = None
+        if body.strip() or attachments:
             comment = TicketComment(
                 ticket_id=ticket.id,
                 author_id=str(user.id),
@@ -591,9 +610,10 @@ async def _handle_reply_by_subject(mail_data: dict) -> bool:
                 text=body,
             )
             session.add(comment)
+            comment_id = comment.id
 
-        for att in mail_data.get("attachments", []):
-            await _save_attachment(ticket.id, str(user.id), att, session)
+        for att in attachments:
+            await _save_attachment(ticket.id, str(user.id), att, session, comment_id=comment_id)
 
         # Клиент ответил → флаг unread + переход в IN_PROGRESS
         ticket.has_unread_reply = True
@@ -610,7 +630,7 @@ async def _handle_reply_by_subject(mail_data: dict) -> bool:
 
         await session.commit()
 
-        att_count = len(mail_data.get("attachments", []))
+        att_count = len(attachments)
         logger.info(
             "Email-ответ (по теме) → комментарий к тикету %s от %s (%d вложений)",
             ticket.id[:8], mail_data["from_email"], att_count,
