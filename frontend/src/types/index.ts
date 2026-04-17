@@ -64,6 +64,8 @@ export interface Ticket {
   sla_breached: boolean
   sla_paused_at: string | null
   sla_total_pause_seconds: number
+  sla_paused_by_status?: boolean
+  sla_paused_by_reply?: boolean
   has_unread_reply: boolean
   parent_ticket_id: string | null
   implementation_project_id: string | null
