@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid as uuid_mod
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -302,3 +303,242 @@ async def get_ticket_with_comments(
         comments = list((await session.execute(comments_stmt)).scalars().all())
 
     return {"ticket": ticket, "comments": comments, "total_comments": total_comments}
+
+
+# --- Telegram message → attachment meta helper (Task 10) -----------------
+
+
+def extract_tg_attachment_meta(message) -> dict | None:
+    """Build `{file_id, filename, content_type, size}` from an aiogram Message.
+
+    Returns None when the message carries no attachable media (photo / document /
+    video / voice). Shared by the create-ticket wizard (Task 7) and the reply
+    flow (Task 10) so both produce identical attachment dicts.
+    """
+    if getattr(message, "photo", None):
+        photo = message.photo[-1]  # largest size
+        file_id = photo.file_id
+        return {
+            "file_id": file_id,
+            "filename": f"photo_{file_id[:8]}.jpg",
+            "content_type": "image/jpeg",
+            "size": photo.file_size,
+        }
+    if getattr(message, "document", None):
+        doc = message.document
+        file_id = doc.file_id
+        return {
+            "file_id": file_id,
+            "filename": doc.file_name or f"doc_{file_id[:8]}",
+            "content_type": doc.mime_type or "application/octet-stream",
+            "size": doc.file_size,
+        }
+    if getattr(message, "video", None):
+        video = message.video
+        file_id = video.file_id
+        return {
+            "file_id": file_id,
+            "filename": f"video_{file_id[:8]}.mp4",
+            "content_type": "video/mp4",
+            "size": video.file_size,
+        }
+    if getattr(message, "voice", None):
+        voice = message.voice
+        file_id = voice.file_id
+        return {
+            "file_id": file_id,
+            "filename": f"voice_{file_id[:8]}.ogg",
+            "content_type": "audio/ogg",
+            "size": voice.file_size,
+        }
+    return None
+
+
+# --- Ticket reply / close / CSAT (Task 10) -------------------------------
+
+
+async def resolve_ticket_by_short_id(short_id: str, user_id: str) -> Ticket | None:
+    """Return the user's ticket matching the short-id prefix, or None.
+
+    Callers use this to translate the 8-char prefix baked into inline-keyboard
+    callbacks back into the full ticket id before mutating the ticket.
+    """
+    async with async_session_factory() as session:
+        stmt = (
+            select(Ticket)
+            .where(
+                Ticket.creator_id == user_id,
+                Ticket.id.startswith(short_id),
+            )
+            .order_by(Ticket.created_at.desc())
+            .limit(1)
+        )
+        return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def add_comment(
+    ticket_id: str,
+    user: User,
+    text: str,
+    attachments: list[dict] | None = None,
+) -> TicketComment:
+    """Add a public comment from the ticket owner.
+
+    Sets ``has_unread_reply``, transitions WAITING_FOR_USER → IN_PROGRESS,
+    unfreezes SLA reply-pause via ``on_public_comment_added(is_staff=False)``,
+    downloads + saves attachments if provided, links them to the new comment.
+
+    Raises ``ValueError`` with a machine code:
+      - ``not_found``     — ticket does not exist
+      - ``not_owner``     — caller isn't the ticket creator
+      - ``empty``         — neither text nor attachments provided
+    """
+    text = (text or "").strip()
+    attachments = attachments or []
+    if not text and not attachments:
+        raise ValueError("empty")
+
+    user_id = str(user.id)
+
+    async with async_session_factory() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        if ticket is None:
+            raise ValueError("not_found")
+        if ticket.creator_id != user_id:
+            raise ValueError("not_owner")
+
+        comment = TicketComment(
+            ticket_id=ticket.id,
+            author_id=user_id,
+            author_name=getattr(user, "full_name", None) or "",
+            text=text,
+            is_internal=False,
+        )
+        session.add(comment)
+        await session.flush()  # assign comment.id for attachment FK
+
+        # Download + persist attachments, linking each to the new comment.
+        for att in attachments:
+            file_id = att.get("file_id")
+            if not file_id:
+                continue
+            downloaded = await _download_tg_file(file_id)
+            if not downloaded:
+                logger.warning("skipping reply attachment %s: download failed", file_id)
+                continue
+            payload, tg_filename = downloaded
+            if len(payload) > _MAX_TG_FILE_SIZE:
+                logger.warning(
+                    "skipping reply attachment %s: exceeds %d bytes",
+                    file_id,
+                    _MAX_TG_FILE_SIZE,
+                )
+                continue
+            filename = att.get("filename") or tg_filename
+            storage_path = _save_attachment_to_disk(ticket.id, filename, payload)
+            attachment = Attachment(
+                ticket_id=ticket.id,
+                uploader_id=user_id,
+                filename=filename,
+                content_type=att.get("content_type") or "application/octet-stream",
+                size=len(payload),
+                storage_path=storage_path,
+                comment_id=comment.id,
+            )
+            session.add(attachment)
+
+        ticket.has_unread_reply = True
+
+        # WAITING_FOR_USER → IN_PROGRESS on client reply (agents see the activity).
+        if ticket.status == TicketStatus.WAITING_FOR_USER.value:
+            try:
+                event = ticket.transition(
+                    actor_id=user_id,
+                    new_status=TicketStatus.IN_PROGRESS,
+                )
+                session.add(event)
+            except ValueError as exc:
+                logger.warning("reply status transition skipped: %s", exc)
+
+        now = datetime.utcnow()
+        ticket.on_public_comment_added(is_staff=False, now=now)
+        ticket.recompute_sla_pause(now=now)
+
+        session.add(ticket)
+        await session.commit()
+        await session.refresh(comment)
+        return comment
+
+
+async def close_ticket(ticket_id: str, user: User) -> Ticket:
+    """Close a ticket on the owner's behalf.
+
+    Raises ``ValueError``:
+      - ``not_found``      — ticket does not exist
+      - ``not_owner``      — caller isn't the ticket creator
+      - ``already_closed`` — ticket is already in CLOSED
+    """
+    user_id = str(user.id)
+    async with async_session_factory() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        if ticket is None:
+            raise ValueError("not_found")
+        if ticket.creator_id != user_id:
+            raise ValueError("not_owner")
+        if ticket.status == TicketStatus.CLOSED.value:
+            raise ValueError("already_closed")
+
+        event = ticket.transition(actor_id=user_id, new_status=TicketStatus.CLOSED)
+        session.add(event)
+        session.add(ticket)
+        await session.commit()
+        await session.refresh(ticket)
+        return ticket
+
+
+async def rate_csat(
+    ticket_id: str,
+    user: User,
+    rating: int,
+    comment: str | None = None,
+) -> Ticket:
+    """Persist a CSAT rating from the ticket owner.
+
+    Transitions ``resolved`` → ``closed`` (user accepted the resolution). Does
+    NOT touch ``satisfaction_requested_at`` (that is set by the agent side when
+    the ticket is resolved).
+
+    Raises ``ValueError``:
+      - ``not_found``  — ticket does not exist
+      - ``not_owner``  — caller isn't the ticket creator
+      - ``bad_rating`` — rating outside 1..5
+    """
+    user_id = str(user.id)
+    if not isinstance(rating, int) or rating < 1 or rating > 5:
+        raise ValueError("bad_rating")
+
+    async with async_session_factory() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        if ticket is None:
+            raise ValueError("not_found")
+        if ticket.creator_id != user_id:
+            raise ValueError("not_owner")
+
+        ticket.satisfaction_rating = rating
+        ticket.satisfaction_comment = (comment or None)
+        ticket.satisfaction_submitted_at = datetime.utcnow()
+
+        if ticket.status == TicketStatus.RESOLVED.value:
+            try:
+                event = ticket.transition(
+                    actor_id=user_id,
+                    new_status=TicketStatus.CLOSED,
+                )
+                session.add(event)
+            except ValueError as exc:
+                logger.warning("csat close transition skipped: %s", exc)
+
+        session.add(ticket)
+        await session.commit()
+        await session.refresh(ticket)
+        return ticket

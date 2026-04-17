@@ -23,7 +23,10 @@ from backend.telegram.keyboards.ticket_wizard import (
     product_kb,
 )
 from backend.telegram.services.kb_service import get_article_by_slug
-from backend.telegram.services.ticket_service import create_ticket
+from backend.telegram.services.ticket_service import (
+    create_ticket,
+    extract_tg_attachment_meta,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -229,45 +232,7 @@ async def msg_description_attachment(
     state: FSMContext,
     **data,
 ) -> None:
-    attachment: dict | None = None
-
-    if message.photo:
-        photo = message.photo[-1]  # largest size
-        file_id = photo.file_id
-        attachment = {
-            "file_id": file_id,
-            "filename": f"photo_{file_id[:8]}.jpg",
-            "content_type": "image/jpeg",
-            "size": photo.file_size,
-        }
-    elif message.document:
-        doc = message.document
-        file_id = doc.file_id
-        attachment = {
-            "file_id": file_id,
-            "filename": doc.file_name or f"doc_{file_id[:8]}",
-            "content_type": doc.mime_type or "application/octet-stream",
-            "size": doc.file_size,
-        }
-    elif message.video:
-        video = message.video
-        file_id = video.file_id
-        attachment = {
-            "file_id": file_id,
-            "filename": f"video_{file_id[:8]}.mp4",
-            "content_type": "video/mp4",
-            "size": video.file_size,
-        }
-    elif message.voice:
-        voice = message.voice
-        file_id = voice.file_id
-        attachment = {
-            "file_id": file_id,
-            "filename": f"voice_{file_id[:8]}.ogg",
-            "content_type": "audio/ogg",
-            "size": voice.file_size,
-        }
-
+    attachment = extract_tg_attachment_meta(message)
     if attachment is None:
         return
 
