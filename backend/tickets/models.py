@@ -197,9 +197,14 @@ class Ticket(SQLModel, table=True):
     sla_response_hours: Optional[int] = Field(default=4)
     sla_resolve_hours: Optional[int] = Field(default=24)
     sla_breached: bool = Field(default=False)
-    # SLA pause: когда тикет в WAITING_FOR_USER — часы не тикают
+    # SLA pause: сводное состояние — устанавливается, когда активен хотя бы
+    # один из флагов sla_paused_by_status / sla_paused_by_reply.
     sla_paused_at: Optional[datetime] = Field(default=None)
     sla_total_pause_seconds: int = Field(default=0)
+    # Источники паузы. recompute_sla_pause() конвертирует OR-комбинацию
+    # флагов в установку/снятие sla_paused_at.
+    sla_paused_by_status: bool = Field(default=False)
+    sla_paused_by_reply: bool = Field(default=False)
 
     # Уведомления для агентов: клиент ответил → True; агент открыл/ответил → False
     has_unread_reply: bool = Field(default=False, index=True)
@@ -326,6 +331,22 @@ class Ticket(SQLModel, table=True):
             self.category = TicketCategory.EQUIPMENT_ISSUES
         elif any(kw in text for kw in ["предложен", "идея", "хотелось бы", "было бы здорово"]):
             self.category = TicketCategory.FEATURE_REQUEST
+
+    def recompute_sla_pause(self, now: datetime) -> None:
+        """Синхронизирует sla_paused_at/sla_total_pause_seconds с флагами источников.
+
+        OR-семантика: пауза активна, если sla_paused_by_status или sla_paused_by_reply.
+        Безопасно вызывается повторно (no-op, если состояние совпадает с флагами).
+        """
+        was_paused = self.sla_paused_at is not None
+        should_pause = bool(self.sla_paused_by_status or self.sla_paused_by_reply)
+
+        if should_pause and not was_paused:
+            self.sla_paused_at = now
+        elif not should_pause and was_paused:
+            elapsed = int((now - self.sla_paused_at).total_seconds())
+            self.sla_total_pause_seconds += max(0, elapsed)
+            self.sla_paused_at = None
 
     def transition(self, actor_id: str, new_status: TicketStatus) -> "TicketEvent":
         """FSM переходов статусов."""
