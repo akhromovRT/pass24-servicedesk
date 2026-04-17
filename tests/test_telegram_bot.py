@@ -11,13 +11,14 @@ TestPostgresStorage. Классы TestFormatters и TestKeyboards — pure unit 
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 import pytest_asyncio
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.base import StorageKey
 from sqlalchemy import text
+from sqlmodel import select
 
 from backend.auth.models import User, UserRole
 from backend.database import async_session_factory
@@ -295,3 +296,303 @@ class TestKeyboards:
             if b.callback_data and b.callback_data != "noop"
         ]
         assert all(cb.endswith(":open") for cb in cbs)
+
+
+# ---------------------------------------------------------------------------
+# Account linking — integration tests (require live DB + migration 019).
+# ---------------------------------------------------------------------------
+
+
+async def _create_real_user(role: UserRole = UserRole.RESIDENT) -> User:
+    user = User(
+        email=f"real_{uuid.uuid4().hex[:8]}@test.local",
+        hashed_password="x",
+        full_name="Real User",
+        role=role,
+    )
+    async with async_session_factory() as session:
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+    return user
+
+
+async def _create_ghost_user(chat_id: int) -> User:
+    ghost = User(
+        email=f"ghost_{uuid.uuid4().hex[:8]}@telegram.pass24.local",
+        hashed_password="x",
+        full_name="Ghost User",
+        role=UserRole.RESIDENT,
+        telegram_chat_id=chat_id,
+    )
+    async with async_session_factory() as session:
+        session.add(ghost)
+        await session.commit()
+        await session.refresh(ghost)
+    return ghost
+
+
+async def _delete_user(user_id) -> None:
+    uid_str = str(user_id)
+    async with async_session_factory() as session:
+        await session.execute(
+            text("DELETE FROM telegram_link_tokens WHERE user_id = :uid"),
+            {"uid": uid_str},
+        )
+        await session.execute(
+            text("DELETE FROM tickets WHERE creator_id = :uid"),
+            {"uid": uid_str},
+        )
+        await session.execute(
+            text("DELETE FROM users WHERE id = :uid"),
+            {"uid": uid_str},
+        )
+        await session.commit()
+
+
+async def _insert_token(token: str, user_id, *, expires_at: datetime, used_at: datetime | None = None) -> None:
+    async with async_session_factory() as session:
+        await session.execute(
+            text(
+                "INSERT INTO telegram_link_tokens (token, user_id, expires_at, used_at) "
+                "VALUES (:token, :uid, :exp, :used)"
+            ),
+            {
+                "token": token,
+                "uid": str(user_id),
+                "exp": expires_at,
+                "used": used_at,
+            },
+        )
+        await session.commit()
+
+
+@pytest.mark.asyncio
+class TestLinking:
+    async def test_generate_token_creates_record(self):
+        from backend.telegram.services.linking import generate_token
+
+        user = await _create_real_user()
+        try:
+            result = await generate_token(str(user.id))
+            assert "token" in result
+            assert "deeplink" in result
+            assert "expires_at" in result
+            assert result["deeplink"].endswith(result["token"])
+
+            async with async_session_factory() as session:
+                row = await session.execute(
+                    text(
+                        "SELECT user_id FROM telegram_link_tokens WHERE token = :t"
+                    ),
+                    {"t": result["token"]},
+                )
+                record = row.first()
+                assert record is not None
+                assert str(record[0]) == str(user.id)
+        finally:
+            await _delete_user(user.id)
+
+    async def test_generate_token_rate_limit(self):
+        from backend.telegram.services.linking import generate_token
+
+        user = await _create_real_user()
+        try:
+            future = datetime.utcnow() + timedelta(minutes=10)
+            for _ in range(5):
+                await _insert_token(uuid.uuid4().hex, user.id, expires_at=future)
+            with pytest.raises(ValueError, match="rate_limit"):
+                await generate_token(str(user.id))
+        finally:
+            await _delete_user(user.id)
+
+    async def test_verify_valid_token(self):
+        from backend.telegram.services.linking import verify_token
+
+        user = await _create_real_user()
+        try:
+            token = uuid.uuid4().hex
+            future = datetime.utcnow() + timedelta(minutes=10)
+            await _insert_token(token, user.id, expires_at=future)
+
+            payload = await verify_token(token)
+            assert payload is not None
+            assert payload["token"] == token
+            assert payload["user"].id == user.id
+        finally:
+            await _delete_user(user.id)
+
+    async def test_verify_expired_token_returns_none(self):
+        from backend.telegram.services.linking import verify_token
+
+        user = await _create_real_user()
+        try:
+            token = uuid.uuid4().hex
+            past = datetime.utcnow() - timedelta(seconds=1)
+            await _insert_token(token, user.id, expires_at=past)
+
+            assert await verify_token(token) is None
+        finally:
+            await _delete_user(user.id)
+
+    async def test_verify_used_token_returns_none(self):
+        from backend.telegram.services.linking import verify_token
+
+        user = await _create_real_user()
+        try:
+            token = uuid.uuid4().hex
+            now = datetime.utcnow()
+            await _insert_token(
+                token,
+                user.id,
+                expires_at=now + timedelta(minutes=10),
+                used_at=now,
+            )
+            assert await verify_token(token) is None
+        finally:
+            await _delete_user(user.id)
+
+    async def test_link_account_sets_chat_id_and_linked_at(self):
+        from backend.telegram.services.linking import link_account
+
+        user = await _create_real_user()
+        chat_id = int(uuid.uuid4().int % 1_000_000_000)
+        try:
+            token = uuid.uuid4().hex
+            future = datetime.utcnow() + timedelta(minutes=10)
+            await _insert_token(token, user.id, expires_at=future)
+
+            linked = await link_account(token, chat_id)
+            assert linked.telegram_chat_id == chat_id
+            assert linked.telegram_linked_at is not None
+
+            async with async_session_factory() as session:
+                result = await session.execute(
+                    select(User).where(User.id == user.id)
+                )
+                refreshed = result.scalar_one()
+                assert refreshed.telegram_chat_id == chat_id
+                assert refreshed.telegram_linked_at is not None
+        finally:
+            await _delete_user(user.id)
+
+    async def test_link_account_marks_token_used(self):
+        from backend.telegram.services.linking import link_account
+
+        user = await _create_real_user()
+        chat_id = int(uuid.uuid4().int % 1_000_000_000)
+        try:
+            token = uuid.uuid4().hex
+            future = datetime.utcnow() + timedelta(minutes=10)
+            await _insert_token(token, user.id, expires_at=future)
+
+            await link_account(token, chat_id)
+
+            async with async_session_factory() as session:
+                row = await session.execute(
+                    text(
+                        "SELECT used_at FROM telegram_link_tokens WHERE token = :t"
+                    ),
+                    {"t": token},
+                )
+                used_at = row.scalar_one()
+                assert used_at is not None
+        finally:
+            await _delete_user(user.id)
+
+    async def test_migrate_ghost_transfers_tickets(self):
+        from backend.telegram.services.linking import link_account
+        from backend.tickets.models import Ticket, TicketPriority, TicketStatus
+
+        user = await _create_real_user()
+        chat_id = int(uuid.uuid4().int % 1_000_000_000)
+        ghost = await _create_ghost_user(chat_id)
+        ticket_id = str(uuid.uuid4())
+        try:
+            async with async_session_factory() as session:
+                ticket = Ticket(
+                    id=ticket_id,
+                    creator_id=str(ghost.id),
+                    title="Ghost ticket",
+                    description="Before migration",
+                    status=TicketStatus.NEW.value,
+                    priority=TicketPriority.NORMAL,
+                )
+                session.add(ticket)
+                await session.commit()
+
+            token = uuid.uuid4().hex
+            future = datetime.utcnow() + timedelta(minutes=10)
+            await _insert_token(token, user.id, expires_at=future)
+
+            await link_account(token, chat_id)
+
+            async with async_session_factory() as session:
+                row = await session.execute(
+                    text("SELECT creator_id FROM tickets WHERE id = :tid"),
+                    {"tid": ticket_id},
+                )
+                creator_id = row.scalar_one()
+                assert str(creator_id) == str(user.id)
+        finally:
+            async with async_session_factory() as session:
+                await session.execute(
+                    text("DELETE FROM tickets WHERE id = :tid"),
+                    {"tid": ticket_id},
+                )
+                await session.commit()
+            await _delete_user(user.id)
+            await _delete_user(ghost.id)
+
+    async def test_migrate_ghost_deactivates_ghost(self):
+        from backend.telegram.services.linking import link_account
+
+        user = await _create_real_user()
+        chat_id = int(uuid.uuid4().int % 1_000_000_000)
+        ghost = await _create_ghost_user(chat_id)
+        try:
+            token = uuid.uuid4().hex
+            future = datetime.utcnow() + timedelta(minutes=10)
+            await _insert_token(token, user.id, expires_at=future)
+
+            await link_account(token, chat_id)
+
+            async with async_session_factory() as session:
+                result = await session.execute(
+                    select(User).where(User.id == ghost.id)
+                )
+                refreshed = result.scalar_one()
+                assert refreshed.is_active is False
+                assert refreshed.telegram_chat_id is None
+                assert refreshed.email.startswith("deleted_")
+        finally:
+            await _delete_user(user.id)
+            await _delete_user(ghost.id)
+
+    async def test_unlink_clears_fields(self):
+        from backend.telegram.services.linking import unlink_account
+
+        user = await _create_real_user()
+        chat_id = int(uuid.uuid4().int % 1_000_000_000)
+        try:
+            async with async_session_factory() as session:
+                result = await session.execute(
+                    select(User).where(User.id == user.id)
+                )
+                u = result.scalar_one()
+                u.telegram_chat_id = chat_id
+                u.telegram_linked_at = datetime.utcnow()
+                session.add(u)
+                await session.commit()
+
+            await unlink_account(str(user.id))
+
+            async with async_session_factory() as session:
+                result = await session.execute(
+                    select(User).where(User.id == user.id)
+                )
+                refreshed = result.scalar_one()
+                assert refreshed.telegram_chat_id is None
+                assert refreshed.telegram_linked_at is None
+        finally:
+            await _delete_user(user.id)

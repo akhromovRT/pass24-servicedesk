@@ -365,3 +365,37 @@ async def admin_delete_user(
 
     await session.delete(user)
     await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Telegram account linking
+# ---------------------------------------------------------------------------
+
+
+@router.post("/telegram/link-token")
+async def generate_telegram_link_token(
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Сгенерировать одноразовую deep-link-ссылку для привязки Telegram-бота."""
+    from backend.telegram.services.linking import generate_token
+
+    try:
+        return await generate_token(str(current_user.id))
+    except ValueError as e:
+        if str(e) == "rate_limit":
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Слишком много запросов. Попробуйте позже.",
+            )
+        raise
+
+
+@router.delete("/telegram/link")
+async def unlink_telegram(
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Отвязать Telegram от учётной записи."""
+    from backend.telegram.services.linking import unlink_account
+
+    await unlink_account(str(current_user.id))
+    return {"ok": True}
