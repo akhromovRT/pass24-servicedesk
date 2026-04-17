@@ -24,7 +24,6 @@ from .schemas import (
     FeedbackCreate,
     FeedbackResponse,
 )
-from .synonyms import expand_query
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
