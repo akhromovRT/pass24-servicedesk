@@ -13,6 +13,7 @@ from backend.database import async_session_factory
 from backend.tickets.models import (
     Attachment,
     Ticket,
+    TicketComment,
     TicketEvent,
     TicketSource,
     TicketStatus,
@@ -207,3 +208,97 @@ async def create_ticket(data: dict, user: User) -> Ticket:
         await session.commit()
         await session.refresh(ticket)
         return ticket
+
+
+# --- Ticket listing + detail (Task 9) -----------------------------------
+
+
+FILTER_ALIASES: dict[str, tuple[str, ...]] = {
+    "active": (
+        TicketStatus.NEW.value,
+        TicketStatus.IN_PROGRESS.value,
+        TicketStatus.WAITING_FOR_USER.value,
+        TicketStatus.ON_HOLD.value,
+        TicketStatus.ENGINEER_VISIT.value,
+        TicketStatus.RESOLVED.value,  # resolved is "still active" for the user — awaiting their CSAT
+    ),
+    "closed": (TicketStatus.CLOSED.value,),
+    "all": (),  # empty tuple == no filter
+}
+
+
+async def list_my_tickets(
+    user_id: str,
+    filter: str = "active",
+    page: int = 1,
+    per_page: int = 5,
+) -> tuple[list[Ticket], int, int]:
+    """Returns (tickets, total_count, total_pages). filter ∈ {active, all, closed}."""
+    statuses = FILTER_ALIASES.get(filter, FILTER_ALIASES["active"])
+    offset = max(0, (page - 1) * per_page)
+    async with async_session_factory() as session:
+        conditions = [Ticket.creator_id == user_id]
+        if statuses:
+            conditions.append(Ticket.status.in_(statuses))
+        count_stmt = select(func.count(Ticket.id)).where(*conditions)
+        total = int((await session.execute(count_stmt)).scalar_one() or 0)
+        list_stmt = (
+            select(Ticket)
+            .where(*conditions)
+            .order_by(Ticket.created_at.desc())
+            .offset(offset)
+            .limit(per_page)
+        )
+        result = await session.execute(list_stmt)
+        tickets = list(result.scalars().all())
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    return tickets, total, total_pages
+
+
+async def get_ticket_with_comments(
+    ticket_id_prefix: str,
+    user_id: str,
+    comments_limit: int = 10,
+    comments_offset: int = 0,
+) -> dict | None:
+    """Return {ticket, comments, total_comments} if ticket belongs to user_id, else None.
+
+    Matches first ticket whose id startswith(ticket_id_prefix). Only returns
+    public (non-internal) comments, newest first.
+    """
+    async with async_session_factory() as session:
+        stmt = (
+            select(Ticket)
+            .where(
+                Ticket.creator_id == user_id,
+                Ticket.id.startswith(ticket_id_prefix),
+            )
+            .order_by(Ticket.created_at.desc())
+            .limit(1)
+        )
+        ticket = (await session.execute(stmt)).scalar_one_or_none()
+        if ticket is None:
+            return None
+
+        count_stmt = (
+            select(func.count(TicketComment.id))
+            .where(
+                TicketComment.ticket_id == ticket.id,
+                TicketComment.is_internal == False,  # noqa: E712
+            )
+        )
+        total_comments = int((await session.execute(count_stmt)).scalar_one() or 0)
+
+        comments_stmt = (
+            select(TicketComment)
+            .where(
+                TicketComment.ticket_id == ticket.id,
+                TicketComment.is_internal == False,  # noqa: E712
+            )
+            .order_by(TicketComment.created_at.desc())
+            .offset(max(0, comments_offset))
+            .limit(max(1, comments_limit))
+        )
+        comments = list((await session.execute(comments_stmt)).scalars().all())
+
+    return {"ticket": ticket, "comments": comments, "total_comments": total_comments}
