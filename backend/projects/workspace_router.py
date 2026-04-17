@@ -677,6 +677,20 @@ async def request_approval(
                 """,
             )
 
+    # Telegram push (best-effort, never breaks the HTTP response).
+    try:
+        from backend.telegram.services.notify import notify_pm_approval_request
+        if project:
+            await notify_pm_approval_request(
+                project_id=project_id,
+                approval_id=approval.id,
+                project_name=project.name,
+                phase_name=phase.name,
+            )
+    except Exception:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).exception("TG approval notification failed")
+
     return ApprovalRead.model_validate(approval)
 
 
@@ -844,6 +858,23 @@ async def create_risk(
     ))
     await session.commit()
     await session.refresh(risk)
+
+    # Telegram risk push (best-effort, never breaks the HTTP response).
+    try:
+        from backend.projects.models import ImplementationProject
+        from backend.telegram.services.notify import notify_pm_risk
+        project = await session.get(ImplementationProject, project_id)
+        if project:
+            await notify_pm_risk(
+                project_id=project_id,
+                project_name=project.name,
+                risk_description=payload.description or payload.title or "",
+                severity=payload.severity,
+            )
+    except Exception:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).exception("TG risk notification failed")
+
     return RiskRead.model_validate(risk)
 
 

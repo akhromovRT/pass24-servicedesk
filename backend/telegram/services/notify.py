@@ -349,3 +349,87 @@ async def notify_telegram_risk(
         f"Описание: {html.escape((risk_description or '')[:500])}"
     )
     await _tg_send_message(chat_id, text)
+
+
+# ---------- PM wrappers: look up the project's PM and route to the right notify ----------
+
+
+async def _get_linked_pm(project_id: str):
+    """Return the linked PM user for a project, or None if not linked / missing."""
+    from sqlmodel import select
+    from backend.auth.models import User
+    from backend.database import async_session_factory
+    from backend.projects.models import ImplementationProject
+
+    async with async_session_factory() as session:
+        project = await session.get(ImplementationProject, project_id)
+        if project is None or not project.customer_id:
+            return None
+        user = await session.get(User, project.customer_id)
+        if user is None or not user.telegram_chat_id:
+            return None
+        return user
+
+
+async def notify_pm_approval_request(
+    project_id: str,
+    approval_id: str,
+    project_name: str,
+    phase_name: str,
+) -> None:
+    """Notify the project's PM about a new pending approval via Telegram."""
+    try:
+        user = await _get_linked_pm(project_id)
+        if user is None:
+            return
+        await notify_telegram_approval_request(
+            chat_id=user.telegram_chat_id,
+            approval_id=approval_id,
+            project_name=project_name,
+            phase_name=phase_name,
+            user=user,
+        )
+    except Exception:  # noqa: BLE001 — notifications must never break callers
+        logger.exception("notify_pm_approval_request failed for project %s", project_id)
+
+
+async def notify_pm_milestone(
+    project_id: str,
+    project_name: str,
+    phase_name: str,
+) -> None:
+    """Notify the PM that a phase was completed."""
+    try:
+        user = await _get_linked_pm(project_id)
+        if user is None:
+            return
+        await notify_telegram_milestone(
+            chat_id=user.telegram_chat_id,
+            project_name=project_name,
+            phase_name=phase_name,
+            user=user,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("notify_pm_milestone failed for project %s", project_id)
+
+
+async def notify_pm_risk(
+    project_id: str,
+    project_name: str,
+    risk_description: str,
+    severity: str,
+) -> None:
+    """Notify the PM about a newly created project risk."""
+    try:
+        user = await _get_linked_pm(project_id)
+        if user is None:
+            return
+        await notify_telegram_risk(
+            chat_id=user.telegram_chat_id,
+            project_name=project_name,
+            risk_description=risk_description,
+            severity=severity,
+            user=user,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("notify_pm_risk failed for project %s", project_id)
