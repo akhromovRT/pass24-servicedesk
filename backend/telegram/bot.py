@@ -27,6 +27,7 @@ def create_bot_and_dispatcher() -> tuple[Bot | None, Dispatcher | None]:
 
     dp.message.outer_middleware(auth_mw)
     dp.callback_query.outer_middleware(auth_mw)
+    # Shared throttle instance: message + callback_query share the per-chat bucket.
     dp.message.outer_middleware(throttle_mw)
     dp.callback_query.outer_middleware(throttle_mw)
     dp.message.outer_middleware(logging_mw)

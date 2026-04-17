@@ -27,7 +27,12 @@ class LoggingMiddleware(BaseMiddleware):
             chat_id = self._extract_chat_id(event)
             user = data.get("user")
             user_id = getattr(user, "id", None) if user is not None else None
-            callback_data = event.data if isinstance(event, CallbackQuery) else None
+            # Truncate callback_data to avoid leaking long tokens/payloads into logs.
+            callback_data = (
+                event.data[:80]
+                if isinstance(event, CallbackQuery) and event.data
+                else None
+            )
             text_preview: str | None = None
             if isinstance(event, Message) and event.text:
                 text_preview = event.text[:50]

@@ -167,6 +167,13 @@ class TestFormatters:
         # Line should be shorter than the original long title.
         assert len(line) < len(long_title) + 30
 
+    def test_format_ticket_list_item_escapes_html(self):
+        ticket = _make_ticket(title="<script>alert(1)</script>")
+        line = format_ticket_list_item(ticket)
+        assert "&lt;script&gt;" in line
+        # Raw < must not leak through into HTML output.
+        assert "<script>" not in line
+
     def test_format_ticket_card_has_id_and_status(self):
         ticket = _make_ticket(
             status=TicketStatus.IN_PROGRESS.value,

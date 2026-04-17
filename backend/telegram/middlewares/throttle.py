@@ -33,6 +33,11 @@ class ThrottleMiddleware(BaseMiddleware):
         cutoff = now - _WINDOW_SECONDS
         while bucket and bucket[0] < cutoff:
             bucket.popleft()
+        # Drop empty buckets so idle chats do not accumulate entries forever;
+        # defaultdict recreates an empty deque on the next access.
+        if not bucket:
+            del self._buckets[chat_id]
+            bucket = self._buckets[chat_id]
 
         if len(bucket) >= _MAX_EVENTS:
             await self._notify(event)

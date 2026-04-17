@@ -56,13 +56,18 @@ def _priority_value(ticket: Ticket) -> str:
 
 
 def format_ticket_list_item(ticket: Ticket) -> str:
-    """Compact one-liner for ticket lists (e.g. 🔵 #abcd1234 — Title)."""
+    """Compact one-liner for ticket lists (e.g. 🔵 #abcd1234 — Title).
+
+    Title is HTML-escaped so a malicious payload like ``<script>`` cannot break
+    rendering when the list is sent with ``parse_mode=HTML``.
+    """
     status = _status_value(ticket)
     emoji = STATUS_EMOJI.get(status, "")
     title = ticket.title or ""
     if len(title) > _LIST_TITLE_LIMIT:
         title = title[: _LIST_TITLE_LIMIT - 1].rstrip() + "…"
-    short_id = _short_id(ticket.id)
+    title = escape_html(title)
+    short_id = escape_html(_short_id(ticket.id))
     prefix = f"{emoji} " if emoji else ""
     return f"{prefix}#{short_id} — {title}".rstrip(" —")
 
