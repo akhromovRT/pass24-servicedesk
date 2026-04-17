@@ -25,7 +25,13 @@
 - Интеграционные тесты: повторный вызов с тем же `message_id` оставляет 1 комментарий и не создаёт повторное вложение.
 - Backfill-скрипт `backend/scripts/dedup_ticket_comments.py` для чистки уже накопленных дублей в старых тикетах (группирует по `(author_id, text.strip())`, оставляет самый ранний; `--dry-run`, `--ticket <prefix>`, `--all`).
 
-**Файлы:** `migrations/versions/022_ticket_comment_email_message_id.py`, `backend/tickets/models.py`, `backend/notifications/inbound.py`, `backend/scripts/dedup_ticket_comments.py`, `tests/test_inbound_email_integration.py`
+**Follow-up (коммит `51f4f02`):** live smoke-тест на проде вскрыл `MissingGreenlet` в моём же guard'е — после `session.rollback()` SQLAlchemy экспирит ORM-атрибуты, и форматирование лог-строки с `ticket.id[:8]` триггерило lazy-reload в asyncpg без greenlet. Unique-индекс рабоал корректно, падала сама диагностика. Пофикшено кешированием префикса в локальную строку до flush.
+
+**Прод-чистка:** `dedup_ticket_comments.py --all` удалил 98 дублей в 11 тикетах (оставлен 121 оригинал). Повторный `--dry-run` → 0 дублей. Smoke-тест идемпотентности на живом тикете: 2 вызова `_handle_reply` с одним `message_id` → 1 комментарий в БД.
+
+**Архитектурное решение:** `agent_docs/adr.md` ADR-010 — идемпотентность inbound email через unique-индекс в БД.
+
+**Файлы:** `migrations/versions/022_ticket_comment_email_message_id.py`, `backend/tickets/models.py`, `backend/notifications/inbound.py`, `backend/scripts/dedup_ticket_comments.py`, `tests/test_inbound_email_integration.py`, `agent_docs/adr.md`, `agent_docs/architecture.md`
 
 ### 2026-04-17 — feat: message-driven SLA pause
 
