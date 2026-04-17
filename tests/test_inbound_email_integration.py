@@ -255,6 +255,48 @@ class TestReplyByTag:
             assert len(updated.attachments) == 1, f"Ожидалось 1 вложение, получено {len(updated.attachments)}"
             assert updated.attachments[0].filename == "screenshot.png"
             assert updated.attachments[0].size == 2048
+            # Вложение должно быть привязано к комментарию, чтобы UI
+            # отображал его внутри пузыря ответа, а не в описании тикета.
+            assert updated.attachments[0].comment_id == updated.comments[0].id, (
+                "comment_id вложения должен совпадать с id созданного комментария"
+            )
+        finally:
+            await _cleanup_ticket(ticket.id)
+
+    async def test_reply_clears_sla_reply_pause(self):
+        """Клиент ответил по email → sla_paused_by_reply = false, пауза накопилась."""
+        from datetime import datetime, timedelta
+        from backend.notifications.inbound import _handle_reply
+        from backend.database import async_session_factory
+        from backend.tickets.models import Ticket
+
+        user = await _get_or_create_user("test-inbound@example.com", "Тест Ответ")
+        ticket = await _create_ticket(str(user.id), "Проверка снятия reply-паузы")
+
+        # Искусственно ставим reply-паузу на 1 час назад
+        async with async_session_factory() as s:
+            t = await s.get(Ticket, ticket.id)
+            t.sla_paused_by_reply = True
+            t.sla_paused_at = datetime.utcnow() - timedelta(hours=1)
+            s.add(t)
+            await s.commit()
+
+        try:
+            mail_data = {
+                "subject": f"Re: [PASS24-{ticket.id[:8]}] Тест",
+                "from_email": "test-inbound@example.com",
+                "from_name": "Тест Ответ",
+                "body": "Отвечаю",
+                "attachments": [],
+            }
+            await _handle_reply(mail_data, ticket.id[:8])
+
+            updated = await _get_ticket(ticket.id)
+            assert updated.sla_paused_by_reply is False, "reply-флаг должен сняться"
+            assert updated.sla_paused_at is None, "сводная пауза должна сняться"
+            assert updated.sla_total_pause_seconds >= 3500, (
+                f"пауза должна накопиться (~3600), получено {updated.sla_total_pause_seconds}"
+            )
         finally:
             await _cleanup_ticket(ticket.id)
 
@@ -271,6 +313,70 @@ class TestReplyByTag:
 
         result = await _handle_reply(mail_data, "00000000")
         assert result is False, "Должен вернуть False для несуществующего тикета"
+
+    async def test_reply_idempotent_by_message_id(self):
+        """Повторный заход с тем же message_id не создаёт второй комментарий.
+
+        Моделирует реальный сценарий: IMAP SINCE-окно / рестарт контейнера /
+        сброс in-memory кеша — то же письмо попадает в `_handle_reply` дважды.
+        Unique-индекс по `email_message_id` (миграция 022) должен защитить БД.
+        """
+        from backend.notifications.inbound import _handle_reply
+
+        user = await _get_or_create_user("test-inbound@example.com", "Тест Ответ")
+        ticket = await _create_ticket(str(user.id), "Идемпотентный ответ")
+
+        try:
+            mail_data = {
+                "subject": f"Re: [PASS24-{ticket.id[:8]}] Идемпотентный ответ",
+                "from_email": "test-inbound@example.com",
+                "from_name": "Тест Ответ",
+                "body": "Мой ответ",
+                "attachments": [],
+                "message_id": "<unique-reply-abc@example.com>",
+            }
+
+            first = await _handle_reply(mail_data, ticket.id[:8])
+            second = await _handle_reply(mail_data, ticket.id[:8])
+            assert first is True and second is True, (
+                "Оба вызова должны завершиться успешно — второй просто без эффекта"
+            )
+
+            updated = await _get_ticket(ticket.id)
+            assert len(updated.comments) == 1, (
+                f"Ожидался 1 комментарий на повторной обработке, получено {len(updated.comments)}"
+            )
+            assert updated.comments[0].email_message_id == "<unique-reply-abc@example.com>"
+        finally:
+            await _cleanup_ticket(ticket.id)
+
+    async def test_reply_duplicate_does_not_create_orphan_attachment(self):
+        """Дубль с вложением: файл не должен записаться на диск и в БД."""
+        from backend.notifications.inbound import _handle_reply
+
+        user = await _get_or_create_user("test-inbound@example.com", "Тест Ответ")
+        ticket = await _create_ticket(str(user.id), "Дубль с вложением")
+
+        try:
+            mail_data = {
+                "subject": f"Re: [PASS24-{ticket.id[:8]}] Дубль с вложением",
+                "from_email": "test-inbound@example.com",
+                "from_name": "Тест Ответ",
+                "body": "Вложение во вложении",
+                "attachments": [_fake_attachment("dup.png", "image/png", 512)],
+                "message_id": "<dup-with-att@example.com>",
+            }
+
+            await _handle_reply(mail_data, ticket.id[:8])
+            await _handle_reply(mail_data, ticket.id[:8])
+
+            updated = await _get_ticket(ticket.id)
+            assert len(updated.comments) == 1
+            assert len(updated.attachments) == 1, (
+                f"На повторе вложение не должно записаться, получено {len(updated.attachments)}"
+            )
+        finally:
+            await _cleanup_ticket(ticket.id)
 
 
 class TestReplyBySubject:

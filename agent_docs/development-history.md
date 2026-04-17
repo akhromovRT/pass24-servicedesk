@@ -9,6 +9,64 @@
 
 ## Записи
 
+### 2026-04-17 — fix: идемпотентность inbound email — один Message-ID = один комментарий
+
+**Проблема:** В тикетах (пример #D6393659) дублируются клиентские сообщения из email-ответов. Корневая причина — единственной защитой от повторной обработки был in-memory `set _processed_message_ids` в процессе воркера:
+- Любой рестарт обнуляет set → IMAP-polling проходит `SINCE = 2 дня` и создаёт повторные комментарии.
+- На 501-м уникальном Message-ID выполнялся опасный `set.clear()` — не LRU, а полный сброс.
+- Письма без `Message-ID` не добавлялись в set, то есть обрабатывались каждые 60 сек.
+- `_handle_reply` / `_handle_reply_by_subject` не имели никакой идемпотентности на стороне БД.
+
+**Что сделано:**
+- Миграция `022_ticket_comment_email_message_id.py`: колонка `ticket_comments.email_message_id VARCHAR(998) NULL` + частичный unique-индекс `WHERE email_message_id IS NOT NULL`. Авторитетная защита от дублей теперь в БД.
+- `_fetch_unseen_emails` передаёт `message_id` в `mail_data`; для писем без заголовка генерируется стабильный synthetic `<synthetic-sha1(from+date+subject+body)@pass24-local>`.
+- `_handle_reply` и `_handle_reply_by_subject` пишут `email_message_id` в комментарий, делают `session.flush()` и ловят `IntegrityError` **до** записи вложений на диск — дубль не создаёт orphan-файлов. Возвращают `True`, чтобы polling не скатывался в ветку создания нового тикета.
+- In-memory кеш переведён на `OrderedDict`-LRU (обрезает самый старый при превышении 500), `.clear()` на 500 удалён.
+- Интеграционные тесты: повторный вызов с тем же `message_id` оставляет 1 комментарий и не создаёт повторное вложение.
+- Backfill-скрипт `backend/scripts/dedup_ticket_comments.py` для чистки уже накопленных дублей в старых тикетах (группирует по `(author_id, text.strip())`, оставляет самый ранний; `--dry-run`, `--ticket <prefix>`, `--all`).
+
+**Follow-up (коммит `51f4f02`):** live smoke-тест на проде вскрыл `MissingGreenlet` в моём же guard'е — после `session.rollback()` SQLAlchemy экспирит ORM-атрибуты, и форматирование лог-строки с `ticket.id[:8]` триггерило lazy-reload в asyncpg без greenlet. Unique-индекс рабоал корректно, падала сама диагностика. Пофикшено кешированием префикса в локальную строку до flush.
+
+**Прод-чистка:** `dedup_ticket_comments.py --all` удалил 98 дублей в 11 тикетах (оставлен 121 оригинал). Повторный `--dry-run` → 0 дублей. Smoke-тест идемпотентности на живом тикете: 2 вызова `_handle_reply` с одним `message_id` → 1 комментарий в БД.
+
+**Архитектурное решение:** `agent_docs/adr.md` ADR-010 — идемпотентность inbound email через unique-индекс в БД.
+
+**Файлы:** `migrations/versions/022_ticket_comment_email_message_id.py`, `backend/tickets/models.py`, `backend/notifications/inbound.py`, `backend/scripts/dedup_ticket_comments.py`, `tests/test_inbound_email_integration.py`, `agent_docs/adr.md`, `agent_docs/architecture.md`
+
+### 2026-04-17 — feat: message-driven SLA pause
+
+**Что сделано:**
+- SLA «Решение» теперь автоматически встаёт на паузу, когда последний публичный комментарий в тикете — от сотрудника поддержки, и снимается при ответе клиента. Статус при этом не меняется.
+- Новые поля `Ticket.sla_paused_by_status` / `sla_paused_by_reply` + единый метод `recompute_sla_pause` с OR-семантикой. `transition` и `on_public_comment_added` — единственные точки, которые обновляют флаги.
+- Интеграция во все 5 путей создания публичного комментария: web (`add_comment`, macros), email (`_handle_reply`, `_handle_reply_by_subject`), Telegram.
+- Фикс скрытого бага в `sla_watcher`: активная пауза теперь учитывается в расчёте дедлайна (раньше watcher мог ложно предупреждать, пока тикет на паузе по статусу/reply).
+- UI: в `TicketSlaProgress.vue` добавлен бейдж «⏸ SLA на паузе — ждём ответ клиента» / «статус «{label}»» с серой заливкой прогресс-бара.
+- Миграция `021_add_sla_pause_flags.py` + backfill `paused_by_status` из текущих статусов; `paused_by_reply` исторически оставляем `false`.
+- Регламент `support-operations.md` обновлён: ручной перевод в «Ожидает ответа» больше не обязателен для паузы.
+
+**Файлы:**
+- Backend: `backend/tickets/models.py`, `schemas.py`, `router.py`, `sla_watcher.py`, `notifications/inbound.py`, `notifications/telegram.py`
+- Frontend: `TicketSlaProgress.vue`, `types/index.ts`
+- Миграция: `021`
+- Тесты: `test_tickets_models.py`, `test_inbound_email_integration.py`, new `test_sla_watcher.py`
+- Документация: `agent_docs/guides/support-operations.md`
+- Spec: `docs/superpowers/specs/2026-04-17-message-driven-sla-pause-design.md`
+- Plan: `docs/superpowers/plans/2026-04-17-message-driven-sla-pause.md`
+
+### 2026-04-17 — fix: вложения из email-ответов отображаются внутри пузыря сообщения
+
+**Проблема:** Вложения, отправленные клиентом в ответном письме на тикет, не отображались в переписке рядом с сообщением — попадали в «описание тикета» в самом верху (или визуально «исчезали» из контекста ответа).
+
+**Первопричина:** После редизайна UI 7 апреля (v0.8 Phase 1) вложения отображаются inline внутри пузыря сообщения по полю `Attachment.comment_id`. Однако функция `_save_attachment` в `backend/notifications/inbound.py` не принимала `comment_id`, и обработчики `_handle_reply` / `_handle_reply_by_subject` не передавали его при сохранении вложений из ответных email. В итоге у всех таких вложений `comment_id = NULL`, и фронтенд (`TicketConversation.vue`) показывал их как вложения описания тикета.
+
+**Что сделано:**
+- `_save_attachment(...)` получил необязательный параметр `comment_id: Optional[str] = None` и пишет его в модель `Attachment`.
+- `_handle_reply` / `_handle_reply_by_subject` создают `TicketComment` также при пустом теле, если есть вложения (чтобы было к чему привязать), и передают `comment.id` в `_save_attachment`. `TicketComment.id` доступен сразу после конструктора благодаря `default_factory=uuid4`.
+- Обработчик создания нового тикета из email оставлен без изменений — там вложения корректно относятся к описанию (`comment_id=None`).
+- Тест `test_reply_with_attachment` в `tests/test_inbound_email_integration.py` расширен: проверяет, что `attachment.comment_id == comment.id`.
+
+**Файлы:** `backend/notifications/inbound.py`, `tests/test_inbound_email_integration.py`
+
 ### 2026-04-09 — v0.8 Phase 2: Approvals, Risks, Templates, Analytics
 
 **Что сделано:**

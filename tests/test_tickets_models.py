@@ -127,3 +127,161 @@ def test_transition_creates_event():
     assert event is not None
     assert event.actor_id == "agent-1"
     assert "in_progress" in event.description
+
+
+# ---------------------------------------------------------------------------
+# SLA pause — OR-семантика двух источников
+# ---------------------------------------------------------------------------
+
+from datetime import datetime, timedelta
+
+
+def test_recompute_sla_pause_reply_flag_starts_pause():
+    ticket = _make_ticket()
+    now = datetime(2026, 4, 17, 12, 0, 0)
+    ticket.sla_paused_by_reply = True
+    ticket.recompute_sla_pause(now)
+    assert ticket.sla_paused_at == now
+    assert ticket.sla_total_pause_seconds == 0
+
+
+def test_recompute_sla_pause_status_flag_starts_pause():
+    ticket = _make_ticket()
+    now = datetime(2026, 4, 17, 12, 0, 0)
+    ticket.sla_paused_by_status = True
+    ticket.recompute_sla_pause(now)
+    assert ticket.sla_paused_at == now
+
+
+def test_recompute_sla_pause_both_false_ends_pause_and_accumulates():
+    ticket = _make_ticket()
+    start = datetime(2026, 4, 17, 12, 0, 0)
+    end = start + timedelta(hours=1)
+    ticket.sla_paused_by_reply = True
+    ticket.recompute_sla_pause(start)
+
+    ticket.sla_paused_by_reply = False
+    ticket.recompute_sla_pause(end)
+
+    assert ticket.sla_paused_at is None
+    assert ticket.sla_total_pause_seconds == 3600
+
+
+def test_recompute_sla_pause_one_flag_active_keeps_pause():
+    """Если reply-флаг снят, но статус-флаг ещё активен — пауза продолжается."""
+    ticket = _make_ticket()
+    start = datetime(2026, 4, 17, 12, 0, 0)
+    ticket.sla_paused_by_status = True
+    ticket.sla_paused_by_reply = True
+    ticket.recompute_sla_pause(start)
+
+    # reply снят, status ещё активен
+    ticket.sla_paused_by_reply = False
+    ticket.recompute_sla_pause(start + timedelta(minutes=30))
+
+    assert ticket.sla_paused_at == start  # не обнулили
+    assert ticket.sla_total_pause_seconds == 0  # ничего не накопили
+
+
+def test_recompute_sla_pause_noop_when_state_unchanged():
+    ticket = _make_ticket()
+    now = datetime(2026, 4, 17, 12, 0, 0)
+    ticket.sla_paused_by_reply = True
+    ticket.recompute_sla_pause(now)
+    # повторный вызов без изменения флагов не должен ничего портить
+    ticket.recompute_sla_pause(now + timedelta(hours=2))
+    assert ticket.sla_paused_at == now
+    assert ticket.sla_total_pause_seconds == 0
+
+
+def test_transition_to_waiting_sets_paused_by_status_flag():
+    ticket = _make_ticket()
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.IN_PROGRESS)
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.WAITING_FOR_USER)
+    assert ticket.sla_paused_by_status is True
+    assert ticket.sla_paused_at is not None
+
+
+def test_transition_out_of_waiting_clears_paused_by_status_flag():
+    ticket = _make_ticket()
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.IN_PROGRESS)
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.WAITING_FOR_USER)
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.IN_PROGRESS)
+    assert ticket.sla_paused_by_status is False
+    assert ticket.sla_paused_at is None
+    assert ticket.sla_total_pause_seconds >= 0
+
+
+def test_transition_on_hold_also_pauses():
+    ticket = _make_ticket()
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.ON_HOLD)
+    assert ticket.sla_paused_by_status is True
+    assert ticket.sla_paused_at is not None
+
+
+# ---------------------------------------------------------------------------
+# on_public_comment_added — message-driven SLA pause
+# ---------------------------------------------------------------------------
+
+
+def test_on_public_comment_added_staff_starts_reply_pause():
+    ticket = _make_ticket()
+    now = datetime(2026, 4, 17, 12, 0, 0)
+    ticket.on_public_comment_added(is_staff=True, now=now)
+    assert ticket.sla_paused_by_reply is True
+    assert ticket.sla_paused_at == now
+
+
+def test_on_public_comment_added_client_ends_reply_pause_and_accumulates():
+    ticket = _make_ticket()
+    start = datetime(2026, 4, 17, 12, 0, 0)
+    ticket.on_public_comment_added(is_staff=True, now=start)
+    ticket.on_public_comment_added(is_staff=False, now=start + timedelta(hours=2))
+    assert ticket.sla_paused_by_reply is False
+    assert ticket.sla_paused_at is None
+    assert ticket.sla_total_pause_seconds == 7200
+
+
+def test_on_public_comment_added_then_status_waiting_keeps_pause():
+    """Агент написал → reply-пауза. Затем перевёл в waiting → статус-пауза добавляется.
+    Затем клиент ответил → reply снят, но статус держит паузу."""
+    ticket = _make_ticket()
+    t0 = datetime(2026, 4, 17, 12, 0, 0)
+    ticket.on_public_comment_added(is_staff=True, now=t0)
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.IN_PROGRESS)
+    ticket.transition(actor_id="agent-1", new_status=TicketStatus.WAITING_FOR_USER)
+    assert ticket.sla_paused_at is not None
+    ticket.on_public_comment_added(is_staff=False, now=t0 + timedelta(hours=1))
+    # reply=false, но status=true → пауза не снимается
+    assert ticket.sla_paused_by_reply is False
+    assert ticket.sla_paused_by_status is True
+    assert ticket.sla_paused_at is not None
+
+
+def test_internal_comment_does_not_change_reply_flag():
+    """Контракт call-site: все 5 интеграционных точек обёрнуты в
+    `if not is_internal:` — internal-комментарий не должен вызывать
+    on_public_comment_added. Тест симулирует правильное поведение
+    call-site для обоих случаев (internal и публичный) и фиксирует
+    контракт, чтобы регрессия в какой-либо из точек (удаление guard)
+    ловилась отдельным runtime-тестом пути.
+    """
+    ticket = _make_ticket()
+    now = datetime(2026, 4, 17, 12, 0, 0)
+
+    # Случай 1: staff-комментарий помечен как internal → call-site
+    # пропускает on_public_comment_added. Флаги не меняются.
+    is_internal = True
+    is_staff = True
+    if not is_internal:
+        ticket.on_public_comment_added(is_staff=is_staff, now=now)
+    assert ticket.sla_paused_by_reply is False
+    assert ticket.sla_paused_at is None
+
+    # Случай 2: публичный staff-комментарий → call-site вызывает метод.
+    # Пауза активируется.
+    is_internal = False
+    if not is_internal:
+        ticket.on_public_comment_added(is_staff=is_staff, now=now)
+    assert ticket.sla_paused_by_reply is True
+    assert ticket.sla_paused_at == now

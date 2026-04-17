@@ -14,10 +14,13 @@ from __future__ import annotations
 
 import asyncio
 import email
+import hashlib
 import imaplib
 import logging
 import re
 import uuid
+from collections import OrderedDict
+from datetime import datetime
 from email.header import decode_header
 from email.utils import parseaddr
 from html.parser import HTMLParser
@@ -25,6 +28,7 @@ from pathlib import Path
 from typing import Optional
 
 from sqlalchemy import text as sa_text
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from backend.config import settings
@@ -349,7 +353,37 @@ def _is_sufficient(subject: str, body: str) -> bool:
     return has_title and has_description
 
 
-_processed_message_ids: set[str] = set()
+_PROCESSED_CACHE_CAP = 500
+# In-memory LRU для быстрого short-circuit в пределах одного процесса.
+# Это только ускоритель: авторитетная идемпотентность обеспечивается
+# уникальным индексом ticket_comments.email_message_id (миграция 022).
+_processed_message_ids: "OrderedDict[str, None]" = OrderedDict()
+
+
+def _remember_processed(msg_id: str) -> None:
+    """LRU-обрезка: при переполнении выкидываем самый старый ID,
+    а не очищаем весь кеш (старое поведение приводило к дублям)."""
+    if not msg_id:
+        return
+    if msg_id in _processed_message_ids:
+        _processed_message_ids.move_to_end(msg_id)
+        return
+    _processed_message_ids[msg_id] = None
+    while len(_processed_message_ids) > _PROCESSED_CACHE_CAP:
+        _processed_message_ids.popitem(last=False)
+
+
+def _synthetic_message_id(from_email: str, date_hdr: str, subject: str, body: str) -> str:
+    """Стабильный идентификатор для писем без Message-ID.
+
+    Используется как ключ дедупликации, чтобы такие письма тоже ложились под
+    уникальный индекс. Включает дату — два одинаковых по содержимому письма
+    в разное время считаются разными (что нам и нужно: клиент мог отправить
+    «то же самое» через час намеренно).
+    """
+    raw = f"{from_email}\n{date_hdr}\n{subject}\n{body[:2000]}"
+    digest = hashlib.sha1(raw.encode("utf-8", errors="replace")).hexdigest()
+    return f"<synthetic-{digest}@pass24-local>"
 
 
 def _fetch_unseen_emails() -> list[dict]:
@@ -384,16 +418,7 @@ def _fetch_unseen_emails() -> list[dict]:
             raw_email = msg_data[0][1]
             msg = email.message_from_bytes(raw_email)
 
-            # Дедупликация по Message-ID
-            message_id = msg.get("Message-ID", "")
-            if message_id and message_id in _processed_message_ids:
-                continue
-            if message_id:
-                _processed_message_ids.add(message_id)
-                # Ограничиваем размер кеша (последние 500)
-                if len(_processed_message_ids) > 500:
-                    _processed_message_ids.clear()
-
+            raw_message_id = (msg.get("Message-ID", "") or "").strip()
             subject = _decode_mime_header(msg.get("Subject", ""))
             from_header = msg.get("From", "")
             _, from_email = parseaddr(from_header)
@@ -411,6 +436,22 @@ def _fetch_unseen_emails() -> list[dict]:
             if "mailer-daemon" in from_email.lower() or "postmaster" in from_email.lower():
                 continue
 
+            # Стабильный ключ дедупликации. Если почтовый клиент не проставил
+            # Message-ID (редко, но бывает у кастомных релеев), генерируем
+            # synthetic из from + date + subject + body, чтобы и такие письма
+            # защищались unique-индексом на стороне БД.
+            message_id = raw_message_id or _synthetic_message_id(
+                from_email, msg.get("Date", "") or "", subject, body
+            )
+
+            # In-memory short-circuit: если уже обработано в текущем процессе —
+            # не тащим письмо дальше по конвейеру. БД всё равно отклонит дубль,
+            # но так дешевле. Кеш LRU, без опасной очистки на 500-й записи.
+            if message_id in _processed_message_ids:
+                _processed_message_ids.move_to_end(message_id)
+                continue
+            _remember_processed(message_id)
+
             results.append({
                 "subject": subject,
                 "from_email": from_email,
@@ -418,6 +459,7 @@ def _fetch_unseen_emails() -> list[dict]:
                 "body": _clean_body(body),
                 "raw_body": body,
                 "attachments": attachments,
+                "message_id": message_id,
             })
 
         mail.logout()
@@ -427,8 +469,19 @@ def _fetch_unseen_emails() -> list[dict]:
     return results
 
 
-async def _save_attachment(ticket_id: str, uploader_id: str, att_data: dict, session) -> None:
-    """Сохраняет вложение из email на диск и в БД."""
+async def _save_attachment(
+    ticket_id: str,
+    uploader_id: str,
+    att_data: dict,
+    session,
+    comment_id: Optional[str] = None,
+) -> None:
+    """Сохраняет вложение из email на диск и в БД.
+
+    Если передан ``comment_id`` — вложение привязывается к конкретному
+    комментарию (для inline-отображения внутри пузыря сообщения).
+    ``comment_id=None`` означает, что вложение относится к описанию тикета.
+    """
     from backend.tickets.models import Attachment
 
     file_id = str(uuid.uuid4())
@@ -445,6 +498,7 @@ async def _save_attachment(ticket_id: str, uploader_id: str, att_data: dict, ses
         content_type=att_data["content_type"],
         size=att_data["size"],
         storage_path=storage_path,
+        comment_id=comment_id,
     )
     session.add(attachment)
 
@@ -482,7 +536,14 @@ async def _search_knowledge_base(query: str, session) -> list[dict]:
 
 
 async def _handle_reply(mail_data: dict, ticket_id_prefix: str) -> bool:
-    """Обрабатывает ответ на существующий тикет: комментарий + вложения."""
+    """Обрабатывает ответ на существующий тикет: комментарий + вложения.
+
+    Идемпотентность по `email_message_id`: если этот Message-ID уже сохранён
+    в ticket_comments, unique-индекс (миграция 022) отдаст IntegrityError на
+    flush'е — мы откатываем транзакцию до записи файлов на диск и считаем
+    письмо успешно обработанным (возвращаем True, чтобы IMAP-цикл его не
+    ретрайил в ветку «новый тикет»).
+    """
     from backend.database import async_session_factory
     from backend.auth.models import User
     from backend.tickets.models import Ticket, TicketComment, TicketStatus
@@ -505,20 +566,44 @@ async def _handle_reply(mail_data: dict, ticket_id_prefix: str) -> bool:
         author_name = user.full_name if user else mail_data["from_name"]
         author_id = str(user.id) if user else "email"
 
-        # Добавить комментарий
         body = mail_data["body"]
-        if body.strip():
-            comment = TicketComment(
-                ticket_id=ticket.id,
-                author_id=author_id,
-                author_name=author_name,
-                text=body,
-            )
-            session.add(comment)
+        attachments = mail_data.get("attachments", [])
+        message_id = mail_data.get("message_id")
 
-        # Сохранить вложения
-        for att in mail_data.get("attachments", []):
-            await _save_attachment(ticket.id, author_id, att, session)
+        # Пустое тело + нет вложений — нечего сохранять.
+        if not (body.strip() or attachments):
+            return True
+
+        # Кешируем нужные для лога поля ДО flush — после rollback
+        # ORM-атрибуты expire'ятся, и ticket.id вызовет lazy-reload → MissingGreenlet.
+        ticket_tag = ticket.id[:8]
+        comment = TicketComment(
+            ticket_id=ticket.id,
+            author_id=author_id,
+            author_name=author_name,
+            text=body,
+            email_message_id=message_id,
+        )
+        session.add(comment)
+        # Flush триггерит unique-проверку ДО записи файлов на диск —
+        # так мы не оставляем orphan-вложения при дубле письма.
+        try:
+            await session.flush()
+        except IntegrityError:
+            await session.rollback()
+            logger.info(
+                "Дубликат email-ответа (message_id=%s) к тикету %s — пропущено",
+                message_id, ticket_tag,
+            )
+            return True
+
+        comment_id = comment.id
+        # Message-driven SLA pause: ответ клиента снимает reply-паузу.
+        ticket.on_public_comment_added(is_staff=False, now=datetime.utcnow())
+
+        # Сохранить вложения с привязкой к созданному комментарию
+        for att in attachments:
+            await _save_attachment(ticket.id, author_id, att, session, comment_id=comment_id)
 
         # Клиент ответил → флаг unread + переход в IN_PROGRESS
         ticket.has_unread_reply = True
@@ -535,7 +620,7 @@ async def _handle_reply(mail_data: dict, ticket_id_prefix: str) -> bool:
 
         await session.commit()
 
-        att_count = len(mail_data.get("attachments", []))
+        att_count = len(attachments)
         logger.info(
             "Email-ответ → комментарий к тикету %s от %s (%d вложений)",
             ticket.id[:8], mail_data["from_email"], att_count,
@@ -583,17 +668,37 @@ async def _handle_reply_by_subject(mail_data: dict) -> bool:
 
         author_name = user.full_name
         body = mail_data["body"]
-        if body.strip():
-            comment = TicketComment(
-                ticket_id=ticket.id,
-                author_id=str(user.id),
-                author_name=author_name,
-                text=body,
-            )
-            session.add(comment)
+        attachments = mail_data.get("attachments", [])
+        message_id = mail_data.get("message_id")
 
-        for att in mail_data.get("attachments", []):
-            await _save_attachment(ticket.id, str(user.id), att, session)
+        if not (body.strip() or attachments):
+            return True
+
+        # Кешируем для лога до flush: после rollback ticket expired.
+        ticket_tag = ticket.id[:8]
+        comment = TicketComment(
+            ticket_id=ticket.id,
+            author_id=str(user.id),
+            author_name=author_name,
+            text=body,
+            email_message_id=message_id,
+        )
+        session.add(comment)
+        try:
+            await session.flush()
+        except IntegrityError:
+            await session.rollback()
+            logger.info(
+                "Дубликат email-ответа по теме (message_id=%s) к тикету %s — пропущено",
+                message_id, ticket_tag,
+            )
+            return True
+
+        comment_id = comment.id
+        ticket.on_public_comment_added(is_staff=False, now=datetime.utcnow())
+
+        for att in attachments:
+            await _save_attachment(ticket.id, str(user.id), att, session, comment_id=comment_id)
 
         # Клиент ответил → флаг unread + переход в IN_PROGRESS
         ticket.has_unread_reply = True
@@ -610,7 +715,7 @@ async def _handle_reply_by_subject(mail_data: dict) -> bool:
 
         await session.commit()
 
-        att_count = len(mail_data.get("attachments", []))
+        att_count = len(attachments)
         logger.info(
             "Email-ответ (по теме) → комментарий к тикету %s от %s (%d вложений)",
             ticket.id[:8], mail_data["from_email"], att_count,
