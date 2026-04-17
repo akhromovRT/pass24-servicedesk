@@ -44,17 +44,20 @@ async def generate_token(user_id: str) -> dict:
     ``LINK_TOKEN_MAX_PER_HOUR`` tokens in the last hour.
     """
     now = datetime.utcnow()
-    window_start = now - timedelta(hours=1)
 
     async with async_session_factory() as session:
-        # Rate-limit: count tokens still-in-window (expires_at > now-1h means
-        # issue_time > now - 1h - TTL, roughly the last hour).
+        # Rate-limit by *pending* tokens: only active (not expired) and
+        # unused invites count against the quota. Once a token expires
+        # (10 min TTL) or is consumed, the slot frees up immediately —
+        # users who couldn't scan in time aren't punished for an hour.
         count_row = await session.execute(
             text(
                 "SELECT COUNT(*) FROM telegram_link_tokens "
-                "WHERE user_id = :uid AND expires_at > :cutoff"
+                "WHERE user_id = :uid "
+                "  AND expires_at > :now "
+                "  AND used_at IS NULL"
             ),
-            {"uid": user_id, "cutoff": window_start},
+            {"uid": user_id, "now": now},
         )
         issued = count_row.scalar_one()
         if issued >= LINK_TOKEN_MAX_PER_HOUR:
