@@ -856,6 +856,10 @@ async def add_comment(
     )
     session.add(comment)
 
+    # Message-driven SLA pause. Internal-комментарии не влияют — клиент их не видит.
+    if not is_internal:
+        ticket.on_public_comment_added(is_staff=is_staff, now=datetime.utcnow())
+
     # Авто-переход статуса + флаг unread
     if not is_internal:
         if is_staff:
