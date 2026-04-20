@@ -20,6 +20,8 @@ COPY backend/ ./backend/
 COPY alembic.ini .
 COPY migrations/ ./migrations/
 COPY entrypoint.sh .
+# tests/ is included so ops/run-tests workflow can pytest against the live container
+COPY tests/ ./tests/
 
 # Копируем собранный фронтенд в static/
 COPY --from=frontend-build /frontend/dist ./static/
