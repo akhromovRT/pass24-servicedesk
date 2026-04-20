@@ -26,9 +26,11 @@ jobs:
             if [[ -z "$TARGET" ]]; then
               TARGET="tests/"
             fi
-            if ! [[ "$TARGET" =~ ^[A-Za-z0-9_/:. \-]+$ ]]; then
-              echo "ERROR: invalid target characters"
-              exit 1
-            fi
+            case "$TARGET" in
+              *[!A-Za-z0-9_/:.\ -]*)
+                echo "ERROR: invalid target characters"
+                exit 1
+                ;;
+            esac
             echo "=== running: pytest $TARGET ==="
-            docker exec site-pass24-servicedesk python -m pytest $TARGET -v --tb=short 2>&1 | tail -200
+            docker exec site-pass24-servicedesk python -m pytest $TARGET -v --tb=short 2>&1 | tail -300
