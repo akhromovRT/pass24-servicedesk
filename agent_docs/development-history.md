@@ -9,6 +9,34 @@
 
 ## Записи
 
+### 2026-04-20 — hardening: Telegram Bot v2 post-rollout + user guide + все 4 follow-up TODO закрыты
+
+Накопительная запись по серии мелких фиксов после мёрджа Telegram Bot v2 в main. Ссылки в формате `#<PR>`.
+
+**Производственные баги, вскрытые сразу после мёрджа:**
+- `#7` — `npm ci` падал, потому что Task 5 добавил `qrcode` / `@types/qrcode` в `package.json`, но не пересобрал `package-lock.json`. Ломало прод-деплой. Лок-файл пересобран локально, закоммичен.
+- `#8` — QR-карточка исчезала через 0 секунд. Backend возвращал `expires_at.isoformat()` без суффикса `Z`, браузер в MSK (+3) интерпретировал naive-ISO как local time — «будущая» дата оказывалась в прошлом. Теперь всегда `isoformat() + "Z"`.
+- `#11` — rate-limit `/auth/telegram/link-token` считал все токены с `expires_at > now-1h` (историческое окно ~70 мин). Юзер, несколько раз попробовавший из-за бага #8, блокировался на час. Заменён на подсчёт только **pending** (не истёкших и не использованных) — «max 5 одновременных invite-link на аккаунт»; истечение/потребление сразу освобождает слот.
+- `#17` — `webhook` возвращал 500 при любом исключении в хендлере (пример — `TelegramBadRequest: chat not found` при ответе в фейковый chat_id из тестов). Telegram на 500 ретраит update экспоненциально до 24 ч. Теперь `try/except` + `logger.exception` + всегда 200. Фикс критичен для production-resilience.
+
+**4 follow-up TODO закрыты:**
+1. Producer-wiring уведомлений approval/milestone/risk (PR commit `19f7516`): helper `_get_linked_pm(project_id)` + `notify_pm_approval_request` / `notify_pm_milestone` / `notify_pm_risk` в `notify.py`. Вкручены в `projects/workspace_router.request_approval` + `create_risk` (await с try/except) и `projects/router.complete_phase` (через BackgroundTasks).
+2. `ArticleFeedback` persistence из KB-кнопок 👍/👎 бота (`7853a7e`): `session_id=f"tg:{user.id}"` для идемпотентности per (user, article), `source="telegram"`, инкремент `article.helpful_count` / `not_helpful_count`.
+3. CSAT scheduler через 24 ч после resolve (`8595618`): `backend/tickets/csat_scheduler.py` — async loop, интервал 1 ч. Использует существующее поле `satisfaction_requested_at` как sent-flag (SQL trick: `WHERE satisfaction_requested_at <= resolved_at` → scheduler после отправки продвигает timestamp, следующая итерация уже не выбирает тикет). Без schema change.
+4. Shared FTS service (`837f2ba` + `a27f13c`): `backend/knowledge/services.py::search_articles_with_fts()` — одна реализация на `backend/knowledge/router.py::search_articles` + `backend/telegram/services/kb_service.py`. SQL больше не дублируется, удалено ~180 строк.
+
+**Ops-инфраструктура для тестов на проде:**
+- `#14` — `tests/` включены в docker image (раньше были в `.dockerignore`).
+- `#16` — `pytest.ini` с `asyncio_default_{fixture,test}_loop_scope = session`. pytest-asyncio default = function-scope, kill'ит asyncpg-connections между тестами → "another operation in progress" на всех DB-тестах. Session scope — один event loop на сьюту, пул живёт.
+- `#15` — workflow `ops/run-tests.yml` (`workflow_dispatch`, SSH в прод, `docker exec ... pytest`) с переменной `PYTEST_TARGET`. Изначально называлась `TARGET` — drone-ssh (подложка `appleboy/ssh-action`) клоббрит собственную `$TARGET`, переменная молча превращалась в путь к бинарю. Переименовано.
+- `ops/diag-logs.yml` — `workflow_dispatch` для `docker logs` с allowlist на `--tail`.
+
+**Тесты:** `tests/test_telegram_bot.py` + `tests/test_telegram_webhook.py` — **38/38 passed** на проде через `ops/run-tests`. Полная сьюта: 238 passed, 8 pre-existing failures (English-vs-Russian phase names в шаблонах проектов, FSM transition semantics, email signature cleaner — не связаны с telegram).
+
+**User guide:** `agent_docs/telegram-bot-user-guide.md` — 14 разделов (~600 строк) покрывают весь UX: linking, wizard, list, reply/close/CSAT, KB, AI, PM projects/approvals, settings, push-notifications, FAQ. `agent_docs/screenshots/telegram/01-idle.png` + `02-qr.png` сняты автоматически через Playwright; 25 bot-скринов ждут ручного прохода по боту. Чеклист статусов в заголовке MD.
+
+**Файлы (укрупнённо):** `backend/telegram/{webhook,services/notify,services/linking,services/kb_service}.py`, `backend/telegram/handlers/kb.py`, `backend/tickets/csat_scheduler.py`, `backend/knowledge/services.py`, `backend/main.py` (lifespan), `backend/projects/{router,workspace_router}.py`, `.github/workflows/{deploy,ops-run-tests,diag-logs}.yml`, `frontend/package-lock.json`, `Dockerfile`, `pytest.ini`, `agent_docs/telegram-bot-user-guide.md`.
+
 ### 2026-04-20 — fix: Telegram Bot API через reverse-proxy (RU-хостер блокирует 149.154.160.0/20)
 
 **Инцидент:** Бот @PASS24bot перестал отвечать на `/start` и `/help`. Входящие апдейты Telegram **доходят** до webhook, но исходящий `sendMessage` из контейнера падает с `aiogram.exceptions.TelegramNetworkError: Request timeout error` (60 с, таймаут сессии по умолчанию). С контейнера `httpx.get("https://api.telegram.org")` → `[Errno 101] Network is unreachable` (DNS резолвит, TCP :443 блокируется). Google/GitHub доступны — блок избирательный по подсетям Telegram, специфика российских хостеров.
@@ -64,9 +92,7 @@
 
 **Тесты:** `tests/test_telegram_bot.py` (PostgresStorage + pure-unit formatters/keyboards + linking integration), `tests/test_telegram_webhook.py` (smoke integration: 403 на wrong secret, 200 на минимальный update, ghost-ticket в compat mode, /start для linked-юзера).
 
-**Follow-up TODO (отдельный PR):**
-- Подключить продьюсеры уведомлений для approval-запросов, milestones и risks (сейчас в `notify.py` есть отправка, но триггеры на стороне `backend/projects/` ещё не вызывают).
-- Персист `ArticleFeedback` (👍/👎 на KB-статьях из бота) — модель есть, handler ещё не пишет в БД.
+**Follow-up TODO:** все 4 закрыты в записи «2026-04-20 — hardening: Telegram Bot v2 post-rollout» (producer-wiring approval/milestone/risk, `ArticleFeedback` persistence, CSAT scheduler, shared FTS refactor).
 
 ### 2026-04-17 — fix: идемпотентность inbound email — один Message-ID = один комментарий
 
