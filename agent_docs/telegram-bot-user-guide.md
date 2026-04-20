@@ -8,7 +8,7 @@
 | # | Файл | Источник | Готов |
 |---|---|---|---|
 | 01 | settings-telegram-idle.png | Playwright (portal) | ✅ |
-| 02 | settings-telegram-qr.png | Portal после клика «Привязать» | ⏳ нужен человек |
+| 02 | settings-telegram-qr.png | Playwright (portal) | ✅ |
 | 03 | bot-linked-confirmation.png | Telegram-клиент | ⏳ нужен человек |
 | 04 | settings-telegram-linked.png | Portal в linked-состоянии | ⏳ нужен человек |
 | 05 | bot-main-menu.png | Telegram-клиент | ⏳ нужен человек |
