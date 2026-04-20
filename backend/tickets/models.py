@@ -443,6 +443,12 @@ class TicketComment(SQLModel, table=True):
     author_name: str = Field(default="")
     text: str
     is_internal: bool = Field(default=False)
+    # Denormalized: автор на момент написания был сотрудником поддержки
+    # (support_agent/admin). Проставляется во всех путях создания комментария
+    # — web add_comment, macros, inbound email, telegram. Используется
+    # схемой TicketRead для вычисления поля last_public_reply_by, чтобы
+    # фронтенд мог показать «кто ответил последним» без JOIN к users.
+    author_is_staff: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     # Идентификатор исходного email для идемпотентности inbound-обработки.
     # Уникальный частичный индекс (`email_message_id IS NOT NULL`, миграция 022)

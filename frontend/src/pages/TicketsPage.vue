@@ -340,6 +340,13 @@ watch([statusFilter, categoryFilter], () => {
 
 function openTicket(id: string) { router.push(`/tickets/${id}`) }
 
+// Активный статус — индикатор «кто ответил последним» показываем только
+// для таких тикетов. Для resolved/closed история уже зафиксирована.
+const ACTIVE_STATUSES = new Set(['new', 'in_progress', 'waiting_for_user', 'on_hold', 'engineer_visit'])
+function isActiveStatus(status: string): boolean {
+  return ACTIVE_STATUSES.has(status)
+}
+
 onMounted(() => {
   store.fetchStats()
   // Пользователи видят только открытые по умолчанию
@@ -510,6 +517,16 @@ onMounted(() => {
             <span v-if="isStaff && (ticket.contact_name || ticket.contact_email)" class="meta-item">
               <i class="pi pi-user" />{{ ticket.contact_name || ticket.contact_email }}
             </span>
+            <template v-if="ticket.last_public_reply_by && isActiveStatus(ticket.status)">
+              <span class="meta-sep">·</span>
+              <span
+                class="meta-item"
+                :class="`reply-by-${ticket.last_public_reply_by}`"
+                :title="ticket.last_public_reply_by === 'client' ? 'Последним ответил клиент' : 'Последним ответил оператор'"
+              >
+                Отв.: {{ ticket.last_public_reply_by === 'client' ? 'клиент' : 'оператор' }}
+              </span>
+            </template>
             <span v-if="ticket.comments?.length" class="meta-sep">·</span>
             <span v-if="ticket.comments?.length" class="meta-item"><i class="pi pi-comment" />{{ ticket.comments.length }}</span>
             <span v-if="ticket.attachments?.length" class="meta-sep">·</span>
@@ -752,6 +769,9 @@ onMounted(() => {
 .meta-sep { color: #e2e8f0; }
 .meta-item { display: inline-flex; align-items: center; gap: 4px; color: #64748b; }
 .meta-item i { font-size: 11px; }
+/* Индикатор «кто ответил последним» в списке активных тикетов */
+.meta-item.reply-by-client { color: #2563eb; font-weight: 600; }
+.meta-item.reply-by-staff { color: #64748b; font-weight: 500; }
 
 .row-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
 

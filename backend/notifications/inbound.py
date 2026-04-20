@@ -583,6 +583,7 @@ async def _handle_reply(mail_data: dict, ticket_id_prefix: str) -> bool:
             author_name=author_name,
             text=body,
             email_message_id=message_id,
+            author_is_staff=False,
         )
         session.add(comment)
         # Flush триггерит unique-проверку ДО записи файлов на диск —
@@ -682,6 +683,7 @@ async def _handle_reply_by_subject(mail_data: dict) -> bool:
             author_name=author_name,
             text=body,
             email_message_id=message_id,
+            author_is_staff=False,
         )
         session.add(comment)
         try:

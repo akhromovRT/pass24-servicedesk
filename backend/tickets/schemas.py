@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .models import TicketPriority, TicketStatus
 
@@ -103,6 +103,7 @@ class CommentRead(BaseModel):
     author_name: str
     text: str
     is_internal: bool = False
+    author_is_staff: bool = False
     created_at: datetime
     model_config = {"from_attributes": True}
 
@@ -188,7 +189,26 @@ class TicketRead(BaseModel):
     comments: List[CommentRead] = []
     attachments: List[AttachmentRead] = []
 
+    # Кто ответил последним в переписке. Вычисляется из comments:
+    # берётся последний по created_at публичный комментарий (не internal),
+    # значение author_is_staff. Null, если публичных комментариев нет.
+    last_public_reply_by: Optional[Literal["client", "staff"]] = None
+
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def _compute_last_public_reply_by(self) -> "TicketRead":
+        if not self.comments:
+            return self
+        latest = None
+        for c in self.comments:
+            if c.is_internal:
+                continue
+            if latest is None or c.created_at > latest.created_at:
+                latest = c
+        if latest is not None:
+            self.last_public_reply_by = "staff" if latest.author_is_staff else "client"
+        return self
 
 
 class TicketStatusUpdate(BaseModel):

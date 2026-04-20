@@ -69,6 +69,7 @@ export interface Ticket {
   sla_paused_by_status?: boolean
   sla_paused_by_reply?: boolean
   has_unread_reply: boolean
+  last_public_reply_by?: 'client' | 'staff' | null
   parent_ticket_id: string | null
   implementation_project_id: string | null
   is_implementation_blocker: boolean
@@ -95,6 +96,7 @@ export interface TicketComment {
   author_name: string
   text: string
   is_internal: boolean
+  author_is_staff?: boolean
   created_at: string
 }
 

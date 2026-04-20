@@ -258,6 +258,8 @@ async def _add_comment(ticket_id: str, author_id: str, author_name: str, text: s
             author_id=author_id,
             author_name=author_name,
             text=text,
+            # Backfill-скрипт синхронизирует исторические клиентские ответы из email.
+            author_is_staff=False,
         )
         session.add(comment)
         await session.commit()

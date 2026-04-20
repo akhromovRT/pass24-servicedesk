@@ -854,6 +854,7 @@ async def add_comment(
         author_name=current_user.full_name or "",
         text=payload.text,
         is_internal=is_internal,
+        author_is_staff=is_staff,
     )
     session.add(comment)
 
@@ -1582,18 +1583,19 @@ async def apply_macro(
 
     # Применяем действия
     if actions.get("comment"):
+        is_staff_macro = current_user.role in (UserRole.SUPPORT_AGENT, UserRole.ADMIN)
         comment = TicketComment(
             ticket_id=ticket.id,
             author_id=str(current_user.id),
             author_name=current_user.full_name or "",
             text=actions["comment"],
             is_internal=bool(actions.get("is_internal_comment")),
+            author_is_staff=is_staff_macro,
         )
         session.add(comment)
         # Message-driven SLA pause (internal-комментарий не влияет).
         if not comment.is_internal:
-            is_staff = current_user.role in (UserRole.SUPPORT_AGENT, UserRole.ADMIN)
-            ticket.on_public_comment_added(is_staff=is_staff, now=datetime.utcnow())
+            ticket.on_public_comment_added(is_staff=is_staff_macro, now=datetime.utcnow())
 
     if actions.get("assign_self"):
         ticket.assignee_id = str(current_user.id)

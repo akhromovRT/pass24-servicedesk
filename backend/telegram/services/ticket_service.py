@@ -413,6 +413,7 @@ async def add_comment(
             author_name=getattr(user, "full_name", None) or "",
             text=text,
             is_internal=False,
+            author_is_staff=False,
         )
         session.add(comment)
         await session.flush()  # assign comment.id for attachment FK
