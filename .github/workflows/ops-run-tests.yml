@@ -1,11 +1,21 @@
 name: Ops — run pytest on prod
 
+# Осторожно: тесты исполняются в прод-контейнере против прод-БД.
+# Whole-suite прогон запрещён: многие тесты создают тикеты/пользователей
+# с адресами @example.com, и приложение шлёт SMTP-уведомления, которые
+# возвращаются bounce'ами. Любая цель из allowlist ниже — предварительно
+# проверенная «безопасная» (не бьёт по прод-почте). Если нужен новый
+# файл — добавь в ALLOWED_TARGETS в script.
+#
+# Защита от command injection: inputs.target передаётся через env
+# переменную PYTEST_TARGET, в shell-скрипте используется только как
+# $PYTEST_TARGET. Доп. character-whitelist ниже отсекает кавычки/бэктики.
 on:
   workflow_dispatch:
     inputs:
       target:
-        description: "Test file or -k expression"
-        required: false
+        description: "Test target (только файлы из allowlist, см. workflow)"
+        required: true
         default: "tests/test_telegram_bot.py tests/test_telegram_webhook.py"
 
 jobs:
@@ -24,7 +34,8 @@ jobs:
           envs: PYTEST_TARGET
           script: |
             if [[ -z "$PYTEST_TARGET" ]]; then
-              PYTEST_TARGET="tests/"
+              echo "ERROR: PYTEST_TARGET is empty. Задай цель явно — whole-suite прогон в проде запрещён."
+              exit 1
             fi
             case "$PYTEST_TARGET" in
               *[!A-Za-z0-9_/:.\ -]*)
@@ -32,5 +43,31 @@ jobs:
                 exit 1
                 ;;
             esac
+            # Allowlist безопасных (не шлют реальный SMTP на RFC 2606 домены
+            # в тест-фикстурах) целевых файлов. Если нужно добавить новый —
+            # убедись, что тесты не порождают реальных SMTP-отправок.
+            ALLOWED_TARGETS=(
+              "tests/test_telegram_bot.py"
+              "tests/test_telegram_webhook.py"
+              "tests/test_tickets_models.py"
+              "tests/test_sla_watcher.py"
+              "tests/test_email_reserved_guard.py"
+              "tests/test_email_reply_stripping.py"
+              "tests/test_projects_models.py"
+              "tests/test_inbound_email_integration.py"
+              "tests/test_password_reset.py"
+              "tests/test_customers.py"
+            )
+            for word in $PYTEST_TARGET; do
+              ok=0
+              for allowed in "${ALLOWED_TARGETS[@]}"; do
+                if [[ "$word" == "$allowed" ]]; then ok=1; break; fi
+              done
+              if [[ $ok -eq 0 ]]; then
+                echo "ERROR: '$word' не в allowlist. Разрешённые цели: ${ALLOWED_TARGETS[*]}"
+                echo "Добавь цель в .github/workflows/ops-run-tests.yml, если уверен, что она не шлёт реальный SMTP."
+                exit 1
+              fi
+            done
             echo "=== running: pytest $PYTEST_TARGET ==="
             docker exec site-pass24-servicedesk python -m pytest $PYTEST_TARGET -v --tb=short 2>&1 | tail -300
