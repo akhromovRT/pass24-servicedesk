@@ -25,15 +25,17 @@ def upgrade() -> None:
         "ticket_comments",
         sa.Column("author_is_staff", sa.Boolean(), nullable=False, server_default="false"),
     )
-    # Backfill: authors, которые есть в users.role = support_agent/admin.
-    # author_id в ticket_comments — строка, users.id — UUID → приводим тип.
+    # Backfill: authors, которые есть в users с ролью support_agent/admin.
+    # - author_id в ticket_comments — строка, users.id — UUID → ::text cast.
+    # - users.role — Postgres enum userrole → ::text cast, иначе asyncpg кидает
+    #   InvalidTextRepresentationError на bare string literal.
     op.execute(
         """
         UPDATE ticket_comments tc
         SET author_is_staff = TRUE
         FROM users u
         WHERE u.id::text = tc.author_id
-          AND u.role IN ('support_agent', 'admin')
+          AND u.role::text IN ('support_agent', 'admin')
         """
     )
 
