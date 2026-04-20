@@ -15,22 +15,22 @@ jobs:
       - name: Run tests via SSH
         uses: appleboy/ssh-action@v1
         env:
-          TARGET: ${{ inputs.target }}
+          PYTEST_TARGET: ${{ inputs.target }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: root
           password: ${{ secrets.SERVER_PASSWORD }}
           command_timeout: 10m
-          envs: TARGET
+          envs: PYTEST_TARGET
           script: |
-            if [[ -z "$TARGET" ]]; then
-              TARGET="tests/"
+            if [[ -z "$PYTEST_TARGET" ]]; then
+              PYTEST_TARGET="tests/"
             fi
-            case "$TARGET" in
+            case "$PYTEST_TARGET" in
               *[!A-Za-z0-9_/:.\ -]*)
                 echo "ERROR: invalid target characters"
                 exit 1
                 ;;
             esac
-            echo "=== running: pytest $TARGET ==="
-            docker exec site-pass24-servicedesk python -m pytest $TARGET -v --tb=short 2>&1 | tail -300
+            echo "=== running: pytest $PYTEST_TARGET ==="
+            docker exec site-pass24-servicedesk python -m pytest $PYTEST_TARGET -v --tb=short 2>&1 | tail -300
