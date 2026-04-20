@@ -1,5 +1,7 @@
 from aiogram import Bot, Dispatcher
-from backend.telegram.config import BOT_TOKEN
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
+from backend.telegram.config import BOT_TOKEN, TELEGRAM_API_BASE
 from backend.telegram.storage import PostgresStorage
 
 bot: Bot | None = None
@@ -10,7 +12,15 @@ def create_bot_and_dispatcher() -> tuple[Bot | None, Dispatcher | None]:
     global bot, dp
     if not BOT_TOKEN:
         return None, None
-    bot = Bot(token=BOT_TOKEN)
+    # On hosts where api.telegram.org is blocked outbound, route through a
+    # reverse-proxy that forwards /bot<token>/<method> and /file/bot<token>/<path>
+    # to api.telegram.org. Set TELEGRAM_API_BASE to the proxy base (e.g.
+    # http://proxy:8080/telegram). Empty → use official api.telegram.org.
+    if TELEGRAM_API_BASE:
+        session = AiohttpSession(api=TelegramAPIServer.from_base(TELEGRAM_API_BASE))
+        bot = Bot(token=BOT_TOKEN, session=session)
+    else:
+        bot = Bot(token=BOT_TOKEN)
     storage = PostgresStorage()
     dp = Dispatcher(storage=storage)
 

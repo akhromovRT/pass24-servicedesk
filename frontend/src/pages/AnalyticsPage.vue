@@ -70,7 +70,7 @@ const daysOptions = [
 const statusLabels: Record<string, string> = {
   new: 'Новый',
   in_progress: 'В работе',
-  waiting_for_user: 'Ожидает ответа',
+  waiting_for_user: 'Ожидание ответа клиента',
   resolved: 'Решён',
   closed: 'Закрыт',
 }

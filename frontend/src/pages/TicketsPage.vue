@@ -109,7 +109,7 @@ const views = computed(() => {
       { id: 'open', label: 'Открытые', icon: 'pi pi-inbox', count: store.stats.open },
       { id: 'urgent', label: 'Срочные', icon: 'pi pi-exclamation-triangle', count: store.stats.urgent, severity: 'danger' },
       { id: 'overdue', label: 'Просрочено', icon: 'pi pi-clock', count: store.stats.overdue, severity: 'danger' },
-      { id: 'waiting', label: 'Ждут ответа', icon: 'pi pi-hourglass', count: store.stats.waiting, severity: 'warn' },
+      { id: 'waiting', label: 'Ожидание ответа клиента', icon: 'pi pi-hourglass', count: store.stats.waiting, severity: 'warn' },
       { id: 'engineer_visit', label: 'Выезды', icon: 'pi pi-car' },
       { id: 'closed', label: 'Закрытые', icon: 'pi pi-check-circle' },
     ]
@@ -125,7 +125,7 @@ const views = computed(() => {
 const statusOptions = [
   { label: 'Новый', value: 'new' },
   { label: 'В работе', value: 'in_progress' },
-  { label: 'Ожидает ответа', value: 'waiting_for_user' },
+  { label: 'Ожидание ответа клиента', value: 'waiting_for_user' },
   { label: 'Отложена', value: 'on_hold' },
   { label: 'Выезд инженера', value: 'engineer_visit' },
   { label: 'Решён', value: 'resolved' },
@@ -146,7 +146,7 @@ const categoryOptions = [
 ]
 
 const statusLabelsStaff: Record<string, string> = {
-  new: 'Новый', in_progress: 'В работе', waiting_for_user: 'Ожидает', on_hold: 'Отложена', engineer_visit: 'Выезд', resolved: 'Решён', closed: 'Закрыт',
+  new: 'Новый', in_progress: 'В работе', waiting_for_user: 'Ожидание ответа клиента', on_hold: 'Отложена', engineer_visit: 'Выезд', resolved: 'Решён', closed: 'Закрыт',
 }
 const statusLabelsUser: Record<string, string> = {
   new: 'Принята', in_progress: 'В работе', waiting_for_user: 'Ждёт ответа', on_hold: 'Отложена', engineer_visit: 'Инженер выехал', resolved: 'Решена', closed: 'Закрыта',

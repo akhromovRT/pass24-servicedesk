@@ -73,7 +73,7 @@ const pauseInfo = computed<PauseInfo | null>(() => {
   const t = props.ticket
   // Статус-пауза имеет приоритет в тексте (точнее описывает причину).
   if (t.sla_paused_by_status) {
-    const statusLabel = t.status === 'on_hold' ? 'Отложена' : 'Ожидает ответа'
+    const statusLabel = t.status === 'on_hold' ? 'Отложена' : 'Ожидание ответа клиента'
     return { source: 'status', label: `⏸ SLA на паузе — статус «${statusLabel}»` }
   }
   if (t.sla_paused_by_reply) {

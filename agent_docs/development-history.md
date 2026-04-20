@@ -9,6 +9,22 @@
 
 ## Записи
 
+### 2026-04-20 — fix: Telegram Bot API через reverse-proxy (RU-хостер блокирует 149.154.160.0/20)
+
+**Инцидент:** Бот @PASS24bot перестал отвечать на `/start` и `/help`. Входящие апдейты Telegram **доходят** до webhook, но исходящий `sendMessage` из контейнера падает с `aiogram.exceptions.TelegramNetworkError: Request timeout error` (60 с, таймаут сессии по умолчанию). С контейнера `httpx.get("https://api.telegram.org")` → `[Errno 101] Network is unreachable` (DNS резолвит, TCP :443 блокируется). Google/GitHub доступны — блок избирательный по подсетям Telegram, специфика российских хостеров.
+
+**Что сделано:**
+- `backend/config.py` — добавлена `telegram_api_base: str = ""`.
+- `backend/telegram/config.py` — экспорт `TELEGRAM_API_BASE`.
+- `backend/telegram/bot.py` — если `TELEGRAM_API_BASE` задан, `Bot(session=AiohttpSession(api=TelegramAPIServer.from_base(TELEGRAM_API_BASE)))`. Иначе — дефолтный api.telegram.org.
+- `backend/telegram/services/notify.py` — `_TG_API` теперь читает ту же переменную (push-уведомления идут напрямую через httpx, не через aiogram session).
+- `.env.example` — задокументирована переменная вместе с `TELEGRAM_BOT_TOKEN`/`TELEGRAM_WEBHOOK_SECRET`/`APP_BASE_URL`.
+- `agent_docs/architecture.md` — в разделе Telegram-канал описан reverse-proxy и требование сохранять `/bot<token>/<method>` + `/file/bot<token>/<path>`.
+
+**Деплой:** на стороне существующего LLM-шлюза `45.82.15.28:8080` нужно добавить location `^/telegram/` с `proxy_pass https://api.telegram.org/`. В `docker-compose.yml` на VPS — `TELEGRAM_API_BASE: http://45.82.15.28:8080/telegram`. На стороне Telegram ничего не меняется: сам `setWebhook` уже выставлен и принимает апдейты.
+
+**Файлы:** `backend/config.py`, `backend/telegram/config.py`, `backend/telegram/bot.py`, `backend/telegram/services/notify.py`, `.env.example`, `agent_docs/architecture.md`.
+
 ### 2026-04-20 — fix: SMTP guard на зарезервированные домены + ужесточение ops-run-tests
 
 **Инцидент:** ручной запуск workflow `Ops — run pytest on prod` с расширенным target прогнал интеграционные тесты против прод-БД. Фикстуры создали десятки тикетов с адресами `test-<hex>@example.com`, приложение отослало notify-письма через SMTP timeweb, и 36+ bounce-писем упало в inbox `support@pass24online.ru`.

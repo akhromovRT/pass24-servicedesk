@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     # Telegram bot
     telegram_bot_token: str = ""
     telegram_webhook_secret: str = ""
+    # Override Bot API base URL (e.g. reverse-proxy for hosts where
+    # api.telegram.org is unreachable). Empty → use default api.telegram.org.
+    # Expected format: scheme://host[:port][/prefix] — aiogram appends
+    # `/bot{token}/{method}` and `/file/bot{token}/{path}` itself.
+    telegram_api_base: str = ""
 
     # Bitrix24 CRM
     bitrix24_webhook_url: str = ""

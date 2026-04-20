@@ -28,7 +28,7 @@ from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
-_TG_API = "https://api.telegram.org"
+_TG_API = (getattr(settings, "telegram_api_base", "") or "https://api.telegram.org").rstrip("/")
 
 
 # ---------- Low-level send helpers ----------

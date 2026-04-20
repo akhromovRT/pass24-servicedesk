@@ -12,7 +12,7 @@ withDefaults(defineProps<{
 const statusLabels: Record<TicketStatus, string> = {
   new: 'Новый',
   in_progress: 'В работе',
-  waiting_for_user: 'Ожидает ответа',
+  waiting_for_user: 'Ожидание ответа клиента',
   on_hold: 'Отложена',
   engineer_visit: 'Выезд инженера',
   resolved: 'Решён',

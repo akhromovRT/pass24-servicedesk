@@ -10,7 +10,7 @@ interface StatusTransition {
 
 const ALL_STATUSES: StatusTransition[] = [
   { label: 'В работу', value: 'in_progress', icon: 'pi pi-play', color: '#f59e0b' },
-  { label: 'Ожидать ответа', value: 'waiting_for_user', icon: 'pi pi-clock', color: '#8b5cf6' },
+  { label: 'Ожидание ответа клиента', value: 'waiting_for_user', icon: 'pi pi-clock', color: '#8b5cf6' },
   { label: 'Отложить', value: 'on_hold', icon: 'pi pi-pause', color: '#6366f1' },
   { label: 'Выезд инженера', value: 'engineer_visit', icon: 'pi pi-car', color: '#0ea5e9' },
   { label: 'Решить', value: 'resolved', icon: 'pi pi-check', color: '#10b981' },
@@ -35,7 +35,7 @@ const TRANSITIONS: Record<TicketStatus, StatusTransition[]> = {
 const STATUS_LABELS: Record<TicketStatus, string> = {
   new: 'Новый',
   in_progress: 'В работе',
-  waiting_for_user: 'Ожидает ответа',
+  waiting_for_user: 'Ожидание ответа клиента',
   on_hold: 'Отложена',
   engineer_visit: 'Выезд инженера',
   resolved: 'Решён',
