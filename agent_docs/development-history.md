@@ -9,6 +9,19 @@
 
 ## Записи
 
+### 2026-04-20 — fix: SMTP guard на зарезервированные домены + ужесточение ops-run-tests
+
+**Инцидент:** ручной запуск workflow `Ops — run pytest on prod` с расширенным target прогнал интеграционные тесты против прод-БД. Фикстуры создали десятки тикетов с адресами `test-<hex>@example.com`, приложение отослало notify-письма через SMTP timeweb, и 36+ bounce-писем упало в inbox `support@pass24online.ru`.
+
+**Что сделано:**
+- `backend/notifications/email._send_email` — guard: молча пропускает получателей на RFC 2606/6761 зарезервированных доменах (`example.com/net/org`, `.example`, `.test`, `.invalid`, `.localhost`) с INFO-логом.
+- `tests/test_email_reserved_guard.py` — 22 unit-теста.
+- `.github/workflows/ops-run-tests.yml` — allowlist конкретных файлов, whole-suite прогон и пустой target запрещены.
+- Из прод-БД удалены 2 старых закрытых тест-тикета (`itil-test@example.com`, `test@example.com`) и их события.
+- ADR-012 зафиксировал правило «не слать SMTP на reserved-домены».
+
+**Файлы:** `backend/notifications/email.py`, `tests/test_email_reserved_guard.py`, `.github/workflows/ops-run-tests.yml`, `agent_docs/adr.md`.
+
 ### 2026-04-17 — feat: Telegram Bot v2 (ветка `feature/telegram-bot-v2`)
 
 Переписан Telegram-бот с минимального text-only интерфейса (390 строк на raw httpx) в полнофункциональный menu-driven канал на aiogram 3.

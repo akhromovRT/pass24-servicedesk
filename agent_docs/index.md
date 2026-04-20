@@ -15,7 +15,7 @@
 - `agent_docs/guides/implementation-projects.md` — **инструкция по проектам внедрения** (создание, управление, работа с клиентом).
 - `agent_docs/guides/knowledge-base-manual.md` — **подробное руководство по базе знаний** для менеджеров: как устроена, как писать статьи, метрики, KPI.
 - `agent_docs/guides/dod.md` — критерии завершённости (DoD): тесты, документация, линтинг.
-- `agent_docs/guides/environment-setup.md` — настройка окружения (.env, .cursorignore, .vscode).
+- `agent_docs/guides/environment-setup.md` — настройка окружения (.env, .cursorignore, .vscode) + правила запуска тестов на проде и email-фикстур (ADR-012).
 - `agent_docs/guides/logging.md` — логирование: Markdown-логи в `logs/run-%timestamp%/`.
 - `agent_docs/guides/archiving-and-temp.md` — архивация и временные файлы.
 
