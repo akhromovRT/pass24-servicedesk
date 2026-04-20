@@ -60,7 +60,7 @@ async function handleFileSelect(event: Event) {
 
   try {
     const token = localStorage.getItem('access_token')
-    const response = await fetch(`/api/tickets/${props.ticketId}/attachments`, {
+    const response = await fetch(`/tickets/${props.ticketId}/attachments`, {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: formData,
