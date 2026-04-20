@@ -1,0 +1,34 @@
+name: Ops — run pytest on prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Test file or -k expression"
+        required: false
+        default: "tests/test_telegram_bot.py tests/test_telegram_webhook.py"
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run tests via SSH
+        uses: appleboy/ssh-action@v1
+        env:
+          TARGET: ${{ inputs.target }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          password: ${{ secrets.SERVER_PASSWORD }}
+          command_timeout: 10m
+          envs: TARGET
+          script: |
+            if [[ -z "$TARGET" ]]; then
+              TARGET="tests/"
+            fi
+            if ! [[ "$TARGET" =~ ^[A-Za-z0-9_/:. \-]+$ ]]; then
+              echo "ERROR: invalid target characters"
+              exit 1
+            fi
+            echo "=== running: pytest $TARGET ==="
+            docker exec site-pass24-servicedesk python -m pytest $TARGET -v --tb=short 2>&1 | tail -200
