@@ -9,7 +9,6 @@ venv
 data/
 .claude/
 agent_docs/
-tests/
 README.md
 AGENTS.md
 CLAUDE.md
