@@ -22,6 +22,7 @@ COPY migrations/ ./migrations/
 COPY entrypoint.sh .
 # tests/ is included so ops/run-tests workflow can pytest against the live container
 COPY tests/ ./tests/
+COPY pytest.ini .
 
 # Копируем собранный фронтенд в static/
 COPY --from=frontend-build /frontend/dist ./static/
