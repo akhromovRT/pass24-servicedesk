@@ -28,6 +28,36 @@ PRIORITY_LABELS = {
 }
 
 
+# Зарезервированные домены/TLD (RFC 2606, RFC 6761), на которые нельзя
+# отправлять реальную почту — они специально не маршрутизируются.
+# Использование: любые тест-фикстуры и демо-данные должны жить на этих
+# доменах, а приложение молча не отправляет на них SMTP.
+_RESERVED_EMAIL_DOMAINS: frozenset[str] = frozenset({
+    "example.com",
+    "example.net",
+    "example.org",
+})
+_RESERVED_EMAIL_TLDS: tuple[str, ...] = (
+    ".example",
+    ".invalid",
+    ".localhost",
+    ".test",
+)
+
+
+def _is_reserved_address(addr: str) -> bool:
+    """True, если email относится к зарезервированному (RFC 2606/6761) домену.
+
+    Сравнение регистронезависимо и игнорирует пробелы по краям.
+    """
+    if not addr or "@" not in addr:
+        return False
+    domain = addr.rsplit("@", 1)[1].strip().lower().rstrip(".")
+    if domain in _RESERVED_EMAIL_DOMAINS:
+        return True
+    return any(domain == t.lstrip(".") or domain.endswith(t) for t in _RESERVED_EMAIL_TLDS)
+
+
 async def _send_email(
     to: str,
     subject: str,
@@ -42,6 +72,16 @@ async def _send_email(
     """
     if not settings.smtp_password:
         logger.warning("SMTP_PASSWORD не задан — email не отправлен: %s", subject)
+        return
+
+    # Guard: зарезервированные домены (RFC 2606/6761) — не шлём, чтобы
+    # тест-фикстуры и демо-данные не уходили в реальный SMTP и не
+    # возвращались bounce'ами на support@.
+    if _is_reserved_address(to):
+        logger.info(
+            "Email пропущен (зарезервированный домен): %s -> %s",
+            subject, to,
+        )
         return
 
     msg = MIMEMultipart("alternative")
