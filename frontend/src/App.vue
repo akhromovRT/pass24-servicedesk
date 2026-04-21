@@ -18,6 +18,10 @@ const isStaff = computed(() =>
   auth.user?.role === 'support_agent' || auth.user?.role === 'admin'
 )
 
+// Embed-режим для /chat-widget — iframe на внешних сайтах рендерит
+// только сам виджет, без navbar / floating AiChat / HelpModal.
+const isEmbed = computed(() => route.path === '/chat-widget')
+
 const helpModalRef = ref<InstanceType<typeof HelpModal> | null>(null)
 function openHelp() { helpModalRef.value?.open() }
 
@@ -86,6 +90,11 @@ function logout() {
 </script>
 
 <template>
+  <!-- Embed-режим: отдаём только сам виджет, никакого навбара/toast/floating chat -->
+  <template v-if="isEmbed">
+    <router-view />
+  </template>
+  <template v-else>
   <Toast />
   <div class="layout">
     <Menubar :model="menuItems" class="layout-header">
@@ -141,6 +150,7 @@ function logout() {
     <!-- Модалка с инструкцией для агентов -->
     <HelpModal ref="helpModalRef" />
   </div>
+  </template>
 </template>
 
 <style>

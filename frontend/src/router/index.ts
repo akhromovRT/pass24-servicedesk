@@ -5,6 +5,14 @@ import { useAuthStore } from '../stores/auth'
 const router = createRouter({
   history: createWebHistory(),
   routes: [
+    // Embed-виджет AI-чата для сторонних сайтов (iframe через chat-loader.js).
+    // App.vue отключает navbar/floating AiChat на этом роуте.
+    {
+      path: '/chat-widget',
+      name: 'chat-widget',
+      component: () => import('../pages/ChatWidgetPage.vue'),
+      meta: { public: true, embed: true },
+    },
     // Главная: для авторизованных — заявки, для гостей — база знаний
     {
       path: '/',
