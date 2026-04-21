@@ -10,6 +10,11 @@
 ## Планирование
 - `agent_docs/roadmap.md` — roadmap v0.6–v0.9: проекты внедрения, approvals, Gantt, CRM, mobile.
 
+## Спеки
+- `agent_docs/specs/2026-04-22-bitrix-dev-agent-design.md` — дизайн сервиса
+  `pass24-dev-agent`: мониторинг чата Bitrix24 → авто-разработка через
+  Claude Code CLI → PR в pass24-servicedesk. Статус: draft.
+
 ## Правила и гайды
 - `agent_docs/telegram-bot-user-guide.md` — **user guide по Telegram-боту** (`@PASS24ROBOT`): привязка, wizard, ответы, CSAT, KB, AI, PM workflow, настройки, FAQ. Скрины в `agent_docs/screenshots/telegram/`.
 - `agent_docs/guides/support-operations.md` — **регламент работы менеджера поддержки** (обработка заявок, email, база знаний).
