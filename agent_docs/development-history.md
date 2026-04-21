@@ -9,6 +9,22 @@
 
 ## Записи
 
+### 2026-04-21 — ops: референсный tg-proxy (`ops/tg-proxy/`) для обхода блокировки Telegram
+
+Продолжение записи от 2026-04-20 («RU-хостер блокирует 149.154.160.0/20»). Бэкенд уже умел ходить через `TELEGRAM_API_BASE`, но самого прокси не было — плановый деплой на существующий LLM-шлюз `45.82.15.28:8080` решили заменить на отдельный контейнер на новом VPS.
+
+**Что сделано:**
+- `ops/tg-proxy/nginx.conf` — `location /telegram/` с `proxy_pass https://telegram_api/` (upstream `api.telegram.org:443` с keepalive), `proxy_ssl_server_name on` + `Host api.telegram.org`, `resolver 1.1.1.1 8.8.8.8` (чтобы nginx переразрешал edges, а не кешировал один IP при старте). `client_max_body_size 60m` под Telegram `sendDocument`. Access-log маскирует `/bot<digits>:<alnum>/` → `/bot***/` через `map $request_uri → $scrubbed_uri`, токен бота в логи не попадает. `/healthz` для docker healthcheck, `/` → 404.
+- `ops/tg-proxy/docker-compose.yml` — `nginx:1.27-alpine` на порту 8080, healthcheck через `wget /healthz`, `restart: unless-stopped`.
+- `ops/tg-proxy/README.md` — инструкция по разворачиванию (scp + `docker compose up -d`), smoke-тесты на стороне прокси и бэкенда, ufw-правила (порт 8080 только с IP основного приложения), опциональный блок по HTTPS через Let's Encrypt, диагностика блокировки через `httpx.get('https://api.telegram.org/')`.
+- `agent_docs/architecture.md` — в разделе «Telegram-канал» добавлена ссылка на `ops/tg-proxy/` как референсную реализацию.
+
+**Формат базы:** `TELEGRAM_API_BASE=http://<proxy-host>:8080/telegram`. aiogram + `services/notify.py` дописывают `/bot<token>/<method>` и `/file/bot<token>/<path>` → nginx снимает префикс `/telegram` и проксирует 1:1 на api.telegram.org.
+
+**Осталось:** развернуть контейнер на выданном VPS (доступы обещаны отдельно), выставить `TELEGRAM_API_BASE` в `docker-compose.yml` `site-pass24-servicedesk`, рестарт, smoke-тест `getMe` + отправка тестового push'а. После — решить, нужен ли HTTPS (токен в URL → лучше да, если прокси не во внутренней сети).
+
+**Файлы:** `ops/tg-proxy/{nginx.conf,docker-compose.yml,README.md}`, `agent_docs/architecture.md`.
+
 ### 2026-04-20 — hardening: Telegram Bot v2 post-rollout + user guide + все 4 follow-up TODO закрыты
 
 Накопительная запись по серии мелких фиксов после мёрджа Telegram Bot v2 в main. Ссылки в формате `#<PR>`.
