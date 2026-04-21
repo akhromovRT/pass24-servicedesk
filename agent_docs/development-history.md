@@ -9,6 +9,33 @@
 
 ## Записи
 
+### 2026-04-22 — feat: embeddable AI-chat widget + UI-полировка + постмортем прод-инцидента
+
+**Embed AI-chat widget для 250+ облачных сайтов клиентов (коммиты `91bbad7`, `ccef17b`):**
+- `frontend/public/chat-loader.js` — vanilla JS loader (~130 строк), раздаётся статикой с `support.pass24pro.ru`. Создаёт floating-кнопку + iframe с `/chat-widget`. SVG через DOM API без innerHTML (XSS-safe), postMessage для collapse, Esc closes, responsive bottom-sheet на мобильных ≤480px.
+- `frontend/src/pages/ChatWidgetPage.vue` — standalone Vue-страница с UI по референсу (тёмно-синяя шапка `#0f172a` с градиентным AI-аватаром, серые/тёмные пузыри, круглая зелёная кнопка отправки, inline guest-форма тикета с email/name/phone).
+- `frontend/src/App.vue` — `isEmbed = route.path === '/chat-widget'`, в embed-режиме рендерит только `router-view` без navbar/Toast/floating AiChat/HelpModal.
+- `frontend/src/router/index.ts` — новый lazy-роут `/chat-widget`.
+- `docs/embed-ai-chat-guide.md` — полная инструкция (337 строк): архитектура, установка на WordPress / Tilda / Webflow / 1С-Битрикс / React-Next / Vue-Nuxt / статические сайты, параметры кастомизации, безопасность/CSP, диагностика, FAQ.
+- Backend не трогали: catch-all SPA-роут уже отдаёт `chat-loader.js` как статику (Vite `public/` → `static/`), а `/assistant/chat` и `/tickets/guest` уже работали без авторизации. Iframe same-origin к `support.pass24pro.ru` — CORS отсутствует.
+- **ADR-014:** зафиксировано решение «loader + iframe» vs. Web Component / NPM-пакет.
+
+**Переименование статуса UI (коммит `a7c36be`):** в staff-интерфейсе «Ожидает ответа» → «Ожидание ответа клиента» (TicketsPage filter tab + dropdown + row label, TicketStatusBadge, useTicketTransitions, TicketSlaProgress pause badge, AnalyticsPage chart, HelpModal). Клиентские словари (userStatusLabels, email STATUS_LABELS) оставлены без изменений — клиент себя клиентом не называет.
+
+**Индикатор «кто ответил последним» (коммиты `c109530` → `9982a17` → `ee48c6c`):** в списке активных тикетов бейдж «Отв.: клиент» (синий) / «Отв.: оператор» (серый). Backend: `ticket_comments.author_is_staff` (миграция 024 + 025-backfill-fix), `TicketRead.last_public_reply_by` через `@model_validator`. Починен по дороге баг миграции 024 — сравнение Postgres enum `userrole` с lowercase bare string → `InvalidTextRepresentationError` → crash loop на 15 мин. Fix: `::text` cast + повторный backfill с uppercase (миграция 025). Чек-лист безопасных миграций зафиксирован в ADR-013.
+
+**RFC 2606 SMTP guard (коммит `74f9646`):** `_send_email` молча пропускает `example.com/.net/.org`, `.example`, `.test`, `.invalid`, `.localhost`. Причина — утром 20 апреля WF `Ops — run pytest on prod` с расширенным target прогнал интеграционные тесты, создав десятки тикетов с `test-<hex>@example.com`, bounce'ы от timeweb засорили inbox на 36+ писем. Ужесточили workflow: allowlist конкретных файлов + запрет пустого target. ADR-012 закрепил правило.
+
+**Прод-инцидент 21 апреля вечером (частично не наш):** после деплоя виджета вскрылось зависание sshd/HTTPS на системном уровне (SSH banner timeout, TLS handshake timeout, но ICMP 0.5ms, load 0.1, контейнеры up). Первопричина — `System restart required` + 48-дневный uptime + накопленные неприменённые обновления ядра. Решение: reboot VM → все контейнеры встали автоматом через `restart: unless-stopped`. **Профилактика:** включить `Unattended-Upgrade::Automatic-Reboot "true"` или планировать reboot раз в 30-60 дней.
+
+**Файлы:**
+- Виджет: `frontend/public/chat-loader.js`, `frontend/src/pages/ChatWidgetPage.vue`, `frontend/src/App.vue`, `frontend/src/router/index.ts`, `docs/embed-ai-chat-guide.md`
+- Staff-label: `TicketsPage.vue`, `TicketStatusBadge.vue`, `useTicketTransitions.ts`, `TicketSlaProgress.vue`, `AnalyticsPage.vue`, `HelpModal.vue`
+- Индикатор ответа: `backend/tickets/models.py`, `schemas.py`, `router.py`, `notifications/inbound.py`, `backend/telegram/services/ticket_service.py`, `backend/scripts/sync_email_replies.py`, `frontend/src/pages/TicketsPage.vue`, `frontend/src/types/index.ts`
+- Миграции: `024_ticket_comment_author_is_staff.py`, `025_fix_author_is_staff_backfill.py`
+- SMTP guard: `backend/notifications/email.py`, `tests/test_email_reserved_guard.py`, `.github/workflows/ops-run-tests.yml`
+- ADR: `agent_docs/adr.md` (ADR-012, 013, 014)
+
 ### 2026-04-20 — hardening: Telegram Bot v2 post-rollout + user guide + все 4 follow-up TODO закрыты
 
 Накопительная запись по серии мелких фиксов после мёрджа Telegram Bot v2 в main. Ссылки в формате `#<PR>`.

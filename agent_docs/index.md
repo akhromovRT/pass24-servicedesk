@@ -16,6 +16,7 @@
   Claude Code CLI → PR в pass24-servicedesk. Статус: draft.
 
 ## Правила и гайды
+- `docs/embed-ai-chat-guide.md` — **установка AI-помощника PASS24 на любой сайт** (loader+iframe, одна строка `<script>`). Инструкции для WordPress/Tilda/Webflow/Bitrix/React/Vue, параметры, диагностика, FAQ. См. ADR-014.
 - `agent_docs/telegram-bot-user-guide.md` — **user guide по Telegram-боту** (`@PASS24ROBOT`): привязка, wizard, ответы, CSAT, KB, AI, PM workflow, настройки, FAQ. Скрины в `agent_docs/screenshots/telegram/`.
 - `agent_docs/guides/support-operations.md` — **регламент работы менеджера поддержки** (обработка заявок, email, база знаний).
 - `agent_docs/guides/implementation-projects.md` — **инструкция по проектам внедрения** (создание, управление, работа с клиентом).

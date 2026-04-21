@@ -2,6 +2,35 @@
 
 ## Записи
 
+### [2026-04-22] ADR-014: Embed AI-чата через loader-скрипт + iframe (без изменений backend/CORS)
+
+#### Статус
+Принято.
+
+#### Контекст
+Нужно встроить AI-помощник PASS24 (RAG над базой знаний + гостевое создание заявок) на ~250 облачных сайтов клиентов под разными доменами (tilda, WordPress, Bitrix, React/Next, статические сайты). Требования: нулевые изменения на стороне клиента кроме одной строки; никаких API-ключей, секретов, CORS-настроек; централизованное обновление для всех клиентов сразу; backend не трогать (уже работает для внутреннего чата в портале).
+
+#### Рассмотренные альтернативы
+- **Web Component / Custom Element** — чище семантически, Shadow DOM изолирует стили. Минус: требует CORS на backend (`/assistant/chat`, `/tickets/guest`) для всех клиентских доменов + сложнее сборка.
+- **NPM-пакет** — клиент ставит пакет, бандлит у себя. Минус: каждому клиенту нужен developer time, обновления не автоматические.
+- **Iframe + loader-script** (выбрано) — loader создаёт button+iframe, iframe рендерит ту же страницу портала `/chat-widget`. Запросы идут изнутри iframe в `support.pass24pro.ru` → same-origin, CORS не возникает.
+
+#### Решение
+- `frontend/public/chat-loader.js` — vanilla JS (~130 строк), раздаётся статикой с `support.pass24pro.ru/chat-loader.js`. Создаёт floating-кнопку и iframe с `src=/chat-widget`. Управляет open/close через клик + postMessage + Esc.
+- `frontend/src/pages/ChatWidgetPage.vue` — Vue-страница с UI по референсу (тёмная шапка с AI-аватаром, серые/тёмные пузыри, зелёная круглая кнопка отправки, inline guest-форма тикета). Использует те же API `/assistant/chat` и `/tickets/guest`, что и внутренний `AiChat.vue`.
+- `frontend/src/App.vue` — на роуте `/chat-widget` скрывает navbar/Toast/floating AiChat/HelpModal (переменная `isEmbed`).
+- Установка на клиентском сайте: одна строка `<script src="https://support.pass24pro.ru/chat-loader.js" async></script>` перед `</body>`.
+
+#### Последствия
+- **(+)** Backend не трогаем вообще. CORS отсутствует: запросы идут same-origin изнутри iframe.
+- **(+)** Централизованное обновление: push в main → auto-deploy → все 250+ сайтов клиентов получают новую версию виджета сразу при следующей загрузке.
+- **(+)** Изоляция: стили и JS iframe не конфликтуют с сайтом клиента.
+- **(−)** Iframe нельзя затемизовать под бренд клиента из коробки (подготовлено `data-*` для будущих параметров `data-color`, `data-greeting`, но не реализовано — не требовалось на старте).
+- **(−)** Ограничения iframe: X-Frame-Options / CSP на стороне клиента должны разрешать `frame-src https://support.pass24pro.ru;` (у дефолтных CSP разрешено).
+- Подробная инструкция по встраиванию на разные платформы (WordPress, Tilda, Webflow, Bitrix, React, Vue и т.д.): `docs/embed-ai-chat-guide.md`.
+
+---
+
 ### [2026-04-20] ADR-013: Alembic `upgrade head` на старте контейнера (возврат к auto-migrate)
 
 #### Статус
