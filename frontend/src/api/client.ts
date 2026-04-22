@@ -36,8 +36,14 @@ async function request<T>(
   })
 
   if (response.status === 401) {
-    clearToken()
-    window.location.href = '/login'
+    // Редиректим на логин только если токен был — значит, сессия истекла.
+    // Для анонимного пользователя просто пробрасываем ошибку: вызывающий код
+    // сам решит, что делать (см. CustomerSelect.search), и SPA-состояние формы
+    // не теряется из-за случайного обращения к защищённому эндпоинту.
+    if (token) {
+      clearToken()
+      window.location.href = '/login'
+    }
     throw new Error('Unauthorized')
   }
 

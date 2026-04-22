@@ -330,10 +330,13 @@ watch(selectedTag, (newTag) => {
       <i class="pi pi-search empty-icon" />
       <p v-if="searchInput">По запросу «{{ searchInput }}» ничего не найдено</p>
       <p v-else>Статьи не найдены</p>
-      <p class="empty-hint">
-        Не нашли ответ?
-        <router-link to="/tickets/create">Создайте заявку</router-link>
-      </p>
+      <div class="empty-cta">
+        <span class="empty-cta__text">Не нашли ответ?</span>
+        <router-link to="/tickets/create" class="empty-cta__button">
+          <i class="pi pi-plus" />
+          Создайте заявку
+        </router-link>
+      </div>
     </div>
 
     <!-- Stats bar -->
@@ -572,18 +575,50 @@ watch(selectedTag, (newTag) => {
   opacity: 0.5;
 }
 
-.empty-hint {
-  font-size: 14px;
-  margin-top: 8px;
+.empty-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 24px;
+  padding: 16px 24px;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 12px;
+  backdrop-filter: blur(4px);
 }
 
-.empty-hint a {
-  color: #3b82f6;
+.empty-cta__text {
+  font-size: 18px;
+  font-weight: 500;
+  color: #334155;
+}
+
+.empty-cta__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: #3b82f6;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
   text-decoration: none;
+  border-radius: 8px;
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.25);
 }
 
-.empty-hint a:hover {
-  text-decoration: underline;
+.empty-cta__button:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(59, 130, 246, 0.35);
+}
+
+.empty-cta__button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.25);
 }
 
 /* Stats bar */
