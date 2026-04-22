@@ -228,6 +228,12 @@ class Ticket(SQLModel, table=True):
     # Компания-клиент (синхронизируется с Bitrix24)
     customer_id: Optional[str] = Field(default=None, index=True)
 
+    # Идентификатор исходного email для идемпотентности inbound-обработки.
+    # Уникальный частичный индекс (`email_message_id IS NOT NULL`, миграция 026)
+    # гарантирует «одно письмо = один тикет», даже если IMAP SINCE-окно
+    # повторно отдаст это письмо после рестарта воркера или во время deploy.
+    email_message_id: Optional[str] = Field(default=None, max_length=998)
+
     # Связи
     events: List["TicketEvent"] = Relationship(back_populates="ticket")
     comments: List["TicketComment"] = Relationship(back_populates="ticket")

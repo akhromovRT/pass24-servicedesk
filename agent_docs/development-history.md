@@ -9,6 +9,29 @@
 
 ## Записи
 
+### 2026-04-22 — fix: дубли email-тикетов после рестарта — расширение ADR-010 на Ticket
+
+**Симптом (прод):** несколько тикетов с одинаковым `title + contact_email + source=email`, создавались в окне ~8 часов (пример: 3× «Запрос на апи» от одного отправителя, 2× «Требуется помощь» от другого). Все уже были закрыты. Пользователь: «будто синхронизацию зажевало и он начал генерить по 4-5 заявок».
+
+**Корневые причины (две связанные):**
+1. **Рассогласование нормализации title в pre-insert дедупликации** (`backend/notifications/inbound.py::_handle_new_ticket`). `title_to_check = subject[:200] if subject else f"Обращение от {from_name}"` — сырой subject, без `strip()` и с собственным fallback'ом на «Обращение от X». Сохраняемый `title = subject.strip() if subject.strip() else body[:100].strip()` — нормализованный, с другим fallback'ом на `body`. Любой пробел на границах subject или пустой/whitespace-only subject — и SELECT не находил существующий тикет.
+2. **Отсутствие DB-уровня идемпотентности для Ticket.** Миграция 022 добавила `ticket_comments.email_message_id UNIQUE WHERE NOT NULL` (ADR-010), но модель `Ticket` осталась без поля. Защита держалась только на TOCTOU-SELECT из п.1.
+
+Пусковой механизм: `_fetch_unseen_emails` использует `SINCE <2 дня>` вместо `UNSEEN` (Яндекс помечает письма прочитанными до обработки), in-memory LRU `_processed_message_ids` сбрасывается при рестарте процесса. `docker compose up -d` во время деплоя кратковременно держит старый+новый контейнер, и каждый раз с холодным LRU бажная pre-insert-проверка проскакивала. N деплоев за 8 часов = N дублей.
+
+**Что сделано:**
+- Миграция `026_ticket_email_message_id.py` — `tickets.email_message_id VARCHAR(998) NULL` + частичный уникальный индекс `uq_tickets_email_message_id WHERE email_message_id IS NOT NULL` (зеркало миграции 022).
+- `backend/tickets/models.py` — поле `email_message_id` на `Ticket` с документацией.
+- `_handle_new_ticket` переписан под паттерн `_handle_reply`: убрана рассогласованная TOCTOU-проверка, добавлен `ticket.email_message_id = mail_data["message_id"]`, `session.flush()` до записи вложений на диск, `except IntegrityError → rollback → return` — дубль больше не создаёт ни тикет, ни orphan-файлы. Title нормализуется один раз (`subject.strip() or body[:100].strip()`, `[:200]`) и используется и для legacy-fallback-check, и для сохранения.
+- **Legacy-fallback:** для pre-migration тикетов (`email_message_id IS NULL`) оставлена дополнительная проверка по нормализованному `(title, contact_email, source='email', email_message_id IS NULL)` — чтобы email, всё ещё висящее в IMAP SINCE-окне, не создало новый дубль рядом со старым без message_id. Легитимные новые письма с тем же subject от того же отправителя не блокируются (разные message_id).
+- Интеграционные тесты в `tests/test_inbound_email_integration.py::TestTicketDeduplication`: (1) один `message_id` ×3 вызова → 1 тикет; (2) разные пробелы в subject + тот же `message_id` → 1 тикет (прямой regression-guard на исходный баг нормализации); (3) разные `message_id` + одинаковый subject → 2 тикета (чтобы legacy-fallback не ложно-блокировал).
+
+**Открытое (будет отдельным PR):** cleanup-скрипт для уже накопленных дублей в БД. Merge-логика не тривиальна (надо сливать комментарии/вложения), и операцию лучше гонять с подтверждением на проде.
+
+**Архитектурно:** прямое расширение ADR-010 (та же идея «БД как авторитет идемпотентности через уникальный частичный индекс», тот же паттерн flush + IntegrityError + rollback). Отдельный ADR не заводил — это не новое решение, а его доведение до symmetric-покрытия обоих inbound-путей (reply и new-ticket).
+
+**Файлы:** `migrations/versions/026_ticket_email_message_id.py`, `backend/tickets/models.py`, `backend/notifications/inbound.py`, `tests/test_inbound_email_integration.py`, `agent_docs/development-history.md`
+
 ### 2026-04-22 — feat: embeddable AI-chat widget + UI-полировка + постмортем прод-инцидента
 
 **Embed AI-chat widget для 250+ облачных сайтов клиентов (коммиты `91bbad7`, `ccef17b`):**

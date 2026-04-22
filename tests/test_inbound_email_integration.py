@@ -495,6 +495,177 @@ class TestNewTicketFromEmail:
             assert ticket is None, "Тикет не должен быть создан при недостаточной информации"
 
 
+class TestTicketDeduplication:
+    """Регрессия на дубли тикетов при повторной обработке одного письма.
+
+    Прод-инцидент 2026-04-22: после деплоя IMAP SINCE-окно в 2 дня отдавало
+    то же письмо заново, in-memory LRU сбрасывался в новом контейнере, а
+    старый pre-insert SELECT по (subject, email) проваливался из-за разной
+    нормализации title (dup_check без strip vs save со strip). Итог — 3-5
+    дублей одного письма.
+
+    Защита: Ticket.email_message_id + уникальный частичный индекс
+    (миграция 026) + ловля IntegrityError в _handle_new_ticket.
+    """
+
+    async def test_same_message_id_twice_one_ticket(self):
+        """Одно и то же письмо, повторно попавшее в обработчик, даёт один тикет."""
+        from unittest.mock import AsyncMock, patch
+        from backend.notifications.inbound import _handle_new_ticket
+        from backend.database import async_session_factory
+        from backend.tickets.models import Ticket
+        from sqlmodel import select
+
+        test_email = f"test-dup-{uuid.uuid4().hex[:8]}@example.com"
+        msg_id = f"<duplicate-{uuid.uuid4().hex}@pass24-test>"
+
+        mail_data = {
+            "subject": "Не открывается шлагбаум на парковке",
+            "from_email": test_email,
+            "from_name": "Test Dup",
+            "body": "Шлагбаум не реагирует на пропуск, стою на въезде уже 15 минут",
+            "attachments": [],
+            "message_id": msg_id,
+        }
+
+        try:
+            with patch("backend.notifications.email._send_email", new_callable=AsyncMock):
+                await _handle_new_ticket(mail_data)
+                # Повторная обработка того же письма — типичный кейс после рестарта
+                await _handle_new_ticket(mail_data)
+                # И ещё раз, чтобы эмулировать 3 деплоя подряд из прод-истории
+                await _handle_new_ticket(mail_data)
+
+            async with async_session_factory() as session:
+                result = await session.execute(
+                    select(Ticket).where(Ticket.contact_email == test_email)
+                )
+                tickets = result.scalars().all()
+                assert len(tickets) == 1, (
+                    f"Ожидался ровно 1 тикет для одного message_id, получено {len(tickets)}"
+                )
+                assert tickets[0].email_message_id == msg_id
+        finally:
+            async with async_session_factory() as session:
+                result = await session.execute(
+                    select(Ticket).where(Ticket.contact_email == test_email)
+                )
+                for t in result.scalars().all():
+                    await _cleanup_ticket(t.id)
+                from backend.auth.models import User
+                from sqlalchemy import delete as sa_delete
+                await session.execute(sa_delete(User).where(User.email == test_email))
+                await session.commit()
+
+    async def test_same_message_id_whitespace_variation(self):
+        """Разные ведущие/замыкающие пробелы в subject + тот же message_id → 1 тикет.
+
+        Конкретный баг, который мы чиним: старая pre-insert проверка
+        сравнивала subject[:200] (без strip) против сохранённого title.strip().
+        Первое письмо сохранялось со stripped-title, второй заход с таким же
+        message_id в старом коде видел рассогласование и создавал дубль.
+        Теперь идемпотентность держится на message_id, а не на сравнении
+        строк.
+        """
+        from unittest.mock import AsyncMock, patch
+        from backend.notifications.inbound import _handle_new_ticket
+        from backend.database import async_session_factory
+        from backend.tickets.models import Ticket
+        from sqlmodel import select
+
+        test_email = f"test-ws-{uuid.uuid4().hex[:8]}@example.com"
+        msg_id = f"<whitespace-{uuid.uuid4().hex}@pass24-test>"
+
+        first = {
+            "subject": "Проблема с домофоном в подъезде",
+            "from_email": test_email,
+            "from_name": "Test WS",
+            "body": "Домофон не звонит в квартиру, слышно только щелчки при вызове",
+            "attachments": [],
+            "message_id": msg_id,
+        }
+        # Тот же Message-ID, но subject с лишними пробелами (реалистичный кейс
+        # для MIME-декодирования multi-part encoded-word заголовков).
+        second = {**first, "subject": "  Проблема с домофоном в подъезде  "}
+
+        try:
+            with patch("backend.notifications.email._send_email", new_callable=AsyncMock):
+                await _handle_new_ticket(first)
+                await _handle_new_ticket(second)
+
+            async with async_session_factory() as session:
+                result = await session.execute(
+                    select(Ticket).where(Ticket.contact_email == test_email)
+                )
+                tickets = result.scalars().all()
+                assert len(tickets) == 1, (
+                    f"Разница в пробелах не должна давать дубль при одинаковом "
+                    f"message_id, получено {len(tickets)}"
+                )
+        finally:
+            async with async_session_factory() as session:
+                result = await session.execute(
+                    select(Ticket).where(Ticket.contact_email == test_email)
+                )
+                for t in result.scalars().all():
+                    await _cleanup_ticket(t.id)
+                from backend.auth.models import User
+                from sqlalchemy import delete as sa_delete
+                await session.execute(sa_delete(User).where(User.email == test_email))
+                await session.commit()
+
+    async def test_different_message_id_creates_separate_tickets(self):
+        """Два письма с одинаковым subject/sender, но разными message_id → 2 тикета.
+
+        Это валидный кейс (клиент отправил «то же самое» повторно с новой
+        проблемой), и наша защита не должна его глушить. Старый title-based
+        dup_check блокировал такие письма — регрессия, от которой страхуемся.
+        """
+        from unittest.mock import AsyncMock, patch
+        from backend.notifications.inbound import _handle_new_ticket
+        from backend.database import async_session_factory
+        from backend.tickets.models import Ticket
+        from sqlmodel import select
+
+        test_email = f"test-diff-{uuid.uuid4().hex[:8]}@example.com"
+
+        first = {
+            "subject": "Не работает мобильное приложение",
+            "from_email": test_email,
+            "from_name": "Test Diff",
+            "body": "Приложение не запускается после обновления на iOS 19, зависает на splash-экране",
+            "attachments": [],
+            "message_id": f"<first-{uuid.uuid4().hex}@pass24-test>",
+        }
+        second = {**first, "message_id": f"<second-{uuid.uuid4().hex}@pass24-test>"}
+
+        try:
+            with patch("backend.notifications.email._send_email", new_callable=AsyncMock):
+                await _handle_new_ticket(first)
+                await _handle_new_ticket(second)
+
+            async with async_session_factory() as session:
+                result = await session.execute(
+                    select(Ticket).where(Ticket.contact_email == test_email)
+                )
+                tickets = result.scalars().all()
+                assert len(tickets) == 2, (
+                    f"Разные message_id должны дать два отдельных тикета, "
+                    f"получено {len(tickets)}"
+                )
+        finally:
+            async with async_session_factory() as session:
+                result = await session.execute(
+                    select(Ticket).where(Ticket.contact_email == test_email)
+                )
+                for t in result.scalars().all():
+                    await _cleanup_ticket(t.id)
+                from backend.auth.models import User
+                from sqlalchemy import delete as sa_delete
+                await session.execute(sa_delete(User).where(User.email == test_email))
+                await session.commit()
+
+
 class TestKnowledgeBaseSearch:
     """Авто-анализ: поиск релевантных статей."""
 
