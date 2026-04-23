@@ -266,7 +266,7 @@ async def notify_ticket_created(
 
                 <!-- SLA -->
                 <div style="background:#f8fafc;border-radius:8px;padding:14px 16px;margin-top:20px;">
-                    <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:10px;">⏱ Сроки (SLA)</div>
+                    <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:10px;">⏱ Срок реагирования</div>
                     <div style="display:flex;gap:16px;font-size:13px;">
                         <div>
                             <div style="color:#94a3b8;font-size:11px;">Первый ответ</div>

@@ -737,6 +737,7 @@ async def _handle_new_ticket(mail_data: dict) -> None:
     subject = mail_data["subject"]
     body = mail_data["body"]
     from_name = mail_data["from_name"]
+    message_id = mail_data.get("message_id")
 
     if not _is_sufficient(subject, body):
         await _send_email(
@@ -762,22 +763,36 @@ async def _handle_new_ticket(mail_data: dict) -> None:
         )
         return
 
-    # Дедупликация: проверяем нет ли уже тикета с таким title + email
-    async with async_session_factory() as check_session:
-        title_to_check = subject[:200] if subject else f"Обращение от {from_name}"
-        dup_check = await check_session.execute(
-            select(Ticket).where(
-                Ticket.title == title_to_check,
-                Ticket.contact_email == from_email,
-                Ticket.source == "email",
-            )
-        )
-        if dup_check.scalar_one_or_none():
-            logger.info("Дубликат тикета: %s / %s — пропускаем", from_email, title_to_check[:40])
-            return
-
-    category = _detect_category(f"{subject} {body}")
+    # Нормализуем title одинаково для dedup-check и для сохранения.
+    # Старый код сравнивал subject[:200] (без strip) против сохранённого
+    # title = subject.strip() — любое отличие в пробелах обходило проверку и
+    # при каждом рестарте процесса плодился новый дубль.
     title = subject.strip() if subject.strip() else body[:100].strip()
+    title = title[:200]
+    category = _detect_category(f"{subject} {body}")
+
+    # Legacy fallback: pre-migration тикеты не имеют email_message_id, поэтому
+    # уникальный индекс их не защищает. Проверяем по нормализованному
+    # (title, contact_email, source='email') только среди тикетов без
+    # message_id — чтобы не блокировать легитимные новые письма с тем же
+    # subject от того же отправителя, если старый тикет уже есть.
+    # Основная защита от гонок — unique index на email_message_id ниже.
+    if message_id:
+        async with async_session_factory() as check_session:
+            legacy_dup = await check_session.execute(
+                select(Ticket).where(
+                    Ticket.title == title,
+                    Ticket.contact_email == from_email,
+                    Ticket.source == "email",
+                    Ticket.email_message_id.is_(None),
+                )
+            )
+            if legacy_dup.scalar_one_or_none():
+                logger.info(
+                    "Pre-migration дубликат тикета: %s / %s — пропускаем",
+                    from_email, title[:40],
+                )
+                return
 
     async with async_session_factory() as session:
         # Пользователь
@@ -796,12 +811,13 @@ async def _handle_new_ticket(mail_data: dict) -> None:
         # Создаём тикет
         ticket = Ticket(
             creator_id=str(user.id),
-            title=title[:200],
+            title=title,
             description=body[:10000],
             category=category,
             source="email",
             contact_name=from_name,
             contact_email=from_email,
+            email_message_id=message_id,
         )
         ticket.auto_detect_category()
         ticket.assign_priority_based_on_context()
@@ -820,6 +836,20 @@ async def _handle_new_ticket(mail_data: dict) -> None:
         )
         session.add(ticket)
         session.add(event)
+
+        # Flush ДО записи вложений на диск: уникальный индекс по
+        # email_message_id словит дубль на INSERT — так мы не оставим
+        # orphan-файлов на FS, если тот же Message-ID уже был обработан.
+        # Паттерн идентичен _handle_reply (миграция 022).
+        try:
+            await session.flush()
+        except IntegrityError:
+            await session.rollback()
+            logger.info(
+                "Дубликат email-тикета (message_id=%s) от %s — пропущено",
+                message_id, from_email,
+            )
+            return
 
         # Сохранить вложения из письма
         for att in mail_data.get("attachments", []):

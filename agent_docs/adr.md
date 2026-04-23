@@ -372,6 +372,13 @@ while accumulated_work_minutes < target:
 - (-) Миграция 022 оставляет старые комментарии с `email_message_id = NULL` — исторические дубли удалены отдельным backfill-скриптом `backend/scripts/dedup_ticket_comments.py` (группирует по `(author_id, text.strip())`, оставляет самый ранний).
 - Митигация log-reload-гонки: в fix-коммите `51f4f02` закешировали `ticket.id[:8]` в локальную строку до flush, потому что после `rollback` ORM-атрибуты expired и lazy-reload из asyncpg-контекста валится в `MissingGreenlet`.
 
+#### Расширение (2026-04-22, миграция 026)
+Исходное решение закрывало только `_handle_reply` / `_handle_reply_by_subject` (новые комментарии из email-ответов). `_handle_new_ticket` (создание тикета из свежего письма) оставался на старой защите — TOCTOU-SELECT по `(title, contact_email, source='email')` в отдельной сессии, с рассогласованной нормализацией title (sirую subject против stripped-title при save). В апреле 2026 это дало 3-5 дублей одного письма при серии деплоев.
+
+Симметричное применение того же паттерна: миграция **026** добавила `tickets.email_message_id VARCHAR(998) NULL` + частичный уникальный индекс `WHERE email_message_id IS NOT NULL`. `_handle_new_ticket` переписан на ту же связку `session.flush()` + `except IntegrityError` + `rollback`. Теперь оба inbound-пути (reply и new-ticket) защищены единообразно на уровне БД; три симметричных блока try/flush/IntegrityError в `inbound.py` (строки 592/690/845) — живое документирование паттерна. Cleanup pre-026 дублей — `backend/scripts/dedup_tickets.py` (non-destructive merge через `merged_into_ticket_id`, как ручной `/tickets/{id}/merge`).
+
+Нового ADR для расширения не заводилось — это то же архитектурное решение, просто доведённое до полного покрытия inbound-канала. Отдельный ADR потребовался бы, если бы мы выбрали другой паттерн (advisory-locks, exactly-once queue, внешний idempotency-сервис).
+
 ---
 
 ### [2026-04-17] ADR-011: Telegram Bot v2 — aiogram 3 + PG FSM + отдельный домен

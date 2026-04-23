@@ -198,10 +198,10 @@ const categoryOptions = [
 ]
 
 const ticketTypeOptions = [
-  { label: 'Инцидент — нарушение работы сервиса', value: 'incident' },
-  { label: 'Проблема — корневая причина', value: 'problem' },
-  { label: 'Service Request — стандартный запрос', value: 'service_request' },
-  { label: 'Change Request — изменение системы', value: 'change_request' },
+  { label: 'Не работает — что-то сломалось', value: 'incident' },
+  { label: 'Повторяется — одно и то же уже не первый раз', value: 'problem' },
+  { label: 'Запрос — сделать стандартную операцию', value: 'service_request' },
+  { label: 'Изменение — настроить или перенастроить систему', value: 'change_request' },
   { label: 'Вопрос — нужна консультация', value: 'question' },
   { label: 'Предложение — идея по улучшению', value: 'feature_request' },
 ]
@@ -522,15 +522,17 @@ async function onSubmit() {
               <small v-if="descriptionInvalid" class="field-error">Опишите проблему подробнее</small>
             </div>
 
-            <Divider />
+            <Divider v-if="isStaff" />
 
-            <!-- Компания-клиент -->
-            <div class="form-section-title"><i class="pi pi-briefcase section-icon" /> Компания-клиент</div>
-            <div class="field">
-              <label>Выберите компанию или добавьте по ИНН</label>
-              <CustomerSelect v-model="customerId" />
-              <small class="field-help">Компании синхронизированы с Bitrix24 CRM. Нет в списке? Нажмите «+» и введите ИНН.</small>
-            </div>
+            <!-- Компания-клиент: только для агентов/админов — /customers/search требует авторизации -->
+            <template v-if="isStaff">
+              <div class="form-section-title"><i class="pi pi-briefcase section-icon" /> Компания-клиент</div>
+              <div class="field">
+                <label>Выберите компанию или добавьте по ИНН</label>
+                <CustomerSelect v-model="customerId" />
+                <small class="field-help">Компании синхронизированы с Bitrix24 CRM. Нет в списке? Нажмите «+» и введите ИНН.</small>
+              </div>
+            </template>
 
             <Divider />
 
@@ -572,7 +574,7 @@ async function onSubmit() {
               <div class="field">
                 <label for="ticketType">Тип обращения</label>
                 <Select id="ticketType" v-model="ticketType" :options="ticketTypeOptions" option-label="label" option-value="value" fluid />
-                <small class="field-help">Инцидент — срочно, всё сломалось. Вопрос — нужна консультация</small>
+                <small class="field-help">Выберите, что ближе к вашей ситуации. Если сомневаетесь — оставьте вариант по умолчанию, мы уточним при обработке</small>
               </div>
               <div class="field" v-if="showDeviceType">
                 <label for="deviceType">Устройство</label>
