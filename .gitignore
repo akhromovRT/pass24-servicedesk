@@ -12,6 +12,13 @@
 ehthumbs.db
 # Убрано сомнительное 'profile' и ошибочное '.DS_Store?'
 
+# iCloud conflict copies (e.g. "foo 2.py", "bar 3.md")
+* [0-9].py
+* [0-9].md
+* [0-9].yml
+* [0-9].yaml
+* [0-9].json
+
 # Windows
 Thumbs.db
 Thumbs.db:encryptable
