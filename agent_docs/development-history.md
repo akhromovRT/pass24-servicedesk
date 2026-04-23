@@ -9,6 +9,14 @@
 
 ## Записи
 
+### 2026-04-23 — fix: embed /chat-widget не должен редиректить на /login
+
+Follow-up к embed-виджету от 2026-04-22. Воспроизведение: у пользователя, когда-то логинившегося на `support.pass24pro.ru` напрямую (например, менеджера УК), в localStorage остался устаревший JWT. При заходе на сторонний сайт клиента iframe с `/chat-widget` грузился, `main.ts` вызывал `auth.init()` → `/auth/me` → 401 → `api/client.ts` делал `window.location.href='/login'` **внутри iframe** → пользователь видел форму логина вместо AI-чата.
+
+**Фикс** (`frontend/src/main.ts`): для embed-роута пропускаем `auth.init()` и сносим токен заранее через `clearToken()` — это закрывает оба вектора (`/auth/me` при старте и stale Bearer, уходящий в `/assistant/chat`). Guard по `window.location.pathname === '/chat-widget'` (простой и устойчивый контракт; `window.parent !== window` отбросили — ломает прямую отладку виджета).
+
+Проверено через vite preview + Playwright: со stale-токеном виджет открывается как надо (`/auth/me` не вызывается вовсе), на обычных страницах `auth.init()` отработал прежним путём. Прод-AI ответил через iframe на стороннем сайте (`POST /assistant/chat` → 200). Баг на проде сохраняется до следующего деплоя фронта.
+
 ### 2026-04-22 — feat: embeddable AI-chat widget + UI-полировка + постмортем прод-инцидента
 
 **Embed AI-chat widget для 250+ облачных сайтов клиентов (коммиты `91bbad7`, `ccef17b`):**
