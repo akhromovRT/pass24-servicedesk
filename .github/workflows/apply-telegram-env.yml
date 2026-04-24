@@ -1,0 +1,47 @@
+name: Ops — apply telegram self-hosted env
+
+# Одноразовый workflow для активации self-hosted telegram-bot-api (ADR-015).
+# Добавляет TELEGRAM_API_BASE и TELEGRAM_FILE_API_BASE в /opt/sites/pass24-servicedesk/.env
+# и перезапускает только контейнер site-pass24-servicedesk.
+# Idempotent: если переменные уже есть — не дублирует.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add TELEGRAM_*_BASE env vars and restart container
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          password: ${{ secrets.SERVER_PASSWORD }}
+          script: |
+            set -e
+            cd /opt/sites/pass24-servicedesk
+            echo "=== .env перед правкой (последние 15 строк) ==="
+            tail -15 .env
+            echo ""
+            echo "=== добавляю TELEGRAM_API_BASE если ещё нет ==="
+            grep -q '^TELEGRAM_API_BASE=' .env && echo "  уже есть" || { echo 'TELEGRAM_API_BASE=http://178.104.228.43' >> .env && echo "  добавлено"; }
+            echo ""
+            echo "=== добавляю TELEGRAM_FILE_API_BASE если ещё нет ==="
+            grep -q '^TELEGRAM_FILE_API_BASE=' .env && echo "  уже есть" || { echo 'TELEGRAM_FILE_API_BASE=http://178.104.228.43/tgfiles' >> .env && echo "  добавлено"; }
+            echo ""
+            echo "=== .env после правки (последние 10 строк) ==="
+            tail -10 .env
+            echo ""
+            echo "=== рестарт site-pass24-servicedesk ==="
+            docker compose up -d --force-recreate --no-deps site-pass24-servicedesk
+            sleep 5
+            echo ""
+            echo "=== статус контейнера ==="
+            docker ps --filter name=site-pass24-servicedesk --format "{{.Names}}: {{.Status}}"
+            echo ""
+            echo "=== последние 20 строк логов ==="
+            docker logs site-pass24-servicedesk --tail=20 2>&1 | tail -20
+            echo ""
+            echo "=== активные env-переменные контейнера (grep TELEGRAM) ==="
+            docker exec site-pass24-servicedesk printenv 2>/dev/null | grep '^TELEGRAM' || true
