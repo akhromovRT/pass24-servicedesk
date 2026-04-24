@@ -306,7 +306,8 @@ ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, ANTHROPIC_MODEL
 OPENAI_API_KEY, OPENAI_BASE_URL
 QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
 TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET
-TELEGRAM_API_BASE             # Optional reverse-proxy for api.telegram.org (RU hosts where Bot API is blocked)
+TELEGRAM_API_BASE             # Optional reverse-proxy for api.telegram.org (RU hosts where Bot API is blocked, или self-hosted telegram-bot-api — см. ADR-015)
+TELEGRAM_FILE_API_BASE        # File download base для self-hosted telegram-bot-api в --local режиме (Caddy file_server над /var/lib/telegram-bot-api). Пусто → строится как {TELEGRAM_API_BASE}/tgfiles
 BITRIX24_WEBHOOK_URL          # CRM sync: companies + contacts by INN
 DADATA_API_KEY                # Company lookup by INN/name (ФНС registry)
 ```

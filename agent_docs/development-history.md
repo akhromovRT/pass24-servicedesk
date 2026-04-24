@@ -9,6 +9,27 @@
 
 ## Записи
 
+### 2026-04-24 — self-hosted telegram-bot-api для вложений >20 МБ (гибридный режим, без downtime)
+
+**Что сделано:** развёрнут отдельный VPS на Hetzner CX23 Nuremberg (`178.104.228.43`) с Docker-контейнером `aiogram/telegram-bot-api:latest` в режиме `--local` (поднимает лимит `getFile` с 20 МБ до 2 ГБ). Caddy `:80` с IP-allowlist проксирует запросы и отдаёт файлы из `/var/lib/telegram-bot-api`. Код pass24-servicedesk обновлён (PR #22): `_download_tg_file` параметризован по `settings.telegram_api_base` + новый `settings.telegram_file_api_base`; бранчинг для `--local` absolute-paths; `_MAX_TG_FILE_SIZE` 20→100 МБ. Удалена iCloud-конфликтная копия `ticket_service 2.py`, паттерн в `.gitignore`.
+
+**Ключевое решение (ADR-015):** гибридный режим **без `logOut`**. Webhook остаётся на `api.telegram.org` (zero downtime), pass24-api дополнительно ходит на self-hosted **только за `getFile`** больших файлов. Read-only операции Bot API не требуют session-lockа, два сервера сосуществуют для одного бота. Избежан FLOOD_WAIT 10 минут в рабочее время.
+
+**Инциденты по пути:**
+- Timeweb DNS зоны `pass24pro.ru` не применяет добавленную запись `tg-api`: SOAserial не инкрементируется, NXDOMAIN на всех NS. Workaround — работаем по IP `178.104.228.43` напрямую, HTTP без TLS между VPS-ами (allowlist на Caddy + UFW). Домен и Let's Encrypt сертификат — в следующую итерацию после перехода DNS на другого провайдера.
+- CI-деплой `PR #22` упал дважды с GHCR 502 — временный сбой GitHub Container Registry. Третий retry прошёл успешно.
+
+**Креденшалы:** `API_ID`/`API_HASH` получены на `my.telegram.org` через SSH SOCKS-тунель через сам VPS (ru-IP `my.telegram.org` не отвечал). Служебный Telegram-аккаунт, креды в 1Password + `/opt/telegram-bot-api/.env` (chmod 600).
+
+**Не в этом релизе:**
+- pytest-контракт для `_download_tg_file` с monkeypatch на httpx — отдельным PR
+- Cron job для чистки `/opt/telegram-bot-api/data/` (TDLib не удаляет старые файлы)
+- Переезд DNS pass24pro.ru на Cloudflare / возврат к `tg-api.pass24pro.ru` + Let's Encrypt
+
+**Файлы:** `backend/config.py`, `backend/telegram/services/ticket_service.py`, `.env.example`, `.gitignore` + новые `agent_docs/adr.md` (ADR-015), `agent_docs/guides/telegram-bot-api-self-hosted.md`, обновлён `agent_docs/architecture.md`, `agent_docs/index.md`. PR: [#22](https://github.com/akhromovRT/pass24-servicedesk/pull/22).
+
+---
+
 ### 2026-04-22 — design: pass24-dev-agent (Bitrix24-чат → Claude Code → PR), план готов
 
 **Что сделано:** спроектирован отдельный сервис `pass24-dev-agent`, который

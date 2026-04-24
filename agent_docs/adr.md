@@ -2,6 +2,43 @@
 
 ## Записи
 
+### [2026-04-24] ADR-015: Self-hosted telegram-bot-api в гибридном режиме (без `logOut`) для вложений >20 МБ
+
+#### Статус
+Принято. Реализовано в PR #22.
+
+#### Контекст
+Cloud `api.telegram.org` ограничивает `getFile` верхним потолком 20 МБ — реальные email-вложения от клиентов PASS24 (PDF-планы ЖК, видео объектов) регулярно больше и молча пропускались (`ticket_service.py` логировал `skipping attachment ... exceeds ... bytes`). Нужно было поднять этот лимит, сохранив бот `@PASS24bot` работающим.
+
+#### Рассмотренные альтернативы
+- **Прямая миграция бота на self-hosted через `logOut`** (из исходного плана). Минус: `logOut` на `api.telegram.org` триггерит 10-минутный `FLOOD_WAIT`, в течение которого бот не принимает сообщения. Плюс ещё 10 минут при возможном rollback. В рабочее время неприемлемо.
+- **Self-hosted на том же VPS `5.42.101.27`**. Минус: `telegram-bot-api` под нагрузкой берёт 150–500 МБ RAM, плюс `--local` режим пишет файлы в FS; на shared VPS (pass24, ONVIS, OpenClaw под общим nginx) это риск OOM и deadlock диска. Отдельный VPS эксплуатационно чище.
+- **Принимать 20 МБ лимит, писать клиентам «перешлите по email»**. Минус: поддержка уже загружена, дополнительный ручной шаг удваивает SLA response.
+- **Гибридный режим без `logOut`** (выбрано): webhook остаётся на `api.telegram.org` (zero downtime), `pass24-api` дополнительно ходит на self-hosted `telegram-bot-api` **только за `getFile`** для больших файлов. Read-only операции не требуют session-lockа → два Bot API сервера сосуществуют для одного и того же бота.
+
+#### Решение
+- Hetzner Cloud CX23 в Nuremberg (`178.104.228.43`, `tg-api.pass24pro.ru` DNS-запись в зоне Timeweb не применилась из-за бага провайдера — см. history 2026-04-20; временно используется IP напрямую, HTTP без TLS между pass24-api `5.42.101.27` и VPS).
+- Docker-контейнер `aiogram/telegram-bot-api:latest` с флагом `--local` (обязательно — без него self-hosted тоже ограничен 20 МБ). `API_ID` / `API_HASH` получены на `my.telegram.org` под служебным аккаунтом PASS24.
+- Caddy на VPS слушает `:80`, делает `reverse_proxy localhost:8081` и `file_server /tgfiles/*` из `/var/lib/telegram-bot-api` (каталог с скачанными файлами в `--local` режиме). IP-allowlist: `5.42.101.27` + админский IP.
+- `backend/telegram/services/ticket_service.py` патч в `_download_tg_file()`: параметризация базового URL через `settings.telegram_api_base` (существовало), добавлен `settings.telegram_file_api_base` для `--local` FS-путей. Бранчинг по префиксу `/var/lib/telegram-bot-api/`: cloud → `{api_base}/file/bot{token}/{path}`, self-hosted → `{file_api_base}/{relative}`.
+- `_MAX_TG_FILE_SIZE` поднят 20 → 100 МБ (application-level cap для защиты диска; `--local` технически поддерживает до 2 ГБ).
+- На проде `support.pass24pro.ru`: `TELEGRAM_API_BASE=http://178.104.228.43`, `TELEGRAM_FILE_API_BASE=http://178.104.228.43/tgfiles`.
+
+#### Обоснование
+Ключевое открытие: read-only операции Bot API (`getMe`, `getFile`, `getWebhookInfo`) **не требуют session-лока**. Каждый Bot API сервер хранит своё представление состояния бота (webhook, pending updates), но одинаково видит один и тот же бот в Telegram backend через MTProto. `logOut` нужен только для **передачи управления** `getUpdates`/webhook. Пока self-hosted не делает setWebhook / getUpdates — конфликта нет. Это разрешено Telegram и подтверждено на практике: `getMe` через self-hosted для `@PASS24bot` возвращает валидный JSON, параллельно прод-webhook продолжает доставлять updates.
+
+#### Последствия
+- **(+)** Zero downtime миграция: клиенты не заметили переключения, pending FLOOD_WAIT не сработал.
+- **(+)** Маленькие файлы (<20 МБ, 95%+ трафика) продолжают идти через cloud `api.telegram.org` — самый быстрый путь, нет overhead прокси.
+- **(+)** Rollback = 2 env-переменные: убрать `TELEGRAM_API_BASE`/`TELEGRAM_FILE_API_BASE` из `.env` + `docker compose up -d`. Код автоматически вернётся к cloud-режиму.
+- **(−)** Bot token передаётся в cleartext по HTTP между `5.42.101.27` и `178.104.228.43` (EU ↔ MSK). Митигация: временно, до восстановления DNS / перехода на домен + Let's Encrypt TLS. IP-allowlist на Caddy + UFW сужает риск.
+- **(−)** Диск VPS `40 ГБ` — при нагрузке надо мониторить `/opt/telegram-bot-api/data/`; старые файлы сейчас не чистятся (TDLib их не удаляет автоматически). Требуется cron-job на удаление `atime > 7 days`.
+- **(−)** Когда/если Telegram изменит правила Bot API и запретит cross-server read-only — план сломается. Митигация: fallback на `logOut` в maintenance-окне, код уже поддерживает обе схемы.
+- Архитектура: `pass24-api (5.42.101.27) ──HTTP──> Caddy:80 (178.104.228.43) ──> telegram-bot-api:8081 (docker) ──MTProto──> Telegram DC`.
+- Подробный runbook: `agent_docs/guides/telegram-bot-api-self-hosted.md`.
+
+---
+
 ### [2026-04-22] ADR-014: Embed AI-чата через loader-скрипт + iframe (без изменений backend/CORS)
 
 #### Статус
