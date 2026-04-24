@@ -28,6 +28,7 @@
 - `agent_docs/guides/dod.md` — критерии завершённости (DoD): тесты, документация, линтинг.
 - `agent_docs/guides/environment-setup.md` — настройка окружения (.env, .cursorignore, .vscode) + правила запуска тестов на проде и email-фикстур (ADR-012).
 - `agent_docs/guides/logging.md` — логирование: Markdown-логи в `logs/run-%timestamp%/`.
+- `agent_docs/guides/telegram-bot-api-self-hosted.md` — **runbook** для self-hosted `telegram-bot-api` на Hetzner CX23 (`178.104.228.43`): операции, мониторинг, rollback, rotation. См. ADR-015.
 - `agent_docs/guides/archiving-and-temp.md` — архивация и временные файлы.
 
 ## Шаблоны
