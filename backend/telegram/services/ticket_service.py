@@ -26,7 +26,12 @@ logger = logging.getLogger(__name__)
 # Match storage convention of legacy backend/notifications/telegram.py.
 # Task 13 removes the legacy module; this constant becomes the canonical path.
 _UPLOAD_DIR = Path("/app/data/attachments")
-_MAX_TG_FILE_SIZE = 20 * 1024 * 1024  # 20 MB — Telegram bot API hard limit.
+# Application-level cap to protect disk/DoS. Cloud api.telegram.org enforces
+# its own 20 MB hard limit on getFile; self-hosted telegram-bot-api with
+# `--local` supports up to 2 GB. We cap at 100 MB across both.
+_MAX_TG_FILE_SIZE = 100 * 1024 * 1024
+# Absolute filesystem prefix returned by getFile in self-hosted `--local` mode.
+_TG_LOCAL_PATH_PREFIX = "/var/lib/telegram-bot-api/"
 
 
 async def count_active_tickets(user_id: str) -> int:
@@ -45,14 +50,21 @@ async def count_active_tickets(user_id: str) -> int:
 
 
 async def _download_tg_file(file_id: str) -> tuple[bytes, str] | None:
-    """Download a file from Telegram by file_id. Returns (bytes, filename) or None."""
+    """Download a file from Telegram by file_id. Returns (bytes, filename) or None.
+
+    Supports both cloud api.telegram.org and self-hosted telegram-bot-api.
+    In `--local` mode getFile returns an absolute filesystem path
+    (``/var/lib/telegram-bot-api/...``); the bytes are fetched over HTTP from
+    ``telegram_file_api_base`` (e.g. Caddy file_server mapped to that dir).
+    """
     token = getattr(settings, "telegram_bot_token", None) or ""
     if not token:
         return None
+    api_base = (settings.telegram_api_base or "https://api.telegram.org").rstrip("/")
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=120) as client:
             r = await client.get(
-                f"https://api.telegram.org/bot{token}/getFile",
+                f"{api_base}/bot{token}/getFile",
                 params={"file_id": file_id},
             )
             if r.status_code != 200:
@@ -63,7 +75,18 @@ async def _download_tg_file(file_id: str) -> tuple[bytes, str] | None:
             file_path = payload["result"]["file_path"]
             filename = Path(file_path).name
 
-            fr = await client.get(f"https://api.telegram.org/file/bot{token}/{file_path}")
+            if file_path.startswith(_TG_LOCAL_PATH_PREFIX):
+                # Self-hosted `--local`: HTTP-download from file_api_base.
+                file_base = (
+                    settings.telegram_file_api_base or f"{api_base}/tgfiles"
+                ).rstrip("/")
+                relative = file_path[len(_TG_LOCAL_PATH_PREFIX):]
+                file_url = f"{file_base}/{relative}"
+            else:
+                # Cloud Bot API: /file/bot<token>/<path>.
+                file_url = f"{api_base}/file/bot{token}/{file_path}"
+
+            fr = await client.get(file_url)
             if fr.status_code != 200:
                 return None
             return fr.content, filename

@@ -42,10 +42,16 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_webhook_secret: str = ""
     # Override Bot API base URL (e.g. reverse-proxy for hosts where
-    # api.telegram.org is unreachable). Empty → use default api.telegram.org.
+    # api.telegram.org is unreachable, or self-hosted telegram-bot-api).
+    # Empty → use default api.telegram.org.
     # Expected format: scheme://host[:port][/prefix] — aiogram appends
     # `/bot{token}/{method}` and `/file/bot{token}/{path}` itself.
     telegram_api_base: str = ""
+    # File download base for self-hosted telegram-bot-api in --local mode.
+    # In --local mode getFile returns absolute filesystem paths like
+    # `/var/lib/telegram-bot-api/...`; this base replaces that prefix for HTTP
+    # download (e.g. Caddy file_server). Empty → build from telegram_api_base.
+    telegram_file_api_base: str = ""
 
     # Bitrix24 CRM
     bitrix24_webhook_url: str = ""
