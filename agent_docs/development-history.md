@@ -9,6 +9,26 @@
 
 ## Записи
 
+### 2026-04-24 — chat-loader: опции позиционирования AI-виджета (устранение перекрытия кнопок сайта)
+
+**Проблема:** жители ЖК не могли нажать «СОХРАНИТЬ» на формах клиентских сайтов — круглая кнопка AI-помощника в правом нижнем углу перекрывала её (скриншот от пользователя). Loader `frontend/public/chat-loader.js` поддерживал только `data-host` и `data-z-index`, позиции `right:24px; bottom:24px` были жёстко зашиты в CSS.
+
+**Что сделано:** расширен `chat-loader.js` четырьмя новыми data-атрибутами: `data-position` (`bottom-right` | `bottom-left` | `top-right` | `top-left`), `data-offset-x`, `data-offset-y`, `data-frame-gap`. CSS переведён на динамическую генерацию через mapping угол→пара `{h, v}`; кнопка и iframe всегда привязаны к одному углу. Mobile bottom-sheet (`@media ≤480px`) теперь применяется только для `bottom-*` позиций. Обратная совместимость: без атрибутов поведение идентично прежнему (24/24 + 16/100).
+
+**Workaround клиенту со скриншота:** `data-offset-y="80"` в `<script>` — кнопка поднимется над sticky-футером с «Отмена/Сохранить».
+
+**Верификация (Playwright, локальный http.server):** 4 тестовых HTML-страницы — default, offset-y=80, bottom-left, top-right + mobile 375×667. Для offset-y=80 проверен overlap с кнопкой «СОХРАНИТЬ» (`false`, зазор 16px). Для top-right на mobile подтверждено отсутствие bottom-sheet (bottom: auto, все 4 угла border-radius:20px).
+
+**Документация:** `docs/embed-ai-chat-guide.md` — расширена таблица параметров (+4 строки), добавлен раздел диагностики «Виджет перекрывает кнопки сайта» с тремя решениями, уточнён FAQ про два чата.
+
+**Не в этом релизе:**
+- `data-hide-on-url` / скрытие виджета по селекторам страниц — откладывается до конкретного запроса
+- программное API `window.PASS24Chat.open()` — как FAQ обещает
+
+**Файлы:** `frontend/public/chat-loader.js`, `docs/embed-ai-chat-guide.md`.
+
+---
+
 ### 2026-04-24 — self-hosted telegram-bot-api для вложений >20 МБ (гибридный режим, без downtime)
 
 **Что сделано:** развёрнут отдельный VPS на Hetzner CX23 Nuremberg (`178.104.228.43`) с Docker-контейнером `aiogram/telegram-bot-api:latest` в режиме `--local` (поднимает лимит `getFile` с 20 МБ до 2 ГБ). Caddy `:80` с IP-allowlist проксирует запросы и отдаёт файлы из `/var/lib/telegram-bot-api`. Код pass24-servicedesk обновлён (PR #22): `_download_tg_file` параметризован по `settings.telegram_api_base` + новый `settings.telegram_file_api_base`; бранчинг для `--local` absolute-paths; `_MAX_TG_FILE_SIZE` 20→100 МБ. Удалена iCloud-конфликтная копия `ticket_service 2.py`, паттерн в `.gitignore`.

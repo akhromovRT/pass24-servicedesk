@@ -2,7 +2,7 @@
  * PASS24 AI-chat widget loader.
  *
  * Встраиваемый скрипт для сторонних сайтов PASS24. Добавляет плавающую
- * кнопку AI-помощника в правый нижний угол, открывает чат в iframe с
+ * кнопку AI-помощника, открывает чат в iframe с
  * https://support.pass24pro.ru/chat-widget.
  *
  * Использование на сайте клиента — одна строка перед </body>:
@@ -12,8 +12,12 @@
  * создания заявок идут из iframe в домен support.pass24pro.ru (same-origin).
  *
  * Опциональные data-атрибуты на теге <script>:
- *   data-host     — переопределить хост виджета (default: origin у script.src)
- *   data-z-index  — z-index кнопки и iframe (default: 2147483000)
+ *   data-host       — переопределить хост виджета (default: origin у script.src)
+ *   data-z-index    — z-index кнопки и iframe (default: 2147483000)
+ *   data-position   — угол: bottom-right (default) | bottom-left | top-right | top-left
+ *   data-offset-x   — отступ по горизонтали от края, px (default: 24)
+ *   data-offset-y   — отступ по вертикали от края, px (default: 24)
+ *   data-frame-gap  — зазор между кнопкой и окном iframe по вертикали, px (default: 76)
  */
 (function () {
   'use strict';
@@ -27,11 +31,36 @@
     return scripts[scripts.length - 1];
   })();
 
+  var ds = (currentScript && currentScript.dataset) || {};
+
   var scriptSrc = (currentScript && currentScript.src) || '';
   var defaultHost = scriptSrc ? new URL(scriptSrc).origin : 'https://support.pass24pro.ru';
-  var host = (currentScript && currentScript.dataset.host) || defaultHost;
-  var zIndex = parseInt((currentScript && currentScript.dataset.zIndex) || '2147483000', 10);
+  var host = ds.host || defaultHost;
+  var zIndex = parseInt(ds.zIndex || '2147483000', 10);
   var widgetUrl = host.replace(/\/$/, '') + '/chat-widget';
+
+  var POSITIONS = {
+    'bottom-right': { h: 'right', v: 'bottom' },
+    'bottom-left':  { h: 'left',  v: 'bottom' },
+    'top-right':    { h: 'right', v: 'top' },
+    'top-left':     { h: 'left',  v: 'top' }
+  };
+  var position = POSITIONS[ds.position] ? ds.position : 'bottom-right';
+  var edges = POSITIONS[position];
+
+  function toInt(value, fallback) {
+    var parsed = parseInt(value, 10);
+    return (isFinite(parsed) && parsed >= 0) ? parsed : fallback;
+  }
+  var offsetX = toInt(ds.offsetX, 24);
+  var offsetY = toInt(ds.offsetY, 24);
+  var frameGap = toInt(ds.frameGap, 76);
+
+  // iframe смещён на 8px внутрь по горизонтали (визуальный зазор, как в исходной раскладке)
+  // и на offsetY + frameGap по вертикали — кнопка остаётся видна рядом с окном.
+  var frameOffsetX = Math.max(0, offsetX - 8);
+  var frameOffsetY = offsetY + frameGap;
+  var isBottom = edges.v === 'bottom';
 
   // --- Стили (инжектируются один раз) ---------------------------------------
   var styleId = 'pass24-chat-loader-style';
@@ -39,20 +68,27 @@
     var style = document.createElement('style');
     style.id = styleId;
     // textContent на элементе <style> — безопасно, это не парсится как HTML.
-    style.textContent = [
-      '.pass24-chat-btn{position:fixed;right:24px;bottom:24px;width:60px;height:60px;border-radius:50%;',
+    var css = [
+      '.pass24-chat-btn{position:fixed;', edges.h, ':', offsetX, 'px;', edges.v, ':', offsetY, 'px;',
+      'width:60px;height:60px;border-radius:50%;',
       'background:#0f172a;color:#fff;border:0;cursor:pointer;box-shadow:0 10px 30px -6px rgba(15,23,42,0.4);',
       'display:flex;align-items:center;justify-content:center;transition:transform 0.15s,background 0.15s;',
       'font-family:-apple-system,BlinkMacSystemFont,sans-serif;}',
       '.pass24-chat-btn:hover{transform:scale(1.05);background:#1e293b;}',
       '.pass24-chat-btn:focus{outline:2px solid #6366f1;outline-offset:3px;}',
-      '.pass24-chat-frame{position:fixed;right:16px;bottom:100px;width:400px;max-width:calc(100vw - 32px);',
-      'height:620px;max-height:calc(100vh - 120px);border:0;border-radius:20px;background:transparent;',
+      '.pass24-chat-frame{position:fixed;', edges.h, ':', frameOffsetX, 'px;', edges.v, ':', frameOffsetY, 'px;',
+      'width:400px;max-width:calc(100vw - 32px);',
+      'height:620px;max-height:calc(100vh - ', (frameOffsetY + 20), 'px);',
+      'border:0;border-radius:20px;background:transparent;',
       'box-shadow:0 24px 48px -12px rgba(15,23,42,0.25);display:none;color-scheme:light;}',
-      '.pass24-chat-frame.is-open{display:block;}',
-      '@media (max-width:480px){.pass24-chat-frame{right:0;left:0;bottom:0;width:100%;max-width:100%;',
-      'height:85vh;max-height:85vh;border-radius:20px 20px 0 0;}}',
+      '.pass24-chat-frame.is-open{display:block;}'
     ].join('');
+    // Bottom-sheet на мобильных — только для bottom-* позиций (для top-* это визуально бессмысленно).
+    if (isBottom) {
+      css += '@media (max-width:480px){.pass24-chat-frame{right:0;left:0;bottom:0;width:100%;max-width:100%;'
+        + 'height:85vh;max-height:85vh;border-radius:20px 20px 0 0;}}';
+    }
+    style.textContent = css;
     document.head.appendChild(style);
   }
 
