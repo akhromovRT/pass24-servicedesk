@@ -17,6 +17,7 @@ const props = defineProps<{
   objectAddress: string | null
   accessPoint: string | null
   customerId: string | null
+  customerIsPermanent?: boolean | null
   ticketId: string
   isStaff: boolean
 }>()
@@ -100,8 +101,15 @@ async function save() {
         <span class="info-label">Клиент / Объект</span>
         <span class="info-value">
           {{ objectName }}
-          <span v-if="customerId" class="linked-badge" title="Привязан к постоянному клиенту">
+          <span v-if="customerId" class="linked-badge" title="Привязан к компании-клиенту из справочника">
             <i class="pi pi-link" />
+          </span>
+          <span
+            v-if="customerIsPermanent"
+            class="permanent-badge"
+            title="Постоянный клиент (синхронизирован из Bitrix24)"
+          >
+            <i class="pi pi-star-fill" /> Постоянный
           </span>
         </span>
       </div>
@@ -205,6 +213,25 @@ async function save() {
 .linked-badge {
   color: #10b981;
   font-size: 0.75rem;
+}
+
+.permanent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: #b45309;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 999px;
+  padding: 2px 8px;
+  line-height: 1.2;
+}
+
+.permanent-badge .pi {
+  font-size: 0.625rem;
+  color: #d97706;
 }
 
 .info-empty {

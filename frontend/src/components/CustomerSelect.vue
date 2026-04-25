@@ -21,6 +21,7 @@ interface CustomerOption {
   name: string
   address: string
   phone: string
+  is_permanent_client?: boolean
 }
 
 interface DaDataResult {
@@ -73,7 +74,11 @@ async function search(event: { query: string }) {
     const results = await api.get<CustomerOption[]>(
       `/customers/search?q=${encodeURIComponent(event.query)}`
     )
-    suggestions.value = results
+    // Постоянные клиенты — наверх (бэкенд уже сортирует так же,
+    // дублируем на фронте на случай если порядок изменится).
+    suggestions.value = [...results].sort((a, b) =>
+      Number(b.is_permanent_client ?? false) - Number(a.is_permanent_client ?? false)
+    )
 
     // Если среди постоянных клиентов мало/нет результатов и запрос >= 3 символов
     // показываем кнопку «Искать в DaData»
@@ -200,7 +205,16 @@ const displayName = computed(() =>
       >
         <template #option="{ option }">
           <div class="option-item">
-            <div class="option-name">{{ option.name }}</div>
+            <div class="option-name">
+              {{ option.name }}
+              <span
+                v-if="option.is_permanent_client"
+                class="option-permanent-badge"
+                title="Постоянный клиент (синхронизирован из Bitrix24)"
+              >
+                <i class="pi pi-star-fill" /> Постоянный
+              </span>
+            </div>
             <div class="option-meta">ИНН {{ option.inn }}<span v-if="option.address"> · {{ option.address.slice(0, 60) }}</span></div>
           </div>
         </template>
@@ -303,7 +317,17 @@ const displayName = computed(() =>
 .customer-autocomplete { flex: 1; }
 
 .option-item { padding: 4px 0; }
-.option-name { font-weight: 500; color: #1e293b; font-size: 14px; }
+.option-name {
+  font-weight: 500; color: #1e293b; font-size: 14px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.option-permanent-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 500; color: #b45309;
+  background: #fef3c7; border: 1px solid #fde68a;
+  border-radius: 999px; padding: 2px 8px; line-height: 1.2;
+}
+.option-permanent-badge .pi { font-size: 10px; color: #d97706; }
 .option-meta { font-size: 12px; color: #64748b; margin-top: 2px; }
 .option-empty { font-size: 13px; color: #94a3b8; padding: 8px; }
 
