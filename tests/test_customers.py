@@ -165,12 +165,12 @@ async def _create_admin(client: AsyncClient) -> tuple[str, dict]:
     return email, {"Authorization": f"Bearer {token}"}
 
 
-async def _create_customer_in_db(inn: str, name: str) -> str:
+async def _create_customer_in_db(inn: str, name: str, is_permanent: bool = False) -> str:
     """Создаёт Customer напрямую в БД, возвращает id."""
     from backend.database import async_session_factory
     from backend.customers.models import Customer
     async with async_session_factory() as session:
-        customer = Customer(inn=inn, name=name)
+        customer = Customer(inn=inn, name=name, is_permanent_client=is_permanent)
         session.add(customer)
         await session.commit()
         await session.refresh(customer)
@@ -188,6 +188,27 @@ async def _link_user_to_customer(email: str, customer_id: str):
         user.customer_id = customer_id
         session.add(user)
         await session.commit()
+
+
+async def _create_ticket_in_db(creator_email: str, title: str, customer_id: str | None = None) -> str:
+    """Создаёт Ticket напрямую в БД от имени уже существующего пользователя, возвращает id."""
+    from backend.database import async_session_factory
+    from backend.auth.models import User
+    from backend.tickets.models import Ticket
+    from sqlmodel import select
+    async with async_session_factory() as session:
+        ur = await session.execute(select(User).where(User.email == creator_email))
+        user = ur.scalar_one()
+        ticket = Ticket(
+            creator_id=str(user.id),
+            title=title,
+            description="test",
+            customer_id=customer_id,
+        )
+        session.add(ticket)
+        await session.commit()
+        await session.refresh(ticket)
+        return ticket.id
 
 
 # =====================================================================
@@ -282,6 +303,125 @@ class TestCustomerSearch:
         r = await client.get("/customers/search", params={"q": "НЕСУЩЕСТВУЮЩЕЕ999"}, headers=agent_headers)
         assert r.status_code == 200
         assert r.json() == []
+
+    async def test_search_returns_is_permanent_client_field(self, client):
+        """Каждый элемент /customers/search содержит флаг is_permanent_client."""
+        await _create_customer_in_db("TEST1000000010", "ООО Постоянный", is_permanent=True)
+        await _create_customer_in_db("TEST1000000011", "ООО Обычный")
+        _, agent_headers = await _create_agent(client)
+
+        r = await client.get(
+            "/customers/search", params={"q": "TEST10000000"}, headers=agent_headers
+        )
+        assert r.status_code == 200
+        data = r.json()
+        by_inn = {c["inn"]: c for c in data}
+        assert "TEST1000000010" in by_inn and by_inn["TEST1000000010"]["is_permanent_client"] is True
+        assert "TEST1000000011" in by_inn and by_inn["TEST1000000011"]["is_permanent_client"] is False
+
+    async def test_search_permanent_only_filters_non_permanent(self, client):
+        """permanent_only=true возвращает только постоянных клиентов."""
+        await _create_customer_in_db("TEST1000000020", "ООО Постоянный А", is_permanent=True)
+        await _create_customer_in_db("TEST1000000021", "ООО Обычный А")
+        _, agent_headers = await _create_agent(client)
+
+        r = await client.get(
+            "/customers/search",
+            params={"q": "TEST10000000", "permanent_only": "true"},
+            headers=agent_headers,
+        )
+        assert r.status_code == 200
+        data = r.json()
+        inns = [c["inn"] for c in data]
+        assert "TEST1000000020" in inns
+        assert "TEST1000000021" not in inns
+        assert all(c["is_permanent_client"] is True for c in data)
+
+    async def test_search_orders_permanent_first(self, client):
+        """Постоянные клиенты сортируются в начало выдачи."""
+        # Имена подобраны так, чтобы по алфавиту обычный шёл раньше постоянного
+        await _create_customer_in_db("TEST1000000030", "Альфа Обычная", is_permanent=False)
+        await _create_customer_in_db("TEST1000000031", "Бета Постоянная", is_permanent=True)
+        _, agent_headers = await _create_agent(client)
+
+        r = await client.get(
+            "/customers/search", params={"q": "TEST10000000"}, headers=agent_headers
+        )
+        assert r.status_code == 200
+        data = r.json()
+        # Среди наших двух тестовых записей — постоянная должна идти раньше обычной
+        inns_order = [c["inn"] for c in data if c["inn"] in ("TEST1000000030", "TEST1000000031")]
+        assert inns_order == ["TEST1000000031", "TEST1000000030"]
+
+
+class TestTicketsCustomerPermanent:
+    """Связь тикетов с постоянными клиентами: фильтр и поле в TicketRead."""
+
+    async def test_ticket_read_customer_is_permanent_true(self, client):
+        cid = await _create_customer_in_db("TEST1700000001", "ООО Постоянный Т", is_permanent=True)
+        agent_email, agent_headers = await _create_agent(client)
+        tid = await _create_ticket_in_db(agent_email, "Тикет с пост. клиентом", customer_id=cid)
+
+        r = await client.get(f"/tickets/{tid}", headers=agent_headers)
+        assert r.status_code == 200
+        data = r.json()
+        assert data["customer_id"] == cid
+        assert data["customer_is_permanent"] is True
+
+    async def test_ticket_read_customer_is_permanent_false(self, client):
+        cid = await _create_customer_in_db("TEST1700000002", "ООО Обычный Т", is_permanent=False)
+        agent_email, agent_headers = await _create_agent(client)
+        tid = await _create_ticket_in_db(agent_email, "Тикет с обычным клиентом", customer_id=cid)
+
+        r = await client.get(f"/tickets/{tid}", headers=agent_headers)
+        assert r.status_code == 200
+        assert r.json()["customer_is_permanent"] is False
+
+    async def test_ticket_read_customer_is_permanent_null_when_no_customer(self, client):
+        agent_email, agent_headers = await _create_agent(client)
+        tid = await _create_ticket_in_db(agent_email, "Тикет без клиента", customer_id=None)
+
+        r = await client.get(f"/tickets/{tid}", headers=agent_headers)
+        assert r.status_code == 200
+        data = r.json()
+        assert data["customer_id"] is None
+        assert data["customer_is_permanent"] is None
+
+    async def test_list_tickets_customer_only_permanent(self, client):
+        perm_id = await _create_customer_in_db("TEST1700000010", "ООО Перм лист", is_permanent=True)
+        ord_id = await _create_customer_in_db("TEST1700000011", "ООО Обычн лист", is_permanent=False)
+        agent_email, agent_headers = await _create_agent(client)
+        t_perm = await _create_ticket_in_db(agent_email, "From permanent", customer_id=perm_id)
+        t_ord = await _create_ticket_in_db(agent_email, "From ordinary", customer_id=ord_id)
+
+        r = await client.get(
+            "/tickets/",
+            params={"customer_only_permanent": "true", "per_page": 100, "view": "all"},
+            headers=agent_headers,
+        )
+        assert r.status_code == 200
+        ids = [t["id"] for t in r.json()["items"]]
+        assert t_perm in ids
+        assert t_ord not in ids
+
+
+class TestObjectsSuggest:
+    """Эндпоинт /tickets/objects/suggest (постоянные клиенты)."""
+
+    async def test_suggest_returns_only_permanent(self, client):
+        await _create_customer_in_db("TEST1500000001", "ООО Перм", is_permanent=True)
+        await _create_customer_in_db("TEST1500000002", "ООО НеПерм", is_permanent=False)
+        _, agent_headers = await _create_agent(client)
+
+        r = await client.get(
+            "/tickets/objects/suggest", params={"q": "TEST15000000"}, headers=agent_headers
+        )
+        assert r.status_code == 200
+        data = r.json()
+        names = [c["name"] for c in data]
+        assert "ООО Перм" in names
+        assert "ООО НеПерм" not in names
+        assert all(c["is_permanent_client"] is True for c in data)
 
 
 # =====================================================================

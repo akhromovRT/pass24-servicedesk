@@ -82,3 +82,49 @@ class TicketObjectUpdate(BaseModel):
 - `POST /customers/sync` — оставляем для ручной синхронизации
 - Контакты (`sync_contacts()`) — продолжают работать как раньше
 - Текстовые поля `object_address`, `access_point` — остаются для ручных уточнений
+
+---
+
+## Changelog
+
+### 2026-04-25 — расширение фичи в Tickets (рассинхрон UI устранён, бейдж и фильтр добавлены)
+
+Что доделано относительно изначальной спеки:
+
+**API:**
+- `CustomerRead` и `GET /customers/search` теперь возвращают `is_permanent_client: boolean`. Постоянные сортируются в начало выдачи.
+- `GET /customers/search` принимает `permanent_only: boolean` — для случаев, когда нужно ограничить выборку только постоянными.
+- `GET /tickets/` принимает новые query: `customer_id` (фильтр по конкретной компании) и `customer_only_permanent` (только заявки от постоянных клиентов).
+- `GET /tickets/{id}` (`TicketRead`) дополнен полем `customer_is_permanent: boolean | null`.
+- `GET /tickets/objects/suggest` теперь возвращает `is_permanent_client` в каждом элементе (всегда `true` благодаря фильтру эндпоинта).
+
+**Backend (`backend/tickets/router.py`):**
+- Добавлены хелперы `_resolve_customer_permanent_map`, `ticket_to_read`, `tickets_to_read` — батч-резолв `customer_is_permanent` одним запросом (нет ORM relationship `Ticket.customer`, поэтому через подзапрос).
+- Все 10 endpoint'ов, возвращающих `TicketRead`, переведены на эти хелперы (create, list, get, status update, priority, assignment, object, merge, apply-macro, satisfaction).
+
+**Frontend:**
+- `CustomerSelect.vue` — бейдж «Постоянный» в карточке опции автокомплита, сортировка постоянных в начало.
+- `TicketObjectInfo.vue` — новый prop `customerIsPermanent` и тот же бейдж рядом с именем клиента; пробрасывается из `TicketSidebar.vue`.
+- `TicketsPage.vue` — тогл «Постоянные клиенты / Все клиенты» в шапке (только для staff) и бейдж в meta-строке карточки.
+- `stores/tickets.ts` — `TicketFilters` дополнен `customer_id` и `customer_only_permanent`, прокидываются в API.
+- `types/index.ts` — `Ticket.customer_is_permanent: boolean | null`.
+
+**Тесты (`tests/test_customers.py`):**
+- Возврат `is_permanent_client` в `/customers/search`.
+- `permanent_only=true` фильтрует не-постоянных.
+- Сортировка постоянных в начало выдачи.
+- `/tickets/objects/suggest` возвращает только постоянных.
+- `customer_is_permanent` в `TicketRead`: true / false / null.
+- `customer_only_permanent` в `GET /tickets/`.
+
+**Документация:**
+- Новый гид: `agent_docs/guides/permanent-clients.md` — что такое постоянный клиент, где видно, как фильтровать, API, FAQ.
+- Обновлён `agent_docs/guides/support-operations.md` (раздел про фильтры и маркеры в строке заявки).
+- В `HelpModal.vue` (встроенное руководство агента) добавлен раздел «🌟 Постоянные клиенты».
+- Запись в `agent_docs/development-history.md` от 2026-04-25.
+
+**Не вошло (оставлено на потом):**
+- ORM relationship `Ticket.customer` (вместо батч-резолва).
+- Отдельный селектор компании в фильтрах списка тикетов (сейчас только через API `customer_id`).
+- SLA-приоритизация для постоянных клиентов.
+- Верификация sync на проде (POST `/customers/sync` + SQL + сверка имени `UF_CRM_PERMANENT_CLIENT` через `crm.company.fields`).

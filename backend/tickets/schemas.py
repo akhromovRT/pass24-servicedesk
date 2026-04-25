@@ -184,6 +184,9 @@ class TicketRead(BaseModel):
     implementation_project_id: Optional[str] = None
     is_implementation_blocker: bool = False
     customer_id: Optional[str] = None
+    # Резолвится в роутере: True/False если customer_id привязан к Customer,
+    # None — если customer_id не задан или Customer не найден.
+    customer_is_permanent: Optional[bool] = None
 
     events: List[EventRead] = []
     comments: List[CommentRead] = []

@@ -32,6 +32,7 @@ const activeView = ref<string>('open')
 const activeSavedViewId = ref<string | null>(null)
 const statusFilter = ref<string[]>([])
 const categoryFilter = ref<string[]>([])
+const onlyPermanent = ref(false)
 const searchQuery = ref('')
 const showAdvancedFilters = ref(false)
 const sortField = ref<string>('created_desc')
@@ -239,6 +240,7 @@ async function loadTickets(p?: number) {
     await store.fetchTickets(p, {
       status: statusFilter.value.length ? statusFilter.value : undefined,
       category: categoryFilter.value.length ? categoryFilter.value : undefined,
+      customer_only_permanent: onlyPermanent.value || undefined,
       q: searchQuery.value.trim() || undefined,
       view: activeView.value !== 'all' ? activeView.value : undefined,
       sort: sortField.value !== 'default' ? sortField.value : undefined,
@@ -463,11 +465,21 @@ onMounted(() => {
         @change="loadTickets(1)"
       />
       <Button
-        v-if="statusFilter.length || categoryFilter.length"
+        v-if="isStaff"
+        :label="onlyPermanent ? 'Постоянные клиенты' : 'Все клиенты'"
+        :icon="onlyPermanent ? 'pi pi-star-fill' : 'pi pi-star'"
+        :severity="onlyPermanent ? 'warning' : 'secondary'"
+        :outlined="!onlyPermanent"
+        size="small"
+        title="Показывать только заявки от постоянных клиентов (синхронизированы из Bitrix24)"
+        @click="onlyPermanent = !onlyPermanent; loadTickets(1)"
+      />
+      <Button
+        v-if="statusFilter.length || categoryFilter.length || onlyPermanent"
         label="Сбросить"
         icon="pi pi-times"
         text severity="secondary" size="small"
-        @click="statusFilter = []; categoryFilter = []; loadTickets(1)"
+        @click="statusFilter = []; categoryFilter = []; onlyPermanent = false; loadTickets(1)"
       />
     </div>
 
@@ -480,9 +492,9 @@ onMounted(() => {
       <i class="pi pi-inbox" style="font-size: 40px; color: #cbd5e1; margin-bottom: 12px;" />
       <p>{{ searchQuery || statusFilter.length || categoryFilter.length ? 'Ничего не найдено' : 'Нет заявок' }}</p>
       <Button
-        v-if="searchQuery || statusFilter.length || categoryFilter.length"
+        v-if="searchQuery || statusFilter.length || categoryFilter.length || onlyPermanent"
         label="Сбросить фильтры" text severity="secondary" size="small"
-        @click="searchQuery = ''; statusFilter = []; categoryFilter = []; activeView = 'all'; loadTickets(1)"
+        @click="searchQuery = ''; statusFilter = []; categoryFilter = []; onlyPermanent = false; activeView = 'all'; loadTickets(1)"
       />
       <Button v-else label="Создать заявку" icon="pi pi-plus" @click="router.push('/tickets/create')" />
     </div>
@@ -517,6 +529,12 @@ onMounted(() => {
             <span v-if="isStaff && (ticket.contact_name || ticket.contact_email)" class="meta-item">
               <i class="pi pi-user" />{{ ticket.contact_name || ticket.contact_email }}
             </span>
+            <template v-if="isStaff && ticket.customer_is_permanent">
+              <span class="meta-sep">·</span>
+              <span class="meta-item meta-permanent" title="Постоянный клиент (Bitrix24)">
+                <i class="pi pi-star-fill" />Постоянный
+              </span>
+            </template>
             <template v-if="ticket.last_public_reply_by && isActiveStatus(ticket.status)">
               <span class="meta-sep">·</span>
               <span
@@ -772,6 +790,8 @@ onMounted(() => {
 /* Индикатор «кто ответил последним» в списке активных тикетов */
 .meta-item.reply-by-client { color: #2563eb; font-weight: 600; }
 .meta-item.reply-by-staff { color: #64748b; font-weight: 500; }
+.meta-item.meta-permanent { color: #b45309; font-weight: 600; }
+.meta-item.meta-permanent i { color: #d97706; }
 
 .row-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
 
