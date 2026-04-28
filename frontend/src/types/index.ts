@@ -53,6 +53,7 @@ export interface Ticket {
   contact_phone: string | null
   company: string | null
   customer_id: string | null
+  customer_is_permanent: boolean | null
   device_type: string | null
   app_version: string | null
   error_message: string | null
