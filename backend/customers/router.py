@@ -28,6 +28,7 @@ class CustomerRead(BaseModel):
     email: Optional[str] = None
     industry: Optional[str] = None
     is_active: bool
+    is_permanent_client: bool = False
     synced_at: Optional[datetime] = None
     created_at: datetime
 
@@ -85,19 +86,34 @@ async def list_customers(
 @router.get("/search")
 async def search_customers(
     q: str = Query(..., min_length=1, description="Поиск по названию или ИНН"),
+    permanent_only: bool = Query(default=False, description="Только постоянные клиенты"),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    """Autocomplete поиск по названию/ИНН (для dropdown)."""
+    """Autocomplete поиск по названию/ИНН (для dropdown).
+
+    Постоянные клиенты сортируются в начало выдачи. Параметр permanent_only
+    ограничивает выборку только теми, у кого is_permanent_client=true.
+    """
     pattern = f"%{q.strip()}%"
-    r = await session.execute(
+    query = (
         select(Customer)
         .where(Customer.is_active == True, Customer.name.ilike(pattern) | Customer.inn.ilike(pattern))  # noqa: E712
-        .order_by(Customer.name)
-        .limit(15)
     )
+    if permanent_only:
+        query = query.where(Customer.is_permanent_client == True)  # noqa: E712
+    # Постоянные клиенты — наверх, дальше по алфавиту
+    query = query.order_by(Customer.is_permanent_client.desc(), Customer.name).limit(15)
+    r = await session.execute(query)
     return [
-        {"id": c.id, "inn": c.inn, "name": c.name, "address": c.address or "", "phone": c.phone or ""}
+        {
+            "id": c.id,
+            "inn": c.inn,
+            "name": c.name,
+            "address": c.address or "",
+            "phone": c.phone or "",
+            "is_permanent_client": c.is_permanent_client,
+        }
         for c in r.scalars()
     ]
 

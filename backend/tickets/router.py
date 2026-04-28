@@ -63,6 +63,49 @@ def _ticket_load_options():
         selectinload(Ticket.attachments),  # type: ignore[arg-type]
     ]
 
+
+async def _resolve_customer_permanent_map(
+    session: AsyncSession, tickets: list[Ticket] | Ticket | None
+) -> dict[str, bool]:
+    """Возвращает map customer_id → is_permanent_client одним запросом.
+
+    `Ticket.customer_id` хранится как обычное поле без ORM relationship
+    (миграция 012 завела FK на уровне БД, но связь в SQLModel не объявлена),
+    поэтому подгрузить флаг через selectinload нельзя — резолвим вручную.
+    """
+    if tickets is None:
+        return {}
+    items = tickets if isinstance(tickets, list) else [tickets]
+    customer_ids = {t.customer_id for t in items if t.customer_id}
+    if not customer_ids:
+        return {}
+    from backend.customers.models import Customer
+    r = await session.execute(
+        select(Customer.id, Customer.is_permanent_client).where(Customer.id.in_(customer_ids))
+    )
+    return {row[0]: bool(row[1]) for row in r.all()}
+
+
+def _ticket_to_read(ticket: Ticket, permanent_map: dict[str, bool]) -> TicketRead:
+    """TicketRead.model_validate(ticket) + customer_is_permanent из map."""
+    data = TicketRead.model_validate(ticket)
+    if ticket.customer_id and ticket.customer_id in permanent_map:
+        data.customer_is_permanent = permanent_map[ticket.customer_id]
+    return data
+
+
+async def ticket_to_read(session: AsyncSession, ticket: Ticket) -> TicketRead:
+    """Сконвертировать Ticket → TicketRead с подгрузкой customer_is_permanent."""
+    pmap = await _resolve_customer_permanent_map(session, ticket)
+    return _ticket_to_read(ticket, pmap)
+
+
+async def tickets_to_read(session: AsyncSession, tickets: list[Ticket]) -> list[TicketRead]:
+    """Сконвертировать list[Ticket] → list[TicketRead] одним запросом для customer-флагов."""
+    pmap = await _resolve_customer_permanent_map(session, tickets)
+    return [_ticket_to_read(t, pmap) for t in tickets]
+
+
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 
@@ -372,7 +415,7 @@ async def create_ticket(
         .options(*_ticket_load_options())
     )
     ticket = result.scalar_one()
-    return TicketRead.model_validate(ticket)
+    return await ticket_to_read(session, ticket)
 
 
 @router.get("/", response_model=TicketListResponse)
@@ -387,6 +430,10 @@ async def list_tickets(
     ticket_type: Optional[str] = Query(default=None, alias="type", description="Фильтр по типу (через запятую)"),
     creator_id: Optional[str] = Query(default=None, description="Фильтр по создателю"),
     my: Optional[bool] = Query(default=None, description="Только мои тикеты"),
+    customer_id: Optional[str] = Query(default=None, description="Фильтр по конкретной компании-клиенту"),
+    customer_only_permanent: bool = Query(
+        default=False, description="Только тикеты от постоянных клиентов из Bitrix24"
+    ),
     q: Optional[str] = Query(default=None, description="Поиск по теме, описанию, email, объекту"),
     view: Optional[str] = Query(default=None, description="Saved view: open/overdue/urgent/waiting/closed"),
     sort: Optional[str] = Query(default=None, description="Сортировка: created_desc, created_asc, updated_desc, priority_desc"),
@@ -448,6 +495,17 @@ async def list_tickets(
     if my:
         query = query.where(Ticket.creator_id == str(current_user.id))
         count_query = count_query.where(Ticket.creator_id == str(current_user.id))
+    if customer_id:
+        query = query.where(Ticket.customer_id == customer_id)
+        count_query = count_query.where(Ticket.customer_id == customer_id)
+    if customer_only_permanent:
+        from backend.customers.models import Customer
+        permanent_ids = select(Customer.id).where(
+            Customer.is_permanent_client == True,  # noqa: E712
+            Customer.is_active == True,  # noqa: E712
+        )
+        query = query.where(Ticket.customer_id.in_(permanent_ids))
+        count_query = count_query.where(Ticket.customer_id.in_(permanent_ids))
 
     # Saved views (пресеты)
     from datetime import timedelta
@@ -555,8 +613,9 @@ async def list_tickets(
     result = await session.execute(query)
     tickets = result.scalars().all()
 
+    items = await tickets_to_read(session, list(tickets))
     return TicketListResponse(
-        items=[TicketRead.model_validate(t) for t in tickets],
+        items=items,
         total=total,
         page=page,
         per_page=per_page,
@@ -718,7 +777,13 @@ async def suggest_objects(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    """Автокомплит по постоянным клиентам из справочника (синхронизация с Bitrix24)."""
+    """Автокомплит по постоянным клиентам из справочника (синхронизация с Bitrix24).
+
+    Тонкая обёртка над `/customers/search?permanent_only=true`: единый источник
+    правды о клиентах — справочник `customers`. Эндпоинт сохранён для обратной
+    совместимости и для пустых запросов (`q=""`), которые `/customers/search`
+    не поддерживает.
+    """
     from backend.customers.models import Customer
 
     query = select(Customer).where(
@@ -733,7 +798,13 @@ async def suggest_objects(
     result = await session.execute(query)
     rows = result.scalars().all()
     return [
-        {"id": r.id, "name": r.name, "address": r.address or "", "phone": r.phone or ""}
+        {
+            "id": r.id,
+            "name": r.name,
+            "address": r.address or "",
+            "phone": r.phone or "",
+            "is_permanent_client": r.is_permanent_client,
+        }
         for r in rows
     ]
 
@@ -766,7 +837,7 @@ async def get_ticket(
         await session.commit()
         await session.refresh(ticket)
 
-    ticket_data = TicketRead.model_validate(ticket)
+    ticket_data = await ticket_to_read(session, ticket)
     # Скрыть внутренние комментарии от обычных пользователей
     if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
         ticket_data.comments = [c for c in ticket_data.comments if not c.is_internal]
@@ -857,7 +928,7 @@ async def update_ticket_status(
         .options(*_ticket_load_options())
     )
     ticket = result.scalar_one()
-    return TicketRead.model_validate(ticket)
+    return await ticket_to_read(session, ticket)
 
 
 @router.post("/{ticket_id}/comments", response_model=CommentRead, status_code=status.HTTP_201_CREATED)
@@ -1124,7 +1195,7 @@ async def update_priority(
     session.add(ticket)
     await session.commit()
     await session.refresh(ticket)
-    return TicketRead.model_validate(ticket)
+    return await ticket_to_read(session, ticket)
 
 
 @router.put("/{ticket_id}/assignment", response_model=TicketRead)
@@ -1166,7 +1237,7 @@ async def update_assignment(
         await session.commit()
         await session.refresh(ticket)
 
-    return TicketRead.model_validate(ticket)
+    return await ticket_to_read(session, ticket)
 
 
 # ---------------------------------------------------------------------------
@@ -1226,7 +1297,7 @@ async def update_ticket_object(
         await session.commit()
         await session.refresh(ticket)
 
-    return TicketRead.model_validate(ticket)
+    return await ticket_to_read(session, ticket)
 
 
 @router.get("/{ticket_id}/rate", include_in_schema=False)
@@ -1579,7 +1650,7 @@ async def merge_ticket(
 
     # Перечитываем target со связями
     r3 = await session.execute(select(Ticket).where(Ticket.id == target.id).options(*_ticket_load_options()))
-    return TicketRead.model_validate(r3.scalar_one())
+    return await ticket_to_read(session, r3.scalar_one())
 
 
 class ApplyMacroPayload(BaseModel):
@@ -1659,7 +1730,7 @@ async def apply_macro(
 
     # Перечитываем со связями
     r = await session.execute(select(Ticket).where(Ticket.id == ticket.id).options(*_ticket_load_options()))
-    return TicketRead.model_validate(r.scalar_one())
+    return await ticket_to_read(session, r.scalar_one())
 
 
 @router.post("/{ticket_id}/satisfaction", response_model=TicketRead)
@@ -1688,4 +1759,4 @@ async def submit_satisfaction(
     session.add(ticket)
     await session.commit()
     await session.refresh(ticket)
-    return TicketRead.model_validate(ticket)
+    return await ticket_to_read(session, ticket)

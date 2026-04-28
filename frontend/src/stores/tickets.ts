@@ -16,6 +16,8 @@ export interface TicketFilters {
   type?: string[]
   creator_id?: string
   my?: boolean
+  customer_id?: string
+  customer_only_permanent?: boolean
   q?: string
   view?: string
   sort?: string
@@ -77,6 +79,8 @@ export const useTicketsStore = defineStore('tickets', () => {
       if (filters.value.type?.length) params.set('type', filters.value.type.join(','))
       if (filters.value.creator_id) params.set('creator_id', filters.value.creator_id)
       if (filters.value.my) params.set('my', 'true')
+      if (filters.value.customer_id) params.set('customer_id', filters.value.customer_id)
+      if (filters.value.customer_only_permanent) params.set('customer_only_permanent', 'true')
       if (filters.value.q) params.set('q', filters.value.q)
       if (filters.value.view) params.set('view', filters.value.view)
       if (filters.value.sort) params.set('sort', filters.value.sort)

@@ -11,7 +11,7 @@
 
 ### 2026-04-28 — feat: авто-привязка guest-тикетов из embed-виджета к Customer по поддомену
 
-Гостевые тикеты, создаваемые через AI-виджет на сайтах клиентов формата `bristol.pass24online.ru`, теперь автоматически связываются с компанией в реестре постоянных клиентов. Раньше `Ticket.customer_id` оставался `NULL` — оператор поддержки руками привязывал каждую заявку.
+Гостевые тикеты, создаваемые через AI-виджет на сайтах клиентов формата `bristol.pass24online.ru`, теперь автоматически связываются с компанией в реестре постоянных клиентов. Раньше `Ticket.customer_id` оставался `NULL` — оператор поддержки руками привязывал каждую заявку. Это закрывает «вторую половину» истории про постоянных клиентов: запись от 2026-04-25 добавила UI-индикацию (бейдж «Постоянный», фильтры, `customer_is_permanent` в `TicketRead`), но индикация работала только для тикетов с уже проставленным `customer_id` — теперь embed-виджет проставляет его автоматически.
 
 **Поток:** `chat-loader.js` читает `window.location.hostname` host-страницы и пробрасывает в iframe через `?host=…`. `ChatWidgetPage.vue` тащит значение в payload `POST /tickets/guest` как `embed_host`. Backend в `backend/utils/embed_host.extract_subdomain` извлекает `"bristol"` из `"bristol.pass24online.ru"`, ищет `customers WHERE subdomain = ? AND is_permanent_client AND is_active`. Найден — заполняет `Ticket.customer_id`, `company` (= `Customer.name`), `object_name` (если payload не задал собственное значение).
 
@@ -23,6 +23,35 @@
 - Doc: ADR-016, дополненный раздел в `docs/embed-ai-chat-guide.md`.
 
 **Безопасность:** `embed_host` приходит от клиента и теоретически подделывается через DevTools. На этапе 1 принимаем на веру (последствие подделки = тикет привязан не к той компании, у guest'а нет доступа на чтение). TODO в коде на сверку с `Referer`.
+
+### 2026-04-25 — Постоянные клиенты Bitrix24 в Tickets: устранение рассинхрона UI и расширение фичи
+
+**Контекст:** интеграция синхронизации компаний из Bitrix24 (`Customer.is_permanent_client`, scheduler 03:00, спека 2026-04-09) уже работала в тикетах через `Ticket.customer_id` и редактирование объекта, но имела три проблемы: (1) `CustomerSelect` на создании тикета возвращал всех клиентов, а `TicketObjectInfo` при редактировании — только постоянных; (2) `CustomerRead` и `/customers/search` не возвращали `is_permanent_client`, фронт не мог визуально выделить постоянных; (3) в списке тикетов не было фильтра «только от постоянных», в карточке — бейджа.
+
+**Что сделано:**
+- Backend: в `CustomerRead` и `/customers/search` добавлен `is_permanent_client` + параметр `permanent_only`. Постоянные сортируются в начало выдачи. `/tickets/objects/suggest` теперь возвращает `is_permanent_client` (всегда `true`, единая логика с `customers.router`).
+- Backend: в `GET /tickets/` добавлены параметры `customer_id` и `customer_only_permanent` (фильтрация через подзапрос по `Customer.is_permanent_client`).
+- Backend: в `TicketRead` добавлено поле `customer_is_permanent: Optional[bool]`. `Ticket` не имеет ORM relationship на `Customer` (только FK на уровне БД, миграция 012), поэтому добавлены хелперы `_resolve_customer_permanent_map`, `ticket_to_read`, `tickets_to_read` — резолвят флаг батчем за один запрос. Все 10 endpoint'ов, возвращающих `TicketRead`, переведены на эти хелперы.
+- Frontend: в `CustomerSelect.vue` карточка опции получила бейдж «Постоянный» (золотая звёздочка), результаты сортируются с постоянными вверх. В `TicketObjectInfo.vue` появился новый prop `customerIsPermanent` и тот же бейдж рядом с именем клиента; `TicketSidebar.vue` его прокидывает. На странице списка тикетов (`TicketsPage.vue`) — тогл «Постоянные клиенты / Все клиенты» (для staff) и бейдж в meta-блоке карточки.
+- Тесты: добавлены интеграционные тесты в `tests/test_customers.py` — `is_permanent_client` в ответе `/customers/search`, `permanent_only=true`, сортировка постоянных вверх, `/tickets/objects/suggest` (только permanent), `customer_is_permanent` в `TicketRead` (true/false/null), `customer_only_permanent` в `GET /tickets/`.
+
+**Контракт API изменён:**
+- `GET /customers/search` — каждый элемент теперь содержит `is_permanent_client: boolean`.
+- `GET /customers/` (`CustomerRead`) — дополнено полем `is_permanent_client`.
+- `GET /tickets/` — новые query: `customer_id`, `customer_only_permanent`.
+- `GET /tickets/{id}` (`TicketRead`) — новое поле `customer_is_permanent: bool | null`.
+- `GET /tickets/objects/suggest` — каждый элемент содержит `is_permanent_client: boolean`.
+
+**Не в этом релизе:**
+- ORM relationship `Ticket.customer` — оставлено как есть, чтобы не плодить миграции; вместо этого батч-резолв.
+- Верификация sync на проде (POST `/customers/sync` + SQL + сверка имени `UF_CRM_PERMANENT_CLIENT`) — пункт плана 4, ожидает следующего сеанса/админ-доступа.
+- SLA-приоритизация для постоянных клиентов.
+
+**Файлы:** `backend/customers/router.py`, `backend/tickets/router.py`, `backend/tickets/schemas.py`, `frontend/src/components/CustomerSelect.vue`, `frontend/src/components/ticket/TicketObjectInfo.vue`, `frontend/src/components/ticket/TicketSidebar.vue`, `frontend/src/pages/TicketsPage.vue`, `frontend/src/stores/tickets.ts`, `frontend/src/types/index.ts`, `tests/test_customers.py`.
+
+**Верификация:** `vue-tsc -b` (frontend) — без ошибок. `python -m py_compile` для всех изменённых backend-файлов — без ошибок. Pytest интеграционных тестов требует запущенного backend на `localhost:8000`, прогон отложен до следующего сеанса.
+
+---
 
 ### 2026-04-24 — chat-loader: опции позиционирования AI-виджета (устранение перекрытия кнопок сайта)
 
