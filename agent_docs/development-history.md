@@ -9,6 +9,21 @@
 
 ## Записи
 
+### 2026-04-28 — feat: авто-привязка guest-тикетов из embed-виджета к Customer по поддомену
+
+Гостевые тикеты, создаваемые через AI-виджет на сайтах клиентов формата `bristol.pass24online.ru`, теперь автоматически связываются с компанией в реестре постоянных клиентов. Раньше `Ticket.customer_id` оставался `NULL` — оператор поддержки руками привязывал каждую заявку.
+
+**Поток:** `chat-loader.js` читает `window.location.hostname` host-страницы и пробрасывает в iframe через `?host=…`. `ChatWidgetPage.vue` тащит значение в payload `POST /tickets/guest` как `embed_host`. Backend в `backend/utils/embed_host.extract_subdomain` извлекает `"bristol"` из `"bristol.pass24online.ru"`, ищет `customers WHERE subdomain = ? AND is_permanent_client AND is_active`. Найден — заполняет `Ticket.customer_id`, `company` (= `Customer.name`), `object_name` (если payload не задал собственное значение).
+
+**Изменения:**
+- Backend: миграция 027 (новая колонка `customers.subdomain` + частичный unique-индекс паттерном из 026), новое поле `Customer.subdomain`, новое поле `GuestTicketCreate.embed_host`, мэтч-логика в `backend/tickets/router.py:create_guest_ticket`, хелпер `backend/utils/embed_host.py`.
+- Backend: seed-скрипт `backend/scripts/seed_customer_subdomains.py` (CSV `subdomain,inn` → UPDATE customers; идемпотентен; --dry-run; пример CSV рядом). До прогона скрипта поле у всех Customer'ов NULL и фича не активна — это известный prerequisite.
+- Frontend: `chat-loader.js` подмешивает `?host=…`, `ChatWidgetPage.vue` читает `route.query.host` и шлёт как `embed_host`. Обратная совместимость сохранена (без поля backend ведёт себя как раньше).
+- Tests: `tests/test_embed_host.py` (13 unit-тестов, прошли локально), `tests/test_guest_ticket_subdomain_match.py` (6 интеграционных против запущенного backend, добавлены в `ops-run-tests.yml` allowlist).
+- Doc: ADR-016, дополненный раздел в `docs/embed-ai-chat-guide.md`.
+
+**Безопасность:** `embed_host` приходит от клиента и теоретически подделывается через DevTools. На этапе 1 принимаем на веру (последствие подделки = тикет привязан не к той компании, у guest'а нет доступа на чтение). TODO в коде на сверку с `Referer`.
+
 ### 2026-04-24 — chat-loader: опции позиционирования AI-виджета (устранение перекрытия кнопок сайта)
 
 **Проблема:** жители ЖК не могли нажать «СОХРАНИТЬ» на формах клиентских сайтов — круглая кнопка AI-помощника в правом нижнем углу перекрывала её (скриншот от пользователя). Loader `frontend/public/chat-loader.js` поддерживал только `data-host` и `data-z-index`, позиции `right:24px; bottom:24px` были жёстко зашиты в CSS.

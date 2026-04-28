@@ -13,6 +13,7 @@
  * содержимое попапа.
  */
 import { ref, nextTick, onMounted, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { api } from '../api/client'
 
 interface TicketData {
@@ -61,6 +62,12 @@ const ticketPhone = ref('')
 const submittingTicket = ref(false)
 
 const userMessageCount = computed(() => messages.value.filter(m => m.role === 'user').length)
+
+// hostname host-страницы виджета (`bristol.pass24online.ru`), пробрасывается
+// из chat-loader.js через query-param ?host=. Шлём в /tickets/guest, бэкенд
+// сам решает, нашёлся ли Customer для этого поддомена и заполнять ли поля.
+const route = useRoute()
+const embedHost = ((route.query.host as string) || '').trim() || null
 
 function scrollToBottom() {
   nextTick(() => {
@@ -132,6 +139,7 @@ async function submitTicket() {
       category: ticketFormData.value.category,
       ticket_type: 'problem',
       contact_phone: ticketPhone.value.trim() || undefined,
+      embed_host: embedHost || undefined,
     })
     showTicketForm.value = false
     messages.value.push({

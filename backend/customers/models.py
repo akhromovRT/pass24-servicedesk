@@ -24,6 +24,12 @@ class Customer(SQLModel, table=True):
     comment: Optional[str] = Field(default=None, max_length=2000)
     is_active: bool = Field(default=True)
     is_permanent_client: bool = Field(default=False)
+    # Поддомен сайта клиента в зоне pass24online.ru: для bristol.pass24online.ru
+    # хранится "bristol". Используется при создании guest-тикета с embed-виджета:
+    # бэкенд парсит embed_host из payload, ищет здесь Customer и заполняет
+    # ticket.customer_id / company / object_name. Уникальность гарантируется
+    # частичным индексом (миграция 027). NULL допустим — у клиентов без сайта.
+    subdomain: Optional[str] = Field(default=None, max_length=64, index=True)
     synced_at: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

@@ -2,6 +2,39 @@
 
 ## Записи
 
+### [2026-04-28] ADR-016: Авто-привязка guest-тикетов к Customer по поддомену embed-страницы
+
+#### Статус
+Принято.
+
+#### Контекст
+ADR-014 закрепил доставку AI-виджета через loader+iframe на ~250 клиентских сайтов формата `https://{name}.pass24online.ru/...`. Гостевые тикеты, создаваемые через виджет (`POST /tickets/guest`), приходили с `Ticket.customer_id = NULL` — оператор поддержки вынужден был руками связывать заявку с компанией в `customers` каждый раз. Реестр постоянных клиентов уже синхронизирован из Bitrix24 по ИНН (миграция 020 + `bitrix24_sync.py`), но связи между Customer и его сайтом в базе не было.
+
+#### Рассмотренные альтернативы
+- **Полный домен на стороне Customer (`Customer.site_domain = "bristol.pass24online.ru"`)**. Плюс: точное совпадение, не нужен парсинг. Минус: дубль с базой, при смене корневого домена pass24online → миграция данных. Слабее по семантике («поле для произвольного домена», но мы поддерживаем только subdomain).
+- **Принимать на бэке полный hostname без собственного поля у Customer + матчить по транслитерации Customer.name**. Минус: нестабильно (имена в Bitrix часто как «ООО Жилищный комплекс Бристоль» — slug не предсказать), хрупко при ребрендинге.
+- **Поле `Customer.subdomain`** (выбрано). Хранит «bristol» в чистом виде, индексировано. Backend парсит embed_host и матчит. Если когда-то появятся кастомные домены (не `*.pass24online.ru`) — добавим вторым полем `Customer.custom_domain` без ломки текущей логики.
+
+#### Решение
+- **Backend:** новая колонка `customers.subdomain` (миграция 027) с частичным unique-индексом по ненулевым значениям — паттерн как у миграции 026 для `tickets.email_message_id`. Хелпер `backend/utils/embed_host.extract_subdomain(host)` извлекает первый label из `*.pass24online.ru`. В `POST /tickets/guest` (`backend/tickets/router.py`): если в payload пришёл `embed_host` и из него извлекается валидный subdomain — `SELECT customers WHERE subdomain = ? AND is_permanent_client AND is_active`; найден — заполняем `customer_id`, `company` (= `Customer.name`), `object_name` (если payload не задал собственное значение).
+- **Frontend (loader):** `chat-loader.js` подмешивает `?host=<window.location.hostname>` в URL iframe. Изменение совместимо назад: backend payload без `embed_host` ведёт себя как раньше.
+- **Frontend (widget):** `ChatWidgetPage.vue` читает `route.query.host` и шлёт его как `embed_host` в `POST /tickets/guest`.
+- **Наполнение реестра:** subdomain'ы заводятся через одноразовый seed-скрипт `backend/scripts/seed_customer_subdomains.py` из CSV вида `subdomain,inn`. Скрипт идемпотентен; пример CSV — `backend/scripts/customer_subdomains.csv.example`.
+
+#### Обоснование
+- Один FK-кандидат у Ticket (`customer_id`) — не плодим дублирующих полей; `company` и `object_name` — текстовые «снимки» имени, удобные при отображении в списке/email-уведомлении (не зависят от JOIN с customers).
+- Матчим только `is_permanent_client` — намеренно: разовые/ушедшие клиенты могут случайно сохранить subdomain в Bitrix, но не должны автозаполняться в новых тикетах.
+- `embed_host` приходит от клиента и теоретически подделывается через DevTools. На этапе 1 принимаем на веру — последствие подделки = тикет помечен не той компанией, у guest'а нет доступа на чтение клиентских данных. TODO в коде на сверку с `Referer`-заголовком в будущем.
+
+#### Последствия
+- **(+)** Авто-связывание: оператор видит «Бристоль» в карточке тикета без ручной привязки.
+- **(+)** Фундамент для per-tenant функций: KB-фильтрация, кастомизация AI-промпта, аналитика «с какого ЖК больше всего обращений».
+- **(+)** Обратная совместимость: payload без `embed_host` создаёт тикет как раньше (`customer_id = NULL`).
+- **(−)** Без CSV от ops-команды поле остаётся пустым у всех Customer'ов → автосвязывание не работает. Это известный prerequisite.
+- **(−)** Кастомные домены клиентов (не `*.pass24online.ru`) не покрываются — добавится отдельным ADR при появлении.
+
+---
+
 ### [2026-04-24] ADR-015: Self-hosted telegram-bot-api в гибридном режиме (без `logOut`) для вложений >20 МБ
 
 #### Статус

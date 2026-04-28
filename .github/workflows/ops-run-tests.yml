@@ -57,6 +57,8 @@ jobs:
               "tests/test_inbound_email_integration.py"
               "tests/test_password_reset.py"
               "tests/test_customers.py"
+              "tests/test_embed_host.py"
+              "tests/test_guest_ticket_subdomain_match.py"
             )
             for word in $PYTEST_TARGET; do
               ok=0

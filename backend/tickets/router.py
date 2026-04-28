@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +12,8 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import func, select
+
+logger = logging.getLogger(__name__)
 
 UPLOAD_DIR = Path("/app/data/attachments")
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
@@ -26,12 +29,14 @@ from pydantic import BaseModel
 
 from backend.auth.dependencies import get_current_user
 from backend.auth.models import User
+from backend.customers.models import Customer
 from backend.database import get_session
 from backend.notifications.email import (
     notify_ticket_comment,
     notify_ticket_created,
     notify_ticket_status_changed,
 )
+from backend.utils.embed_host import extract_subdomain
 
 from .models import Attachment, Ticket, TicketComment, TicketEvent, TicketStatus
 from .schemas import (
@@ -98,6 +103,31 @@ async def create_guest_ticket(
         await session.refresh(user)
         is_new_user = True
 
+    # Матч с реестром постоянных клиентов по поддомену сайта, где встроен виджет.
+    # embed_host шлёт chat-loader.js (window.location.hostname host-страницы):
+    # bristol.pass24online.ru → "bristol" → SELECT customers WHERE subdomain='bristol'
+    # AND is_permanent_client. Найден — заполняем customer_id / company / object_name.
+    # TODO: cross-check с Referer-заголовком, чтобы клиент не мог подделать привязку.
+    matched_customer: Optional[Customer] = None
+    matched_subdomain: Optional[str] = None
+    if payload.embed_host:
+        matched_subdomain = extract_subdomain(payload.embed_host)
+        if matched_subdomain:
+            cust_res = await session.execute(
+                select(Customer).where(
+                    Customer.subdomain == matched_subdomain,
+                    Customer.is_permanent_client == True,  # noqa: E712 — SQLAlchemy
+                    Customer.is_active == True,            # noqa: E712
+                )
+            )
+            matched_customer = cust_res.scalar_one_or_none()
+    logger.info(
+        "guest_ticket.match embed_host=%r subdomain=%r customer_id=%s matched=%s",
+        payload.embed_host, matched_subdomain,
+        matched_customer.id if matched_customer else None,
+        matched_customer is not None,
+    )
+
     # Создаём тикет
     ticket = Ticket(
         creator_id=str(user.id),
@@ -107,11 +137,15 @@ async def create_guest_ticket(
         category=payload.category or "other",
         ticket_type=payload.ticket_type or "problem",
         source="web",
-        object_name=payload.object_name,
+        # object_name из payload приоритетнее (если клиент явно указал в форме);
+        # если пусто и есть match — берём имя Customer как читабельное название объекта.
+        object_name=payload.object_name or (matched_customer.name if matched_customer else None),
         contact_name=payload.name or user.full_name,
         contact_email=email,
         contact_phone=payload.contact_phone,
         urgent=payload.urgent,
+        customer_id=matched_customer.id if matched_customer else None,
+        company=matched_customer.name if matched_customer else None,
     )
     ticket.auto_detect_category()
     ticket.assign_priority_based_on_context()
