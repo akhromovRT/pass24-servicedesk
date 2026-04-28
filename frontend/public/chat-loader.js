@@ -11,6 +11,11 @@
  * Никаких изменений бэкенда / CORS не требуется: все запросы AI и
  * создания заявок идут из iframe в домен support.pass24pro.ru (same-origin).
  *
+ * Передача host-домена клиента: loader подмешивает `?host=<hostname>` в
+ * URL iframe. Это позволяет backend в POST /tickets/guest найти Customer
+ * по поддомену (bristol.pass24online.ru → "bristol") и автоматически
+ * заполнить ticket.customer_id / company / object_name.
+ *
  * Опциональные data-атрибуты на теге <script>:
  *   data-host       — переопределить хост виджета (default: origin у script.src)
  *   data-z-index    — z-index кнопки и iframe (default: 2147483000)
@@ -37,7 +42,15 @@
   var defaultHost = scriptSrc ? new URL(scriptSrc).origin : 'https://support.pass24pro.ru';
   var host = ds.host || defaultHost;
   var zIndex = parseInt(ds.zIndex || '2147483000', 10);
+  // window.location.hostname host-страницы (bristol.pass24online.ru). Backend
+  // в POST /tickets/guest пытается матчнуть Customer по поддомену и заполнить
+  // ticket.customer_id / company / object_name. Для не-pass24online.ru доменов
+  // backend поле проигнорирует — видим только в логах.
+  var embedHost = (window.location && window.location.hostname) || '';
   var widgetUrl = host.replace(/\/$/, '') + '/chat-widget';
+  if (embedHost) {
+    widgetUrl += '?host=' + encodeURIComponent(embedHost);
+  }
 
   var POSITIONS = {
     'bottom-right': { h: 'right', v: 'bottom' },

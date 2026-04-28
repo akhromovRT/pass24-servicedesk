@@ -71,6 +71,10 @@ class GuestTicketCreate(BaseModel):
     contact_phone: Optional[str] = Field(default=None, max_length=20)
     urgent: bool = Field(default=False)
     source_article_slug: Optional[str] = Field(default=None, max_length=512)
+    # window.location.hostname host-страницы, где встроен embed-виджет.
+    # Для bristol.pass24online.ru → backend извлечёт subdomain "bristol",
+    # найдёт Customer и проставит ticket.customer_id / company / object_name.
+    embed_host: Optional[str] = Field(default=None, max_length=253)
 
 
 class GuestTicketResponse(BaseModel):

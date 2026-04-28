@@ -9,6 +9,21 @@
 
 ## Записи
 
+### 2026-04-28 — feat: авто-привязка guest-тикетов из embed-виджета к Customer по поддомену
+
+Гостевые тикеты, создаваемые через AI-виджет на сайтах клиентов формата `bristol.pass24online.ru`, теперь автоматически связываются с компанией в реестре постоянных клиентов. Раньше `Ticket.customer_id` оставался `NULL` — оператор поддержки руками привязывал каждую заявку. Это закрывает «вторую половину» истории про постоянных клиентов: запись от 2026-04-25 добавила UI-индикацию (бейдж «Постоянный», фильтры, `customer_is_permanent` в `TicketRead`), но индикация работала только для тикетов с уже проставленным `customer_id` — теперь embed-виджет проставляет его автоматически.
+
+**Поток:** `chat-loader.js` читает `window.location.hostname` host-страницы и пробрасывает в iframe через `?host=…`. `ChatWidgetPage.vue` тащит значение в payload `POST /tickets/guest` как `embed_host`. Backend в `backend/utils/embed_host.extract_subdomain` извлекает `"bristol"` из `"bristol.pass24online.ru"`, ищет `customers WHERE subdomain = ? AND is_permanent_client AND is_active`. Найден — заполняет `Ticket.customer_id`, `company` (= `Customer.name`), `object_name` (если payload не задал собственное значение).
+
+**Изменения:**
+- Backend: миграция 027 (новая колонка `customers.subdomain` + частичный unique-индекс паттерном из 026), новое поле `Customer.subdomain`, новое поле `GuestTicketCreate.embed_host`, мэтч-логика в `backend/tickets/router.py:create_guest_ticket`, хелпер `backend/utils/embed_host.py`.
+- Backend: seed-скрипт `backend/scripts/seed_customer_subdomains.py` (CSV `subdomain,inn` → UPDATE customers; идемпотентен; --dry-run; пример CSV рядом). До прогона скрипта поле у всех Customer'ов NULL и фича не активна — это известный prerequisite.
+- Frontend: `chat-loader.js` подмешивает `?host=…`, `ChatWidgetPage.vue` читает `route.query.host` и шлёт как `embed_host`. Обратная совместимость сохранена (без поля backend ведёт себя как раньше).
+- Tests: `tests/test_embed_host.py` (13 unit-тестов, прошли локально), `tests/test_guest_ticket_subdomain_match.py` (6 интеграционных против запущенного backend, добавлены в `ops-run-tests.yml` allowlist).
+- Doc: ADR-016, дополненный раздел в `docs/embed-ai-chat-guide.md`.
+
+**Безопасность:** `embed_host` приходит от клиента и теоретически подделывается через DevTools. На этапе 1 принимаем на веру (последствие подделки = тикет привязан не к той компании, у guest'а нет доступа на чтение). TODO в коде на сверку с `Referer`.
+
 ### 2026-04-25 — Постоянные клиенты Bitrix24 в Tickets: устранение рассинхрона UI и расширение фичи
 
 **Контекст:** интеграция синхронизации компаний из Bitrix24 (`Customer.is_permanent_client`, scheduler 03:00, спека 2026-04-09) уже работала в тикетах через `Ticket.customer_id` и редактирование объекта, но имела три проблемы: (1) `CustomerSelect` на создании тикета возвращал всех клиентов, а `TicketObjectInfo` при редактировании — только постоянных; (2) `CustomerRead` и `/customers/search` не возвращали `is_permanent_client`, фронт не мог визуально выделить постоянных; (3) в списке тикетов не было фильтра «только от постоянных», в карточке — бейджа.
