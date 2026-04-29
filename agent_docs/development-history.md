@@ -63,6 +63,8 @@
 
 **Файлы:** `frontend/src/components/ticket/TicketComposeArea.vue` (переписан), `frontend/src/stores/tickets.ts` (+~30 строк), `frontend/src/pages/TicketsPage.vue` (~30 строк изменений), `backend/tickets/schemas.py` (+1 поле), `backend/tickets/router.py` (+~70 строк, новый DELETE-эндпоинт + линковка), `backend/notifications/email.py` (+~120 строк).
 
+**Hotfix следующим коммитом:** middle-click открывал новую вкладку с `{"detail":"Not authenticated"}`, потому что SPA-route `/tickets/:id` совпадает с backend API endpoint `GET /tickets/{ticket_id}`. AJAX-запросы от фронта работают (есть `Authorization: Bearer ...`), но browser direct-hit не отправляет заголовок, и FastAPI возвращает 401. Это был **скрытый давний баг**: refresh страницы тикета (F5) и ссылки `support.pass24pro.ru/tickets/<id>` в email-уведомлениях тоже отдавали JSON 401 — middle-click просто высветил проблему. Решение: middleware `spa_detail_fallback` в `backend/main.py`, который для GET-запросов на `/tickets/<UUID>` или `/projects/<UUID>` без `Authorization` header отдаёт SPA `index.html`. AJAX-запросы (с Bearer token) пропускает дальше в API. Регистрируется ДО `include_router(tickets_router)`. Заодно покрыты `/projects/<id>` — там та же скрытая проблема была.
+
 ---
 
 ### 2026-04-29 — feat(chat-loader): drag-and-drop кнопки AI-виджета по 4 углам с persistence

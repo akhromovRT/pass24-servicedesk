@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -78,6 +79,30 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # SPA-fallback для динамических detail-страниц.
+    # Проблема: SPA-route `/tickets/:id` совпадает с backend `GET /tickets/{ticket_id}`.
+    # AJAX от фронта шлёт Authorization: Bearer ... — попадает в API. Но прямой
+    # переход в браузере (middle-click новая вкладка, refresh страницы тикета,
+    # клик по ссылке из email) идёт без Authorization → API возвращает 401.
+    # Этот middleware ловит «browser visit» (нет Authorization) для путей,
+    # совпадающих с UUID-pattern, и отдаёт SPA index.html. SPA сама прочитает
+    # access_token из localStorage и сделает AJAX-запрос с правильным заголовком.
+    _SPA_DETAIL_RE = re.compile(
+        r"^/(tickets|projects)/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/?$",
+        re.IGNORECASE,
+    )
+
+    @app.middleware("http")
+    async def spa_detail_fallback(request: Request, call_next):
+        if (
+            request.method == "GET"
+            and STATIC_DIR.is_dir()
+            and "authorization" not in request.headers
+            and _SPA_DETAIL_RE.match(request.url.path)
+        ):
+            return FileResponse(str(STATIC_DIR / "index.html"))
+        return await call_next(request)
 
     # SPA-маршруты ДО API (чтобы /tickets/create не перехватывался /tickets/{ticket_id})
     if STATIC_DIR.is_dir():
