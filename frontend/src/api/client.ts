@@ -22,6 +22,11 @@ async function request<T>(
 ): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    // Явный Accept: application/json — гарантирует, что backend SPA-fallback
+    // middleware (для /tickets/<uuid>, /projects/<uuid>) не подменит ответ
+    // на index.html в случае, если запрос ушёл без Authorization (например,
+    // токен ещё не подгрузился из localStorage).
+    'Accept': 'application/json',
     ...(options.headers as Record<string, string> || {}),
   }
 
@@ -54,6 +59,18 @@ async function request<T>(
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Ошибка сервера' }))
     throw new Error(error.detail || `HTTP ${response.status}`)
+  }
+
+  // Защита от случая, когда сервер ответил 200 с HTML вместо JSON (например,
+  // если SPA-fallback middleware ошибочно перехватил AJAX-запрос). В таком
+  // случае токен мог истечь — отправляем на /login, чтобы переавторизоваться.
+  const contentType = response.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    if (token) {
+      clearToken()
+      window.location.href = '/login'
+    }
+    throw new Error('Unexpected response format (not JSON)')
   }
 
   return response.json()

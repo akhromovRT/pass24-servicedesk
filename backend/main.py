@@ -85,9 +85,20 @@ def create_app() -> FastAPI:
     # AJAX от фронта шлёт Authorization: Bearer ... — попадает в API. Но прямой
     # переход в браузере (middle-click новая вкладка, refresh страницы тикета,
     # клик по ссылке из email) идёт без Authorization → API возвращает 401.
-    # Этот middleware ловит «browser visit» (нет Authorization) для путей,
-    # совпадающих с UUID-pattern, и отдаёт SPA index.html. SPA сама прочитает
-    # access_token из localStorage и сделает AJAX-запрос с правильным заголовком.
+    # Этот middleware ловит реальный browser visit и отдаёт SPA index.html.
+    # SPA сама прочитает access_token из localStorage и сделает AJAX-запрос
+    # с правильным заголовком.
+    #
+    # Условие срабатывания (все одновременно):
+    #   1. GET-запрос
+    #   2. path совпадает с `/tickets/<UUID>` или `/projects/<UUID>`
+    #   3. нет Authorization header — fetch с токеном идёт в API
+    #   4. Accept содержит `text/html` — гарантирует, что это именно
+    #      browser navigation (адресная строка, ссылка, middle-click),
+    #      а не fetch без токена (default Accept = `*/*`).
+    #
+    # Условие #4 защищает от ложных срабатываний на AJAX, который по какой-то
+    # причине ушёл без Authorization (например, пока токен не подгрузился).
     _SPA_DETAIL_RE = re.compile(
         r"^/(tickets|projects)/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/?$",
         re.IGNORECASE,
@@ -99,9 +110,15 @@ def create_app() -> FastAPI:
             request.method == "GET"
             and STATIC_DIR.is_dir()
             and "authorization" not in request.headers
+            and "text/html" in request.headers.get("accept", "")
             and _SPA_DETAIL_RE.match(request.url.path)
         ):
-            return FileResponse(str(STATIC_DIR / "index.html"))
+            # no-store: чтобы браузер не закэшировал HTML на URL, который
+            # потом будет дёргать api-клиент с Authorization для JSON.
+            return FileResponse(
+                str(STATIC_DIR / "index.html"),
+                headers={"Cache-Control": "no-store"},
+            )
         return await call_next(request)
 
     # SPA-маршруты ДО API (чтобы /tickets/create не перехватывался /tickets/{ticket_id})
