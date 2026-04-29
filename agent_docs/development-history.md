@@ -9,6 +9,35 @@
 
 ## Записи
 
+### 2026-04-29 — fix(routing): SPA-fallback middleware для конфликта SPA-route и API-endpoint (ADR-018)
+
+**Проблема:** после релиза `<RouterLink>` для middle-click new tab (см. запись про email-вложения ниже) пользователи получали `{"detail":"Not authenticated"}` JSON в новой вкладке, а позже toast `Unexpected token '<', "<!DOCTYPE..." is not valid JSON` при обычном клике на карточку. Корневая причина — давний скрытый баг: SPA-route `/tickets/:id` совпадает с backend API `GET /tickets/{ticket_id}`. AJAX от фронта работал (есть `Authorization: Bearer ...`), но прямой переход в браузере (middle-click, F5, ссылка из email) шёл без header'а — backend отдавал JSON 401 вместо HTML страницы тикета. Те же email-ссылки `support.pass24pro.ru/tickets/<id>` в SLA/CSAT-уведомлениях тоже отдавали 401 раньше — просто никто не пытался по ним кликнуть из чужого браузера.
+
+**Решение (ADR-018, два коммита):**
+
+`a40b920` — ASGI middleware `spa_detail_fallback` в `backend/main.py`, регистрируется до `include_router(tickets_router)`. Срабатывает на GET-запросы к `/(tickets|projects)/<UUID>` без `Authorization` header — отдаёт `STATIC_DIR/index.html`. AJAX-запросы (с Bearer) пропускает дальше в API. Покрыт также `/projects/<id>` — там та же скрытая проблема.
+
+`351ab6a` (hotfix) — после первого деплоя пользователь получил toast `Unexpected token '<'` при обычном клике. Причина: middleware ловил **слишком широко** — AJAX, ушедший без `Authorization` (например, токен ещё не подгрузился из localStorage), получал HTML 200, фронт ломался на `JSON.parse`. Усиление в 4 точках:
+- В middleware добавлено условие `"text/html" in Accept` — реальный browser navigation всегда шлёт `Accept: text/html,...`, fetch без Accept — `*/*`. Различие надёжное.
+- SPA-fallback ответ получает `Cache-Control: no-store` — браузер не кэширует HTML на URL, который потом будет дёргать api-клиент за JSON.
+- `frontend/src/api/client.ts` теперь явно шлёт `Accept: application/json` в AJAX (вторая линия защиты).
+- `request<T>` после `response.ok` проверяет `Content-Type`: если 200 пришёл с не-JSON — clearToken() + redirect на `/login`. Это блокирует падение `JSON.parse` и даёт понятный UX вместо обрыва.
+
+**Заодно починилось:**
+- F5 / refresh на странице тикета (раньше падал в JSON 401).
+- Ссылки `support.pass24pro.ru/tickets/<id>` в email-уведомлениях SLA, CSAT, comment-нотификациях (раньше уводили в JSON, не в портал).
+- То же самое для `/projects/<id>`.
+
+**Не сделали (намеренно):**
+- Перенос API под `/api/...` префикс — правильное архитектурное решение, но требует синхронных изменений в backend routes, frontend api-клиенте, deploy/nginx. Большая работа, отложили. Middleware закрывает 100% наблюдаемых случаев.
+- Изменение SPA-route с `/tickets/:id` на `/t/:id` — сломало бы все существующие URL в email-уведомлениях, закладках пользователей, комментариях Bitrix24.
+
+**Verification:** 4 curl-теста на проде: AJAX без Auth (Accept:json) → 401 JSON, browser без Auth (Accept:html) → 200 HTML, AJAX с Auth (Accept:json) → 401 JSON, default fetch без Auth (Accept:*/*) → 401 JSON. Все 4 проходят.
+
+**Файлы:** `backend/main.py` (+38 строк, импорт re + middleware), `frontend/src/api/client.ts` (+13 строк, Accept + content-type guard).
+
+---
+
 ### 2026-04-29 — feat(tickets): UX списка тикетов + критичный баг с email-вложениями (три задачи в одном релизе)
 
 **Контекст:** агенты поддержки жаловались на три проблемы по интерфейсу списка тикетов и работе с тикетом. Все три закрыты одним релизом, потому что задачи 1 и 2 затрагивают одни и те же файлы (`TicketsPage.vue`, `stores/tickets.ts`).

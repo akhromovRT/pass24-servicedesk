@@ -2,6 +2,54 @@
 
 ## Записи
 
+### [2026-04-29] ADR-018: SPA-fallback middleware для конфликта SPA-route и API-endpoint
+
+#### Статус
+Принято. Дополняет существующие SPA-handlers в `backend/main.py` (для статических путей `/login`, `/tickets/create` и т.п.).
+
+#### Контекст
+Backend FastAPI отдаёт и API, и статический SPA-фронт (`STATIC_DIR/index.html`). SPA-роуты с фиксированными именами уже зарегистрированы как FastAPI-handlers до `include_router(tickets_router)` (`/login`, `/tickets/create`, `/forgot-password`, `/reset-password`, `/projects/analytics`, etc.). Но **динамические detail-роуты SPA коллидируют с API-endpoint'ами**:
+- SPA `/tickets/:id` совпадает с API `GET /tickets/{ticket_id}`
+- SPA `/projects/:id` совпадает с API `GET /projects/{project_id}`
+
+При AJAX-запросах от фронта это работает: api-клиент шлёт `Authorization: Bearer ...`, попадает в API → JSON.
+При **прямом HTTP-запросе из браузера** (middle-click новая вкладка, F5 на странице тикета, клик по ссылке `support.pass24pro.ru/tickets/<id>` из email-уведомления) браузер не отправляет `Authorization` — backend возвращает `401 application/json`, пользователь видит JSON-ошибку вместо страницы тикета.
+
+Это был **давний скрытый баг** — F5 на тикете и ссылки в email тоже отдавали 401, но никто не пытался. Высветился, когда `<RouterLink>` заменил `@click` для middle-click new tab.
+
+#### Рассмотренные альтернативы
+
+- **Изменить SPA-route с `/tickets/:id` на `/t/:id`** (или другой префикс, не совпадающий с API). Чистое решение, но: ломает все существующие URL в email-уведомлениях, закладках пользователей, Bitrix24-комментариях. Migration-шум на сотни ссылок.
+- **Префиксовать API под `/api/...`** (а SPA оставить на корне). Правильное архитектурное решение, но требует синхронных изменений в трёх слоях (backend routes, frontend api-клиент, deploy/nginx). Большая работа.
+- **Перевод routing на nginx**: добавить `location /tickets/<UUID-pattern>` → SPA, остальное в backend. Работает, но требует SSH-доступ к VPS и не версионируется в репо (nginx живёт вне Docker compose в этом проекте).
+- **ASGI middleware** (выбрано). Различение AJAX vs browser-visit в одном файле кода, никаких миграций URL, исправляет F5/email-ссылки автоматически.
+
+#### Решение
+ASGI middleware `spa_detail_fallback` в `backend/main.py`, регистрируется до `include_router(tickets_router)`. Срабатывает при **одновременном** выполнении 4 условий:
+
+1. `request.method == "GET"`
+2. `path` совпадает с UUID-regex `^/(tickets|projects)/<8-4-4-4-12 hex>/?$`
+3. `Authorization` header **отсутствует** (AJAX от api-клиента всегда его шлёт)
+4. `Accept` содержит `text/html` (реальный browser navigation)
+
+При срабатывании — возвращает `FileResponse(STATIC_DIR/"index.html", headers={"Cache-Control": "no-store"})`. SPA читает токен из localStorage и делает AJAX-запрос с Bearer — попадает в API.
+
+**Условие #4 критическое:** без него middleware ловил бы и AJAX, который ушёл без `Authorization` (например, токен ещё не подгрузился из localStorage). Браузер шлёт `Accept: text/html,...`, fetch без явного Accept — `*/*`. Это надёжно различает.
+
+`Cache-Control: no-store` на SPA-fallback ответе — чтобы браузер не закэшировал HTML на URL, который потом будет дёргаться api-клиентом за JSON.
+
+**Frontend защита (вторая линия):** `frontend/src/api/client.ts` теперь явно шлёт `Accept: application/json` в AJAX и проверяет `Content-Type` ответа: если 200 пришёл с не-JSON типом — расценивает как «middleware ошибочно отдал SPA из-за протухшего токена», очищает токен и редиректит на `/login` вместо падения `JSON.parse`.
+
+#### Последствия
+- Один файл (`backend/main.py`, +24 строки), без миграций URL и nginx.
+- Одновременно фиксит middle-click new tab, F5 на странице тикета и ссылки `/tickets/<id>` в email-уведомлениях SLA/CSAT (раньше уводили в JSON).
+- Покрыты `/tickets/:id` И `/projects/:id` — заодно решена та же скрытая проблема для проектов.
+- Frontend api-клиент усилен: `Accept: application/json` явный, content-type guard. Это полезное усиление в любом случае.
+- Не покрывает кейс, когда у пользователя нет токена в localStorage и он middle-click'ает: SPA загружается → router beforeEach видит `meta.auth: true` без токена → редирект на `/login?redirect=/tickets/<id>`. Это правильное поведение.
+- Long-term: если когда-то решим унифицировать routing через `/api/...` префикс — middleware можно убрать. Сейчас компромисс «один файл vs migration по сотням URL» в пользу middleware.
+
+---
+
 ### [2026-04-29] ADR-017: SLA-пауза в бизнес-секундах + единая точка истины через `compute_sla_state`
 
 #### Статус
