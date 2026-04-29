@@ -143,8 +143,25 @@
 | `first_response_at` | datetime | Когда первый раз ответили |
 | `resolved_at` | datetime | Когда решили |
 | `sla_breached` | bool | Нарушен ли SLA |
+| `sla_paused_at` | datetime, nullable | Момент включения текущей паузы (NULL = не на паузе) |
+| `sla_total_pause_seconds` | int | Накопленная пауза в **бизнес-секундах** (только рабочее время; см. ADR-017) |
+| `sla_paused_by_status` | bool | Источник паузы: статус `WAITING_FOR_USER` / `ON_HOLD` |
+| `sla_paused_by_reply` | bool | Источник паузы: последнее публичное сообщение от сотрудника |
 | `created_at` | datetime | Дата создания |
 | `updated_at` | datetime | Последнее обновление |
+
+**Computed-поля в `TicketRead` (рассчитываются при сериализации, в БД не хранятся):**
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `sla_response_due_at` | datetime | Дедлайн первого ответа с учётом бизнес-часов и накопленной паузы |
+| `sla_resolve_due_at` | datetime | Дедлайн решения, аналогично |
+| `sla_response_remaining_seconds` | int | Сколько секунд до `response_due_at`. Может быть отрицательным = просрочено |
+| `sla_resolve_remaining_seconds` | int | То же для resolve |
+| `sla_remaining_seconds` | int | Остаток для **активной фазы**: response пока `first_response_at IS NULL`, иначе resolve |
+| `sla_is_paused` | bool | Удобный alias `sla_paused_at IS NOT NULL` |
+
+Расчёт — `backend/tickets/sla_service.compute_sla_state(ticket, now)`. Бизнес-часы — `backend/tickets/business_hours.py` (пн-пт 9-18 МСК).
 
 ---
 
