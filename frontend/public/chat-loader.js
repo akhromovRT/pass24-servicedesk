@@ -16,10 +16,18 @@
  * по поддомену (bristol.pass24online.ru → "bristol") и автоматически
  * заполнить ticket.customer_id / company / object_name.
  *
+ * Перетаскивание (только desktop). Конечный посетитель сайта может drag'ом
+ * перенести кнопку в любой из 4 углов экрана — на pointerup кнопка прилипает
+ * к ближайшему углу, окно чата перепривязывается к нему же (если кнопка
+ * вверху — окно открывается под кнопкой). Выбор сохраняется в localStorage
+ * текущего домена под ключом `pass24-chat-corner` и переживает перезагрузку.
+ *
  * Опциональные data-атрибуты на теге <script>:
  *   data-host       — переопределить хост виджета (default: origin у script.src)
  *   data-z-index    — z-index кнопки и iframe (default: 2147483000)
- *   data-position   — угол: bottom-right (default) | bottom-left | top-right | top-left
+ *   data-position   — НАЧАЛЬНЫЙ угол, если посетитель ещё не перетаскивал:
+ *                     bottom-right (default) | bottom-left | top-right | top-left.
+ *                     localStorage перебивает это значение.
  *   data-offset-x   — отступ по горизонтали от края, px (default: 24)
  *   data-offset-y   — отступ по вертикали от края, px (default: 24)
  *   data-frame-gap  — зазор между кнопкой и окном iframe по вертикали, px (default: 76)
@@ -58,8 +66,14 @@
     'top-right':    { h: 'right', v: 'top' },
     'top-left':     { h: 'left',  v: 'top' }
   };
-  var position = POSITIONS[ds.position] ? ds.position : 'bottom-right';
-  var edges = POSITIONS[position];
+  var STORAGE_KEY = 'pass24-chat-corner';
+  var initialPosition = POSITIONS[ds.position] ? ds.position : 'bottom-right';
+  // localStorage перебивает data-position: посетитель один раз перетянул — и виджет
+  // запоминает выбор для этого домена.
+  try {
+    var savedCorner = window.localStorage && window.localStorage.getItem(STORAGE_KEY);
+    if (savedCorner && POSITIONS[savedCorner]) initialPosition = savedCorner;
+  } catch (_e) { /* localStorage может быть отключён в Safari Private — fallback на data-position */ }
 
   function toInt(value, fallback) {
     var parsed = parseInt(value, 10);
@@ -73,7 +87,6 @@
   // и на offsetY + frameGap по вертикали — кнопка остаётся видна рядом с окном.
   var frameOffsetX = Math.max(0, offsetX - 8);
   var frameOffsetY = offsetY + frameGap;
-  var isBottom = edges.v === 'bottom';
 
   // --- Стили (инжектируются один раз) ---------------------------------------
   var styleId = 'pass24-chat-loader-style';
@@ -81,26 +94,45 @@
     var style = document.createElement('style');
     style.id = styleId;
     // textContent на элементе <style> — безопасно, это не парсится как HTML.
+
+    // Базовая раскладка без привязки к углу — конкретные edges навешиваем
+    // через corner-классы, чтобы можно было переключать позицию в рантайме.
     var css = [
-      '.pass24-chat-btn{position:fixed;', edges.h, ':', offsetX, 'px;', edges.v, ':', offsetY, 'px;',
-      'width:60px;height:60px;border-radius:50%;',
-      'background:#0f172a;color:#fff;border:0;cursor:pointer;box-shadow:0 10px 30px -6px rgba(15,23,42,0.4);',
+      '.pass24-chat-btn{position:fixed;width:60px;height:60px;border-radius:50%;',
+      'background:#0f172a;color:#fff;border:0;cursor:grab;box-shadow:0 10px 30px -6px rgba(15,23,42,0.4);',
       'display:flex;align-items:center;justify-content:center;transition:transform 0.15s,background 0.15s;',
-      'font-family:-apple-system,BlinkMacSystemFont,sans-serif;}',
+      'font-family:-apple-system,BlinkMacSystemFont,sans-serif;touch-action:none;}',
       '.pass24-chat-btn:hover{transform:scale(1.05);background:#1e293b;}',
       '.pass24-chat-btn:focus{outline:2px solid #6366f1;outline-offset:3px;}',
-      '.pass24-chat-frame{position:fixed;', edges.h, ':', frameOffsetX, 'px;', edges.v, ':', frameOffsetY, 'px;',
-      'width:400px;max-width:calc(100vw - 32px);',
-      'height:620px;max-height:calc(100vh - ', (frameOffsetY + 20), 'px);',
-      'border:0;border-radius:20px;background:transparent;',
+      '.pass24-chat-btn.is-dragging{cursor:grabbing;transition:none;}',
+      '.pass24-chat-btn.is-dragging:hover{transform:none;background:#0f172a;}',
+      '.pass24-chat-frame{position:fixed;width:400px;max-width:calc(100vw - 32px);',
+      'height:620px;border:0;border-radius:20px;background:transparent;',
       'box-shadow:0 24px 48px -12px rgba(15,23,42,0.25);display:none;color-scheme:light;}',
       '.pass24-chat-frame.is-open{display:block;}'
     ].join('');
-    // Bottom-sheet на мобильных — только для bottom-* позиций (для top-* это визуально бессмысленно).
-    if (isBottom) {
-      css += '@media (max-width:480px){.pass24-chat-frame{right:0;left:0;bottom:0;width:100%;max-width:100%;'
-        + 'height:85vh;max-height:85vh;border-radius:20px 20px 0 0;}}';
-    }
+
+    // Угловые классы — генерируются для всех 4 углов, чтобы переключать
+    // позицию через classList.toggle без перерасчёта inline-стилей.
+    Object.keys(POSITIONS).forEach(function (corner) {
+      var e = POSITIONS[corner];
+      css += '.pass24-chat-btn.corner-' + corner + '{'
+          + e.h + ':' + offsetX + 'px;' + e.v + ':' + offsetY + 'px;}';
+      css += '.pass24-chat-frame.corner-' + corner + '{'
+          + e.h + ':' + frameOffsetX + 'px;' + e.v + ':' + frameOffsetY + 'px;'
+          + 'max-height:calc(100vh - ' + (frameOffsetY + 20) + 'px);}';
+    });
+
+    // Bottom-sheet на мобильных — для обоих bottom-* углов. На top-* углах
+    // кнопка может быть наверху, но окно всё равно растягиваем как bottom-sheet —
+    // на маленьком экране это удобнее свободно-плавающего окна.
+    css += '@media (max-width:480px){'
+        + '.pass24-chat-frame.corner-bottom-right,'
+        + '.pass24-chat-frame.corner-bottom-left{'
+        + 'right:0;left:0;bottom:0;width:100%;max-width:100%;'
+        + 'height:85vh;max-height:85vh;border-radius:20px 20px 0 0;}'
+        + '.pass24-chat-btn{cursor:pointer;}'   // touch-устройства: drag отключён, обычный pointer
+        + '}';
     style.textContent = css;
     document.head.appendChild(style);
   }
@@ -143,14 +175,14 @@
 
   // --- DOM ------------------------------------------------------------------
   var button = document.createElement('button');
-  button.className = 'pass24-chat-btn';
+  button.className = 'pass24-chat-btn corner-' + initialPosition;
   button.style.zIndex = String(zIndex);
   button.setAttribute('aria-label', 'Открыть AI-помощник PASS24');
   button.title = 'AI-помощник PASS24';
   button.appendChild(buildChatIcon());
 
   var iframe = document.createElement('iframe');
-  iframe.className = 'pass24-chat-frame';
+  iframe.className = 'pass24-chat-frame corner-' + initialPosition;
   iframe.style.zIndex = String(zIndex - 1);
   iframe.setAttribute('title', 'AI-помощник PASS24');
   iframe.setAttribute('allow', 'clipboard-write');
@@ -158,6 +190,20 @@
   iframe.src = widgetUrl;
 
   var isOpen = false;
+  var currentCorner = initialPosition;
+
+  // Переключение угла: меняем corner-классы на кнопке и iframe, сохраняем выбор.
+  function applyCorner(corner) {
+    if (!POSITIONS[corner]) return;
+    Object.keys(POSITIONS).forEach(function (key) {
+      button.classList.toggle('corner-' + key, key === corner);
+      iframe.classList.toggle('corner-' + key, key === corner);
+    });
+    currentCorner = corner;
+    try {
+      if (window.localStorage) window.localStorage.setItem(STORAGE_KEY, corner);
+    } catch (_e) { /* приватный режим — окей, на следующем визите вернётся к initial */ }
+  }
 
   function open() {
     if (isOpen) return;
@@ -178,6 +224,88 @@
   function toggle() {
     if (isOpen) close(); else open();
   }
+
+  // --- Drag (только desktop) -----------------------------------------------
+  // Тащим кнопку в любой из 4 углов; iframe двигается синхронно, чтобы
+  // развёрнутый чат не «отрывался» от кнопки. На pointerup защёлкиваем
+  // ближайший угол по фактическому центру кнопки и сохраняем в localStorage.
+  var DRAG_THRESHOLD = 5; // px — меньше этого считается кликом, не drag
+  var dragState = null;
+
+  function isMobileViewport() {
+    return !!(window.matchMedia && window.matchMedia('(max-width:480px)').matches);
+  }
+
+  function nearestCorner(rect) {
+    var cx = rect.left + rect.width / 2;
+    var cy = rect.top + rect.height / 2;
+    var h = cx < window.innerWidth / 2 ? 'left' : 'right';
+    var v = cy < window.innerHeight / 2 ? 'top' : 'bottom';
+    return v + '-' + h;
+  }
+
+  function onPointerDown(e) {
+    if (e.button !== 0 && e.pointerType === 'mouse') return; // только ЛКМ для мыши
+    if (isMobileViewport()) return;                          // на мобильных drag не нужен
+    dragState = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false
+    };
+    try { button.setPointerCapture(e.pointerId); } catch (_e) { /* старые браузеры */ }
+  }
+
+  function onPointerMove(e) {
+    if (!dragState || e.pointerId !== dragState.pointerId) return;
+    var dx = e.clientX - dragState.startX;
+    var dy = e.clientY - dragState.startY;
+    if (!dragState.moved && (dx * dx + dy * dy) < DRAG_THRESHOLD * DRAG_THRESHOLD) return;
+    if (!dragState.moved) {
+      dragState.moved = true;
+      button.classList.add('is-dragging');
+      // На время drag блокируем pointer-events внутри iframe — иначе курсор
+      // может «провалиться» в iframe, и pointermove перестанут долетать до кнопки.
+      iframe.style.pointerEvents = 'none';
+    }
+    // translate и кнопке, и iframe — оба следуют за курсором как одно целое.
+    button.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+    if (isOpen) iframe.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+  }
+
+  function onPointerUp(e) {
+    if (!dragState || e.pointerId !== dragState.pointerId) return;
+    var moved = dragState.moved;
+    dragState = null;
+    button.classList.remove('is-dragging');
+    iframe.style.pointerEvents = '';
+    if (moved) {
+      // getBoundingClientRect учитывает transform — даёт реальное положение после drag.
+      var rect = button.getBoundingClientRect();
+      var newCorner = nearestCorner(rect);
+      // Сначала снимаем transform (иначе corner-класс плюс transform = двойной сдвиг
+      // при следующем кадре), затем применяем новый corner-класс.
+      button.style.transform = '';
+      iframe.style.transform = '';
+      applyCorner(newCorner);
+      // Браузер всё равно сгенерирует click после pointerup — гасим именно
+      // следующий, чтобы перетаскивание не открывало/закрывало чат.
+      button.addEventListener('click', swallowClickOnce, { capture: true, once: true });
+    } else {
+      button.style.transform = '';
+      iframe.style.transform = '';
+    }
+  }
+
+  function swallowClickOnce(e) {
+    e.stopImmediatePropagation();
+    e.preventDefault();
+  }
+
+  button.addEventListener('pointerdown', onPointerDown);
+  button.addEventListener('pointermove', onPointerMove);
+  button.addEventListener('pointerup', onPointerUp);
+  button.addEventListener('pointercancel', onPointerUp);
 
   button.addEventListener('click', toggle);
 
