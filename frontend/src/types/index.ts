@@ -69,6 +69,13 @@ export interface Ticket {
   sla_total_pause_seconds: number
   sla_paused_by_status?: boolean
   sla_paused_by_reply?: boolean
+  // Computed на бэке (compute_sla_state). remaining_seconds может быть < 0 = просрочено.
+  sla_response_due_at: string | null
+  sla_resolve_due_at: string | null
+  sla_response_remaining_seconds: number | null
+  sla_resolve_remaining_seconds: number | null
+  sla_remaining_seconds: number | null
+  sla_is_paused: boolean
   has_unread_reply: boolean
   last_public_reply_by?: 'client' | 'staff' | null
   parent_ticket_id: string | null

@@ -6,6 +6,7 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 
 from .models import TicketPriority, TicketStatus
+from .sla_service import compute_sla_state
 
 
 class TicketCreate(BaseModel):
@@ -178,6 +179,15 @@ class TicketRead(BaseModel):
     sla_paused_by_reply: bool = False
     has_unread_reply: bool = False
 
+    # SLA computed (рассчитывается в _compute_sla_state валидаторе ниже).
+    # remaining_seconds может быть отрицательным → просрочено на abs(value).
+    sla_response_due_at: Optional[datetime] = None
+    sla_resolve_due_at: Optional[datetime] = None
+    sla_response_remaining_seconds: Optional[int] = None
+    sla_resolve_remaining_seconds: Optional[int] = None
+    sla_remaining_seconds: Optional[int] = None  # для активной фазы (response → resolve)
+    sla_is_paused: bool = False
+
     # CSAT
     satisfaction_rating: Optional[int] = None
     satisfaction_comment: Optional[str] = None
@@ -215,6 +225,19 @@ class TicketRead(BaseModel):
                 latest = c
         if latest is not None:
             self.last_public_reply_by = "staff" if latest.author_is_staff else "client"
+        return self
+
+    @model_validator(mode="after")
+    def _compute_sla_state(self) -> "TicketRead":
+        """Заполняет sla_*_due_at / sla_*_remaining_seconds / sla_is_paused
+        через `compute_sla_state` — единая точка истины для бэка и UI."""
+        state = compute_sla_state(self, datetime.utcnow())
+        self.sla_response_due_at = state.response_due_at
+        self.sla_resolve_due_at = state.resolve_due_at
+        self.sla_response_remaining_seconds = state.response_remaining_seconds
+        self.sla_resolve_remaining_seconds = state.resolve_remaining_seconds
+        self.sla_remaining_seconds = state.remaining_seconds
+        self.sla_is_paused = state.is_paused
         return self
 
 

@@ -5,6 +5,8 @@ from typing import List, Optional
 
 from sqlmodel import Column, Field, Relationship, SQLModel, String
 
+from backend.tickets.business_hours import business_hours_between
+
 
 # ---------------------------------------------------------------------------
 # Перечисления
@@ -343,6 +345,10 @@ class Ticket(SQLModel, table=True):
 
         OR-семантика: пауза активна, если sla_paused_by_status или sla_paused_by_reply.
         Безопасно вызывается повторно (no-op, если состояние совпадает с флагами).
+
+        Семантика поля `sla_total_pause_seconds`: **бизнес-секунды** (только
+        рабочее время). Если пауза была пт 17:00 — пн 10:00, в накопитель
+        попадёт 2*3600 (1 ч пт + 1 ч пн), а не 65*3600. См. ADR-005.
         """
         was_paused = self.sla_paused_at is not None
         should_pause = bool(self.sla_paused_by_status or self.sla_paused_by_reply)
@@ -350,7 +356,7 @@ class Ticket(SQLModel, table=True):
         if should_pause and not was_paused:
             self.sla_paused_at = now
         elif not should_pause and was_paused:
-            elapsed = int((now - self.sla_paused_at).total_seconds())
+            elapsed = int(business_hours_between(self.sla_paused_at, now) * 3600)
             self.sla_total_pause_seconds += max(0, elapsed)
             self.sla_paused_at = None
 

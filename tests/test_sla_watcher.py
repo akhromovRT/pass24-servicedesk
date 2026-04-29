@@ -5,10 +5,15 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from backend.tickets.business_hours import MSK_OFFSET_HOURS
 from backend.tickets.models import Ticket, TicketStatus
 
 
 pytestmark = pytest.mark.asyncio
+
+
+def _msk(year: int, month: int, day: int, hour_msk: int, minute: int = 0) -> datetime:
+    return datetime(year, month, day, hour_msk - MSK_OFFSET_HOURS, minute, 0)
 
 
 def _ticket_with_paused_sla(resolve_hours: int, created_at: datetime, paused_at: datetime | None) -> Ticket:
@@ -26,22 +31,22 @@ def _ticket_with_paused_sla(resolve_hours: int, created_at: datetime, paused_at:
 
 
 def test_active_pause_extends_effective_deadline():
-    """Если сейчас активна пауза длительностью 2 часа, дедлайн сдвинут на 2 часа вперёд."""
-    from backend.tickets.sla_watcher import deadline_with_business_hours
+    """compute_sla_state с активной паузой удлиняет дедлайн на бизнес-часы паузы."""
+    from backend.tickets.sla_service import compute_sla_state
 
-    now = datetime(2026, 4, 17, 16, 0, 0)  # вт, рабочее время МСК = 19:00 (вне), но для теста используем вычисление напрямую
-    created = now - timedelta(hours=5)
-    paused = now - timedelta(hours=2)
+    # Все моменты в рабочее время понедельника, чтобы пауза целиком в бизнес-часах.
+    created = _msk(2026, 4, 27, 9, 0)   # пн 09:00 МСК
+    paused = _msk(2026, 4, 27, 10, 0)   # пн 10:00 МСК
+    now = _msk(2026, 4, 27, 12, 0)      # пн 12:00 МСК — пауза идёт 2 рабочих часа
+
     t = _ticket_with_paused_sla(resolve_hours=4, created_at=created, paused_at=paused)
+    state = compute_sla_state(t, now)
 
-    base_deadline = deadline_with_business_hours(t.created_at, t.sla_resolve_hours)
-    pause_sec = t.sla_total_pause_seconds or 0
-    if t.sla_paused_at is not None:
-        pause_sec += int((now - t.sla_paused_at).total_seconds())
-    deadline = base_deadline + timedelta(seconds=pause_sec)
-
-    # С учётом активной паузы (2ч) effective deadline должен быть в будущем.
-    assert deadline > now, f"Активная пауза должна двигать дедлайн за now, deadline={deadline}"
+    # is_paused активна, active_due_at — это response (нет first_response_at).
+    # response_due_at без паузы = пн 13:00; с 2ч паузы = пн 15:00.
+    assert state.is_paused is True
+    assert state.active_due_at == _msk(2026, 4, 27, 15, 0)
+    assert state.active_due_at > now
 
 
 async def test_check_sla_breaches_ignores_active_pause():

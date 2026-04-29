@@ -2,6 +2,40 @@
 
 ## Записи
 
+### [2026-04-29] ADR-017: SLA-пауза в бизнес-секундах + единая точка истины через `compute_sla_state`
+
+#### Статус
+Принято. Уточняет ADR-005 в части семантики паузы и контракта API.
+
+#### Контекст
+SLA уже считался в бизнес-часах на бэке (ADR-005: `deadline_with_business_hours`, шаг 30 мин), но:
+1. **API не отдавал готовые дедлайны и `remaining_seconds`** — фронт самостоятельно считал «осталось» через `Date.now() - created_at - sla_total_pause_seconds * 1000` в линейном времени. Тикеты, созданные ночью или в выходные, с утра показывались «красными» при том, что бэк не считал их просроченными.
+2. **`sla_total_pause_seconds` копил линейные секунды.** Пауза с пт 17:00 до пн 10:00 добавляла к дедлайну 65 линейных часов — пауза «дарила» нерабочее время и формально ослабляла SLA.
+3. **Расчёт «активного» дедлайна был размазан**: watcher `_check_sla_breaches` дублировал inline-арифметику паузы и дедлайна, фронт делал свою (неправильную) — рассинхрон при изменениях.
+
+#### Решение
+1. Бизнес-часы выделены в чистый модуль `backend/tickets/business_hours.py` без зависимостей от моделей. Перенесены `WORK_START_HOUR`, `WORK_END_HOUR`, `MSK_OFFSET_HOURS`, `_msk_hour`, `_is_work_time`, `business_hours_between`. Добавлена `deadline_with_business_minutes(start, target_minutes)` — обобщение `deadline_with_business_hours`.
+2. Новый сервис `backend/tickets/sla_service.py` экспортирует `compute_sla_state(ticket, now) -> SlaState` — единая точка истины. Возвращает `response_due_at`, `resolve_due_at`, `active_due_at`, `response_remaining_seconds`, `resolve_remaining_seconds`, `remaining_seconds`, `is_paused`. `remaining_seconds` может быть отрицательным (= просрочено на abs(value)).
+3. `Ticket.recompute_sla_pause` (`models.py`) копит **бизнес-секунды**: при снятии паузы `elapsed = int(business_hours_between(sla_paused_at, now) * 3600)`. Семантика поля `sla_total_pause_seconds` изменена с линейных на бизнес-секунды.
+4. `_check_sla_breaches` в `sla_watcher.py` переведён на `compute_sla_state` (явное `if state.is_paused: continue` + `state.active_due_at`). Watcher автоматически следит за активной фазой: response пока нет первого ответа, иначе resolve.
+5. `TicketRead` (`schemas.py`) расширен 6 computed-полями (`sla_response_due_at`, `sla_resolve_due_at`, `sla_response_remaining_seconds`, `sla_resolve_remaining_seconds`, `sla_remaining_seconds`, `sla_is_paused`) через `@model_validator(mode="after")`. Миграция БД не требуется — поля только в памяти.
+6. На фронте `frontend/src/utils/sla.ts` (`buildResponseProgress`, `buildResolveProgress`, `buildActiveProgress`, `getPauseLabel`) и `frontend/src/composables/useSlaProgress.ts` берут готовые числа с бэка. Никаких `Date.now()`-вычислений. `TicketSlaProgress.vue` и `TicketsPage.vue` рефакторены на этот слой; в `TicketsPage` добавлен polling `setInterval(loadTickets, 60_000)` чтобы полоска не «замораживалась» в фоне.
+
+#### Рассмотренные альтернативы
+- **Линейная пауза (как было).** Минус: нерабочее время «дарится» SLA, отчего тикеты не просрочиваются формально, хотя реальная работа в бизнес-часах могла бы исчерпать SLA. Расходится с интуицией пользователя «фиксировать оставшееся время».
+- **Конфигурируемые рабочие часы через `.env`.** Не нужно сейчас (рабочие часы стабильны: пн-пт 9-18 МСК). Если понадобятся праздники/гибкий график — отдельный тикет, потребуется `holidays`/`workalendar`.
+- **WebSocket-события для real-time обновления SLA.** `useWebSocket.ts` подготовлен на фронте, но не подключён. Polling 60с проще, не требует серверного события `ticket_sla_updated` и тестирования reconnect-логики. UX-эффект (смена цвета после возврата в рабочее время) не критичен к секундам.
+- **Хранить `sla_*_due_at` в БД.** Дёшево считать в памяти (десятки мс на список 50 тикетов через `business_hours_between`); хранение требовало бы пересчёта при каждой смене паузы и денормализации.
+
+#### Последствия
+- Единый поток данных: `Ticket → compute_sla_state → TicketRead → fetch → utils/sla → UI`. Любое изменение бизнес-часов или паузы локализовано в `sla_service.py` / `business_hours.py`.
+- API контракт расширен (новые опциональные поля). Старые клиенты не ломаются — добавление полей обратно совместимо.
+- Семантика `sla_total_pause_seconds` изменена. Миграция 028 обнуляет поле для активных тикетов без активной паузы (`sla_paused_at IS NULL AND status NOT IN ('resolved','closed')`); закрытые тикеты не трогаем (исторические данные), активные паузы корректно обновятся при следующем `recompute_sla_pause`.
+- Watcher теперь warn-ит и за фазу response, не только resolve (раньше проверял только `sla_resolve_hours`). Это улучшение, фиксируется здесь.
+- Линейная пауза, упомянутая как «упрощение» в ADR-005, явно заменена на бизнес-секунды.
+
+---
+
 ### [2026-04-28] ADR-016: Авто-привязка guest-тикетов к Customer по поддомену embed-страницы
 
 #### Статус
