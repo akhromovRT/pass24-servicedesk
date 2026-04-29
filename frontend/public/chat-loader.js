@@ -29,7 +29,10 @@
  *                     bottom-right (default) | bottom-left | top-right | top-left.
  *                     localStorage перебивает это значение.
  *   data-offset-x   — отступ по горизонтали от края, px (default: 24)
- *   data-offset-y   — отступ по вертикали от края, px (default: 24)
+ *   data-offset-y   — отступ по вертикали от края, px (default: 88).
+ *                     Поднят до 88, чтобы по умолчанию проскакивать
+ *                     sticky-футеры с action-кнопками сайта (типичная
+ *                     высота 56–72px). Можно понизить через атрибут.
  *   data-frame-gap  — зазор между кнопкой и окном iframe по вертикали, px (default: 76)
  */
 (function () {
@@ -80,7 +83,9 @@
     return (isFinite(parsed) && parsed >= 0) ? parsed : fallback;
   }
   var offsetX = toInt(ds.offsetX, 24);
-  var offsetY = toInt(ds.offsetY, 24);
+  // 88px по вертикали — чтобы виджет по умолчанию не перекрывал sticky-футеры
+  // с кнопками «Сохранить/Отмена» (типичная высота 56–72px) на формах сайтов клиентов.
+  var offsetY = toInt(ds.offsetY, 88);
   var frameGap = toInt(ds.frameGap, 76);
 
   // iframe смещён на 8px внутрь по горизонтали (визуальный зазор, как в исходной раскладке)
