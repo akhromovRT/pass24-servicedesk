@@ -9,6 +9,33 @@
 
 ## Записи
 
+### 2026-04-29 — fix(sla): бизнес-часы паузы + единая точка истины через `compute_sla_state` (ADR-017)
+
+**Проблема (от пользователя):** SLA-полоски в UI к утру «красные» у тикетов, созданных ночью или в выходные. В статусах ожидания клиента полоска визуально продолжает течь, хотя по логике SLA на паузе. По факту — половина списка с утра выглядит просроченной, реальных просрочек нет.
+
+**Корень:** на бэке бизнес-часы (`deadline_with_business_hours`) и пауза по статусу/reply уже работали, но `TicketRead` не отдавал готовых дедлайнов — фронт сам считал «осталось» через `Date.now() - created_at - sla_total_pause_seconds * 1000` в линейном времени. Плюс `sla_total_pause_seconds` копил линейные секунды, отчего пауза «дарила» нерабочее время.
+
+**Решение** (см. ADR-017):
+1. Бизнес-часы вынесены в `backend/tickets/business_hours.py` (без зависимостей от моделей; добавлена `deadline_with_business_minutes`).
+2. Новый `backend/tickets/sla_service.py` — `compute_sla_state(ticket, now) → SlaState` (response/resolve/active due_at, response/resolve/active remaining_seconds, is_paused). `remaining_seconds` может быть отрицательным = просрочено на `abs(value)`.
+3. `Ticket.recompute_sla_pause` теперь копит **бизнес-секунды** (`business_hours_between(sla_paused_at, now) * 3600`).
+4. `_check_sla_breaches` переведён на `compute_sla_state` (явное `if state.is_paused: continue`, watcher теперь следит за активной фазой — response пока нет первого ответа, иначе resolve).
+5. `TicketRead` отдаёт 6 computed-полей через `@model_validator`. Миграции БД для новых полей не нужны — всё в памяти.
+6. Фронт: `frontend/src/utils/sla.ts` (`buildResponseProgress`/`buildResolveProgress`/`buildActiveProgress`/`getPauseLabel`) + composable `useSlaProgress.ts`. Все `Date.now()`-вычисления удалены. `TicketSlaProgress.vue` и `TicketsPage.vue` рефакторены. В `TicketsPage` добавлен polling `setInterval(loadTickets, 60_000)` чтобы полоска не «замораживалась» при идле.
+7. Миграция 028 — обнуление `sla_total_pause_seconds` для активных тикетов без активной паузы (старая семантика была линейной, новая — бизнес-секунды).
+
+**Изменённые файлы:**
+- Backend: `backend/tickets/business_hours.py` (новый), `backend/tickets/sla_service.py` (новый), `backend/tickets/sla_watcher.py` (рефакторинг), `backend/tickets/models.py` (recompute_sla_pause), `backend/tickets/schemas.py` (TicketRead + 6 полей).
+- Frontend: `frontend/src/utils/sla.ts` (новый), `frontend/src/composables/useSlaProgress.ts` (новый), `frontend/src/components/ticket/TicketSlaProgress.vue` (на composable), `frontend/src/pages/TicketsPage.vue` (polling + helper), `frontend/src/types/index.ts` (+6 полей в Ticket), `frontend/package.json` (vitest + jsdom + @vue/test-utils), `frontend/vite.config.ts` (test config).
+- Tests: `tests/test_business_hours.py` (10 тестов), `tests/test_sla_service.py` (12 тестов), `tests/test_sla_watcher.py` (адаптирован), `frontend/src/composables/__tests__/useSlaProgress.test.ts` (17 тестов).
+- Docs: ADR-017 в `agent_docs/adr.md`.
+- DB: миграция `migrations/versions/028_sla_pause_business_seconds.py`.
+
+**Тесты:**
+- Backend: `pytest tests/test_business_hours.py tests/test_sla_service.py tests/test_sla_watcher.py::test_active_pause_extends_effective_deadline -v` → 23/23 зелёные.
+- Frontend: `npx vitest run` → 17/17 зелёные. `npm run build` → без TS-ошибок.
+- Интеграционный `test_check_sla_breaches_ignores_active_pause` требует БД и пакет `greenlet` (в локальном системном Python 3.9 не установлен) — не запускается локально, покрывается CI.
+
 ### 2026-04-28 — feat: авто-привязка guest-тикетов из embed-виджета к Customer по поддомену
 
 Гостевые тикеты, создаваемые через AI-виджет на сайтах клиентов формата `bristol.pass24online.ru`, теперь автоматически связываются с компанией в реестре постоянных клиентов. Раньше `Ticket.customer_id` оставался `NULL` — оператор поддержки руками привязывал каждую заявку. Это закрывает «вторую половину» истории про постоянных клиентов: запись от 2026-04-25 добавила UI-индикацию (бейдж «Постоянный», фильтры, `customer_is_permanent` в `TicketRead`), но индикация работала только для тикетов с уже проставленным `customer_id` — теперь embed-виджет проставляет его автоматически.

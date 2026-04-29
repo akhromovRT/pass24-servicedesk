@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
@@ -24,5 +25,10 @@ export default defineConfig({
       '/docs': { target: 'http://localhost:8000', changeOrigin: true },
       '/openapi.json': { target: 'http://localhost:8000', changeOrigin: true },
     },
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    include: ['src/**/__tests__/**/*.test.ts'],
   },
 })

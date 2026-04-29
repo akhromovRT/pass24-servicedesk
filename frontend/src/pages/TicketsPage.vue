@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch, computed } from 'vue'
+import { onMounted, onUnmounted, ref, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import MultiSelect from 'primevue/multiselect'
@@ -17,6 +17,7 @@ import { useTicketsStore, type SavedView } from '../stores/tickets'
 import { useAuthStore } from '../stores/auth'
 import { useAgentTools } from '../composables/useAgentTools'
 import type { Ticket } from '../types'
+import { buildActiveProgress, type SlaProgress } from '../utils/sla'
 
 const router = useRouter()
 const toast = useToast()
@@ -185,43 +186,11 @@ const agentMap = computed(() => {
   return m
 })
 
-// ─── SLA calculations ───────────────────────────────────────────
-function slaProgress(ticket: Ticket): { pct: number; remaining: string; breach: boolean } {
-  if (!ticket.sla_response_hours || !ticket.created_at) {
-    return { pct: 0, remaining: '', breach: false }
-  }
-  // Если тикет решён — SLA done
-  if (ticket.status === 'resolved' || ticket.status === 'closed') {
-    return { pct: 100, remaining: 'завершено', breach: false }
-  }
-  const now = Date.now()
-  const created = new Date(ticket.created_at.endsWith('Z') ? ticket.created_at : ticket.created_at + 'Z').getTime()
-  const pauseMs = (ticket.sla_total_pause_seconds || 0) * 1000
-  const totalHours = ticket.sla_resolve_hours || 24
-  const deadline = created + totalHours * 3600 * 1000 + pauseMs
-  const totalMs = totalHours * 3600 * 1000
-  const elapsedMs = now - created - pauseMs
-  const pct = Math.min(100, Math.round((elapsedMs / totalMs) * 100))
-  const remainingMs = deadline - now
-  const breach = remainingMs < 0 || ticket.sla_breached
-
-  if (breach) {
-    const overMs = Math.abs(remainingMs)
-    const overH = Math.floor(overMs / 3600000)
-    const overM = Math.floor((overMs % 3600000) / 60000)
-    return { pct: 100, remaining: `-${overH}ч ${overM}м`, breach: true }
-  }
-  const h = Math.floor(remainingMs / 3600000)
-  const m = Math.floor((remainingMs % 3600000) / 60000)
-  const remaining = h > 0 ? `${h}ч ${m}м` : `${m}м`
-  return { pct, remaining, breach: false }
-}
-
-function slaColor(pct: number, breach: boolean): string {
-  if (breach) return '#dc2626'
-  if (pct > 75) return '#ea580c'
-  if (pct > 50) return '#f59e0b'
-  return '#10b981'
+// ─── SLA widget ─────────────────────────────────────────────────
+// Берём готовые значения с бэка (sla_*_remaining_seconds, sla_is_paused) —
+// бэк уже учёл бизнес-часы и паузы. См. compute_sla_state.
+function slaWidget(ticket: Ticket): SlaProgress | null {
+  return buildActiveProgress(ticket)
 }
 
 function formatDate(dateStr: string): string {
@@ -349,6 +318,11 @@ function isActiveStatus(status: string): boolean {
   return ACTIVE_STATUSES.has(status)
 }
 
+// Polling: освежаем список + статистику раз в минуту, чтобы SLA-полоска
+// не «замораживалась» в нерабочее время. Сервер пересчитывает remaining
+// каждый запрос, фронт не делает Date.now()-арифметику.
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
 onMounted(() => {
   store.fetchStats()
   // Пользователи видят только открытые по умолчанию
@@ -356,6 +330,17 @@ onMounted(() => {
   loadTickets(1)
   if (auth.isLoggedIn) store.fetchSavedViews()
   if (isStaff.value) loadAgentTools()
+  pollTimer = setInterval(() => {
+    loadTickets(store.page || 1)
+    store.fetchStats()
+  }, 60_000)
+})
+
+onUnmounted(() => {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
 })
 </script>
 
@@ -566,18 +551,28 @@ onMounted(() => {
 
         <div class="row-right">
           <!-- SLA indicator (только для агентов) -->
-          <div v-if="isStaff && ticket.status !== 'closed' && ticket.status !== 'resolved'" class="sla-widget">
-            <div class="sla-bar-track">
-              <div
-                class="sla-bar-fill"
-                :style="{ width: slaProgress(ticket).pct + '%', background: slaColor(slaProgress(ticket).pct, slaProgress(ticket).breach) }"
-              />
+          <template v-if="isStaff && ticket.status !== 'closed' && ticket.status !== 'resolved'">
+            <div v-if="slaWidget(ticket)" class="sla-widget">
+              <div class="sla-bar-track">
+                <div
+                  class="sla-bar-fill"
+                  :style="{ width: slaWidget(ticket)!.pct + '%', background: slaWidget(ticket)!.color }"
+                />
+              </div>
+              <div class="sla-remaining" :style="{ color: slaWidget(ticket)!.color }">
+                <i
+                  :class="
+                    slaWidget(ticket)!.paused
+                      ? 'pi pi-pause-circle'
+                      : slaWidget(ticket)!.overdue
+                        ? 'pi pi-exclamation-circle'
+                        : 'pi pi-clock'
+                  "
+                />
+                {{ slaWidget(ticket)!.label }}
+              </div>
             </div>
-            <div class="sla-remaining" :style="{ color: slaColor(slaProgress(ticket).pct, slaProgress(ticket).breach) }">
-              <i :class="slaProgress(ticket).breach ? 'pi pi-exclamation-circle' : 'pi pi-clock'" />
-              {{ slaProgress(ticket).remaining }}
-            </div>
-          </div>
+          </template>
           <div v-else-if="isStaff" class="sla-widget done">
             <i class="pi pi-check-circle" /> решено
           </div>

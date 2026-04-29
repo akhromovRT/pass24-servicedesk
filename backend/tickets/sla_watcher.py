@@ -9,66 +9,12 @@ from sqlmodel import select
 
 from backend.database import async_session_factory
 from backend.tickets.models import Ticket, TicketStatus
+from backend.tickets.sla_service import compute_sla_state
 
 logger = logging.getLogger(__name__)
 
 CHECK_INTERVAL_SECONDS = 300  # 5 минут
 WARN_BEFORE_MINUTES = 30
-
-# Рабочие часы МСК: пн-пт 9:00-18:00
-WORK_START_HOUR = 9
-WORK_END_HOUR = 18
-# UTC offset МСК = +3
-MSK_OFFSET_HOURS = 3
-
-
-def _msk_hour(dt_utc: datetime) -> int:
-    return (dt_utc.hour + MSK_OFFSET_HOURS) % 24
-
-
-def _is_work_time(dt_utc: datetime) -> bool:
-    """Проверка: рабочее время (пн-пт, 9-18 МСК)."""
-    # weekday: 0=пн, 6=вс
-    if dt_utc.weekday() >= 5:  # суббота/воскресенье
-        return False
-    h = _msk_hour(dt_utc)
-    return WORK_START_HOUR <= h < WORK_END_HOUR
-
-
-def business_hours_between(start: datetime, end: datetime) -> float:
-    """Считает количество рабочих часов между двумя моментами.
-
-    Упрощённая реализация: пробегаем по 30-мин интервалам.
-    Достаточно точно для целей SLA (5 мин частота проверки).
-    """
-    if end <= start:
-        return 0.0
-    minutes = 0
-    step = timedelta(minutes=30)
-    cur = start
-    while cur < end:
-        if _is_work_time(cur):
-            minutes += 30
-        cur += step
-    return minutes / 60.0
-
-
-def deadline_with_business_hours(start: datetime, sla_hours: int) -> datetime:
-    """Находит дедлайн, пропуская нерабочее время."""
-    if sla_hours <= 0:
-        return start
-    target_minutes = sla_hours * 60
-    accumulated = 0
-    step = timedelta(minutes=30)
-    cur = start
-    while accumulated < target_minutes:
-        if _is_work_time(cur):
-            accumulated += 30
-        cur += step
-        # safety: не зацикливаемся более чем на год
-        if cur - start > timedelta(days=365):
-            return cur
-    return cur
 
 
 async def _check_sla_breaches() -> int:
@@ -92,15 +38,14 @@ async def _check_sla_breaches() -> int:
         tickets = list(r.scalars())
 
         for t in tickets:
-            if not t.sla_resolve_hours:
+            state = compute_sla_state(t, now)
+            # Тикет на паузе (по статусу или ответу агента) — не warn-им,
+            # пока пауза активна. Дедлайн «дойдёт» когда снова ноль reply/status.
+            if state.is_paused:
                 continue
-            pause_sec = t.sla_total_pause_seconds or 0
-            # Учёт активной паузы (любой источник: статус или reply): без этого
-            # при paused_at != None дедлайн не растёт и warning срабатывает ложно.
-            if t.sla_paused_at is not None:
-                pause_sec += int((now - t.sla_paused_at).total_seconds())
-            deadline = deadline_with_business_hours(t.created_at, t.sla_resolve_hours)
-            deadline = deadline + timedelta(seconds=pause_sec)
+            if state.active_due_at is None:
+                continue
+            deadline = state.active_due_at
             time_to_breach = deadline - now
 
             # Уже нарушено или до нарушения осталось меньше 30 минут
