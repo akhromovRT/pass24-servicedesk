@@ -1,14 +1,35 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
+import os
+from email import encoders
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 
 import aiosmtplib
 
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Каталог хранения вложений (совпадает с UPLOAD_DIR в backend.tickets.router).
+# Пути в Attachment.storage_path относительные, абсолютный путь = ATTACHMENTS_DIR / storage_path.
+ATTACHMENTS_DIR = Path("/app/data/attachments")
+
+# Лимит суммарного размера вложений в письме: ~20 МБ raw → ~26 МБ после base64.
+# Большинство SMTP-серверов отбивают письма >25 МБ; берём порог с запасом.
+_MAX_EMAIL_ATTACHMENT_BYTES = 20 * 1024 * 1024
+
+
+def _human_size(bytes_count: int) -> str:
+    if bytes_count < 1024:
+        return f"{bytes_count} Б"
+    if bytes_count < 1024 * 1024:
+        return f"{bytes_count / 1024:.0f} КБ"
+    return f"{bytes_count / 1024 / 1024:.1f} МБ"
 
 STATUS_LABELS = {
     "new": "Новый",
@@ -58,17 +79,60 @@ def _is_reserved_address(addr: str) -> bool:
     return any(domain == t.lstrip(".") or domain.endswith(t) for t in _RESERVED_EMAIL_TLDS)
 
 
+def _build_mime_attachment(file_path: Path, filename: str, content_type: str) -> MIMEBase | None:
+    """Читает файл с диска и формирует MIME-часть для прикрепления к письму.
+
+    Возвращает None, если файл недоступен — в этом случае письмо отправляется
+    без этого attachment'а, ошибка логируется. Это защита от случая, когда
+    файл удалён между моментом отправки команды и фактической отправкой
+    background-задачей.
+    """
+    if not file_path.is_file():
+        logger.warning("Attachment file missing: %s", file_path)
+        return None
+
+    # Парсим content_type на main/sub. Если кривой — fallback на octet-stream.
+    main_type, _, sub_type = (content_type or "").partition("/")
+    if not main_type or not sub_type:
+        guessed, _ = mimetypes.guess_type(filename)
+        if guessed:
+            main_type, _, sub_type = guessed.partition("/")
+        else:
+            main_type, sub_type = "application", "octet-stream"
+
+    try:
+        data = file_path.read_bytes()
+    except OSError as exc:
+        logger.error("Не удалось прочитать attachment %s: %s", file_path, exc)
+        return None
+
+    part = MIMEBase(main_type, sub_type)
+    part.set_payload(data)
+    encoders.encode_base64(part)
+    part.add_header(
+        "Content-Disposition",
+        "attachment",
+        filename=filename,
+    )
+    return part
+
+
 async def _send_email(
     to: str,
     subject: str,
     html_body: str,
     *,
     ticket_id: str | None = None,
+    attachments: list[dict] | None = None,
 ) -> None:
     """Отправка email через SMTP. Ошибки логируются, но не прерывают работу.
 
     Если передан ticket_id — добавляет In-Reply-To/References заголовки
     для корректной группировки в email-клиентах.
+
+    Если передан attachments — каждый словарь содержит ключи
+    `storage_path` (относительно ATTACHMENTS_DIR), `filename`, `content_type`.
+    Файлы прикрепляются к письму как обычные `Content-Disposition: attachment`.
     """
     if not settings.smtp_password:
         logger.warning("SMTP_PASSWORD не задан — email не отправлен: %s", subject)
@@ -84,7 +148,18 @@ async def _send_email(
         )
         return
 
-    msg = MIMEMultipart("alternative")
+    # Структура с attachments — mixed (alternative с HTML внутри + parts).
+    # Без attachments — просто alternative, как раньше.
+    has_attachments = bool(attachments)
+    if has_attachments:
+        msg = MIMEMultipart("mixed")
+        body_part = MIMEMultipart("alternative")
+        body_part.attach(MIMEText(html_body, "html", "utf-8"))
+        msg.attach(body_part)
+    else:
+        msg = MIMEMultipart("alternative")
+        msg.attach(MIMEText(html_body, "html", "utf-8"))
+
     msg["From"] = f"PASS24 Service Desk <{settings.smtp_from}>"
     msg["To"] = to
     msg["Subject"] = subject
@@ -96,7 +171,16 @@ async def _send_email(
         msg["In-Reply-To"] = thread_id
         msg["References"] = thread_id
 
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
+    if has_attachments and attachments:
+        for att in attachments:
+            file_path = ATTACHMENTS_DIR / att["storage_path"]
+            part = _build_mime_attachment(
+                file_path,
+                filename=att["filename"],
+                content_type=att.get("content_type", ""),
+            )
+            if part is not None:
+                msg.attach(part)
 
     try:
         await aiosmtplib.send(
@@ -420,9 +504,61 @@ async def notify_ticket_comment(
     title: str,
     comment_text: str,
     author_name: str,
+    attachments: list[dict] | None = None,
 ) -> None:
-    """Уведомление о новом комментарии к тикету."""
+    """Уведомление о новом комментарии к тикету.
+
+    Если переданы attachments — файлы суммарно ≤ ~20MB прикладываются к письму
+    как `Content-Disposition: attachment`. Превышающие лимит упоминаются в HTML
+    со ссылкой на тикет в кабинете.
+    """
     tag = ticket_subject_tag(ticket_id)
+    portal_url = f"https://support.pass24pro.ru/tickets/{ticket_id}"
+
+    # Делим attachments на «помещаются в лимит» и «слишком большие».
+    to_attach: list[dict] = []
+    oversized: list[dict] = []
+    if attachments:
+        cumulative = 0
+        # Сортируем по возрастанию размера, чтобы максимизировать число
+        # уместившихся файлов при одном большом и нескольких мелких.
+        for att in sorted(attachments, key=lambda a: a.get("size", 0)):
+            size = int(att.get("size", 0))
+            if size > _MAX_EMAIL_ATTACHMENT_BYTES or cumulative + size > _MAX_EMAIL_ATTACHMENT_BYTES:
+                oversized.append(att)
+            else:
+                to_attach.append(att)
+                cumulative += size
+
+    # HTML-блок со списком прикреплённых файлов. Не показываем, если
+    # attachments вообще не было — иначе дублировать визуально нечего.
+    attachments_html = ""
+    if attachments:
+        rows: list[str] = []
+        for a in to_attach:
+            rows.append(
+                f'<li style="margin:4px 0;color:#334155;">'
+                f'📎 {a["filename"]} '
+                f'<span style="color:#64748b;font-size:12px;">({_human_size(int(a["size"]))})</span>'
+                f'</li>'
+            )
+        for a in oversized:
+            rows.append(
+                f'<li style="margin:4px 0;color:#92400e;">'
+                f'⚠️ {a["filename"]} '
+                f'<span style="color:#64748b;font-size:12px;">({_human_size(int(a["size"]))})</span>'
+                f' — слишком большой для письма, '
+                f'<a href="{portal_url}" style="color:#2563eb;">посмотрите в кабинете</a>'
+                f'</li>'
+            )
+        attachments_html = (
+            '<div style="background:#f8fafc;border:1px solid #e2e8f0;'
+            'padding:12px 16px;margin:12px 0;border-radius:6px;">'
+            '<strong style="color:#1e293b;font-size:13px;">Прикреплённые файлы:</strong>'
+            f'<ul style="margin:6px 0 0;padding-left:20px;font-size:13px;">{"".join(rows)}</ul>'
+            '</div>'
+        )
+
     await _send_email(
         to=creator_email,
         subject=f"{tag} Новый комментарий: {title}",
@@ -438,9 +574,11 @@ async def notify_ticket_comment(
                 <div style="background: #f8fafc; border-left: 3px solid #3b82f6; padding: 12px 16px; margin: 12px 0; border-radius: 0 4px 4px 0;">
                     <p style="color: #334155; margin: 0; white-space: pre-wrap;">{comment_text}</p>
                 </div>
+                {attachments_html}
                 {_ticket_body_reference(ticket_id)}
             </div>
         </div>
         """,
         ticket_id=ticket_id,
+        attachments=to_attach if to_attach else None,
     )

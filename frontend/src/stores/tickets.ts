@@ -52,11 +52,28 @@ export interface SavedViewCreate {
   sort_order?: number
 }
 
+// Допустимые значения per_page (backend `le=100` тоже это ограничивает).
+const ALLOWED_PER_PAGE = [20, 50, 100] as const
+const PER_PAGE_STORAGE_KEY = 'tickets-per-page'
+const DEFAULT_PER_PAGE = 50
+
+function loadPerPageFromStorage(): number {
+  try {
+    const raw = localStorage.getItem(PER_PAGE_STORAGE_KEY)
+    const parsed = raw ? parseInt(raw, 10) : NaN
+    if (ALLOWED_PER_PAGE.includes(parsed as 20 | 50 | 100)) return parsed
+  } catch {
+    /* localStorage недоступен — Safari Private */
+  }
+  return DEFAULT_PER_PAGE
+}
+
 export const useTicketsStore = defineStore('tickets', () => {
   const tickets = ref<Ticket[]>([])
   const currentTicket = ref<Ticket | null>(null)
   const total = ref(0)
   const page = ref(1)
+  const perPage = ref<number>(loadPerPageFromStorage())
   const loading = ref(false)
   const filters = ref<TicketFilters>({})
   const stats = ref<TicketStats>({ total: 0, open: 0, overdue: 0, waiting: 0, urgent: 0, new: 0 })
@@ -70,7 +87,7 @@ export const useTicketsStore = defineStore('tickets', () => {
 
       const params = new URLSearchParams()
       params.set('page', String(page.value))
-      params.set('per_page', '20')
+      params.set('per_page', String(perPage.value))
 
       // Массивы → через запятую
       if (filters.value.status?.length) params.set('status', filters.value.status.join(','))
@@ -129,10 +146,16 @@ export const useTicketsStore = defineStore('tickets', () => {
     return ticket
   }
 
-  async function addComment(id: string, text: string, is_internal = false): Promise<TicketComment> {
+  async function addComment(
+    id: string,
+    text: string,
+    is_internal = false,
+    attachment_ids?: string[],
+  ): Promise<TicketComment> {
     const comment = await api.post<TicketComment>(`/tickets/${id}/comments`, {
       text,
       is_internal,
+      ...(attachment_ids && attachment_ids.length ? { attachment_ids } : {}),
     })
     if (currentTicket.value && currentTicket.value.id === id) {
       currentTicket.value.comments.push(comment)
@@ -196,11 +219,25 @@ export const useTicketsStore = defineStore('tickets', () => {
     })
   }
 
+  function setPerPage(n: number): void {
+    if (!ALLOWED_PER_PAGE.includes(n as 20 | 50 | 100)) return
+    if (perPage.value === n) return
+    perPage.value = n
+    try {
+      localStorage.setItem(PER_PAGE_STORAGE_KEY, String(n))
+    } catch {
+      /* localStorage недоступен — выбор сохранится только до перезагрузки */
+    }
+    // Сбрасываем на первую страницу, чтобы не оказаться за пределами total.
+    void fetchTickets(1)
+  }
+
   return {
     tickets,
     currentTicket,
     total,
     page,
+    perPage,
     loading,
     filters,
     stats,
@@ -220,5 +257,6 @@ export const useTicketsStore = defineStore('tickets', () => {
     createSavedView,
     deleteSavedView,
     recordViewUsage,
+    setPerPage,
   }
 })

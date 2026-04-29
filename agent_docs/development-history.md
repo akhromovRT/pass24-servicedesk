@@ -9,6 +9,62 @@
 
 ## Записи
 
+### 2026-04-29 — feat(tickets): UX списка тикетов + критичный баг с email-вложениями (три задачи в одном релизе)
+
+**Контекст:** агенты поддержки жаловались на три проблемы по интерфейсу списка тикетов и работе с тикетом. Все три закрыты одним релизом, потому что задачи 1 и 2 затрагивают одни и те же файлы (`TicketsPage.vue`, `stores/tickets.ts`).
+
+**Задача 1 — pagination 20/50/100 default 50.** Раньше `per_page=20` хардкодом, на 1080p помещалось 14–15 карточек, агент много пагинировал. Сейчас:
+- `frontend/src/stores/tickets.ts` — новый ref `perPage` со значением из `localStorage['tickets-per-page']` (валидация `[20, 50, 100]`, fallback 50). Функция `setPerPage(n)` пишет в localStorage и перезагружает первую страницу.
+- `frontend/src/pages/TicketsPage.vue` — Paginator получил `:rows-per-page-options="[20, 50, 100]"`, `RowsPerPageDropdown` в template, и `current-page-report-template="{first}–{last} из {totalRecords}"`. Хэндлер `onPageChange` различает смену страницы и смену rows-per-page (PrimeVue эмитит то же `@page`).
+- Backend не трогали — там уже было `le=100` (`backend/tickets/router.py:422-424`).
+
+**Задача 2 — middle-click открывает в новой вкладке.** Раньше карточка `<article @click="router.push(...)">` — программная навигация, у браузера нет настоящего `<a href>`, поэтому Ctrl/Cmd-click и middle-click не работали. Сейчас:
+- `frontend/src/pages/TicketsPage.vue` — `<article>` заменён на `<RouterLink :to="...">` с тем же контентом и классами. Браузер сам обработает middle-click → новая вкладка, Ctrl/Cmd-click → новая вкладка, обычный click → SPA-навигация через Vue Router.
+- Удалена функция `openTicket(id)` — не используется.
+- В CSS `.ticket-row` добавлены `text-decoration: none`, `color: inherit`, `:visited { color: inherit }` — нейтрализация дефолтных стилей якоря, чтобы карточка визуально не отличалась от прежнего `<article>`. Также `:focus-visible { outline: 2px solid #6366f1 }` для keyboard-нав.
+- ProjectCard и ArticleCard имеют ту же проблему, но трогать не стали — пользователь явно просил только список тикетов.
+
+**Задача 3 (КРИТИЧНО) — скриншоты и вложения от агента доходят клиенту по email.** Это был блокирующий баг: агент прикреплял файл, видел toast «Файл загружен», но в composer'е никаких следов файла не было, при «Отправить» комментарий создавался **без связи с этим файлом**, email клиенту приходил без attachments. Архитектура была частично готова (`Attachment.comment_id` существует с commit `2fccbd0`, `TicketConversation.vue` уже отображает inline по `comment_id`), но outbound-flow от агента не использовал эту инфраструктуру. Сейчас:
+
+- `frontend/src/components/ticket/TicketComposeArea.vue` — переписан целиком:
+  - State `pendingAttachments: ref<PendingAttachment[]>([])` накапливает загруженные файлы.
+  - `<input type="file" multiple>` — несколько файлов за один диалог.
+  - UI: chips под Textarea с превью (для image/* через `URL.createObjectURL`), имя, размер, кнопка ✕. Кнопка «Отправить» теперь активна, если есть текст ИЛИ хотя бы один файл (раньше только текст).
+  - `removeAttachment(id)` шлёт DELETE на бэкенд, ревокает objectURL. На submit все ID идут в `addComment(...)`.
+  - `onBeforeUnmount` — общий revokePreviews для memory-leak protection.
+- `frontend/src/stores/tickets.ts:addComment` — новый необязательный параметр `attachment_ids?: string[]`, передаётся в payload только если массив непустой (бэкенд получит дефолт `[]`).
+- `backend/tickets/schemas.py:CommentCreate` — новое поле `attachment_ids: list[str] = []` с docstring.
+- `backend/tickets/router.py:add_comment` — после `commit/refresh` комментария делает `UPDATE attachments SET comment_id = comment.id WHERE id IN (:ids) AND ticket_id = :ticket_id AND comment_id IS NULL`. Защита от race / угона: только attachments этого тикета, ещё не привязанные ни к одному комменту. После UPDATE перечитывает Attachment-ы и формирует payload `[{storage_path, filename, content_type, size}]` для уведомления.
+- `backend/tickets/router.py` — новый эндпоинт `DELETE /tickets/{ticket_id}/attachments/{attachment_id}`. Проверки: (1) attachment принадлежит этому тикету, (2) удалять может только uploader или staff, (3) запрещено удалять, если `comment_id IS NOT NULL` (исторические сообщения неизменяемы — отдаём 409). Файл с диска удаляется best-effort, ошибки логируются.
+- `backend/notifications/email.py` — крупно расширен:
+  - Новый helper `_build_mime_attachment(file_path, filename, content_type) -> MIMEBase | None`. Если файл недоступен — возвращает None, письмо уходит без него (защита от удалённого файла).
+  - `_send_email(...)` принимает `attachments: list[dict] | None`. Если список не пуст — переключается с `MIMEMultipart("alternative")` на `MIMEMultipart("mixed")` со вложенным `alternative` для HTML и MIME-частями для файлов.
+  - `notify_ticket_comment(...)` принимает `attachments: list[dict] | None`. Делит файлы на «помещаются в лимит ~20 МБ суммарно» и «слишком большие» (сортирует по возрастанию размера, чтобы максимизировать число уместившихся). Помещающиеся прикладываются к письму; превышающие — упоминаются в HTML списком со ссылкой на тикет в кабинете.
+  - Лимит `_MAX_EMAIL_ATTACHMENT_BYTES = 20 * 1024 * 1024` — после base64-кодирования это даст ~26 МБ raw size, около типичного предела SMTP в 25 МБ.
+  - Новый helper `_human_size(bytes)` — формат «1.2 МБ» / «512 КБ» для отображения в HTML и логах.
+
+**Решения по уточнениям пользователя:**
+- Pagination: dropdown 20/50/100, default 50, выбор в localStorage.
+- Email size: ≤20 МБ (с запасом на base64) — attachment'ом, остальное — ссылками.
+- Inline-img: НЕ делаем (MVP). Все вложения — обычные `Content-Disposition: attachment`. Inline через CID можно добавить отдельной задачей, если будет запрос.
+
+**Что переиспользовали:**
+- `Attachment.comment_id` (commit `2fccbd0`) — существующая инфраструктура линковки.
+- `TicketConversation.vue` — уже фильтрует и показывает inline-attachments по `comment_id`. Благодаря этому в треде агентский комментарий с вложениями отображается правильно автоматически.
+- `_is_reserved_address` (RFC 2606/6761 guard) и threading headers — без изменений.
+
+**Что НЕ делали:**
+- Inline image через Content-ID — отложено.
+- Cleanup orphan-attachments (если агент закрыл вкладку, не отправив комментарий) — отдельная background-задача, нужен cron.
+- Прогрессбар при upload (сейчас просто toast при ошибке) — UX-полировка.
+- Drag&drop файлов в composer — отдельная задача, инпут пока через кнопку «прикрепить».
+
+**Верификация:** `vue-tsc -b` (frontend) и `python -m py_compile` (backend) прошли без ошибок. End-to-end smoke-тест в браузере после deploy: прикрепить 2 PNG → отправить → проверить, что клиент получает письмо с обоими PNG attachment'ами, в треде комментарий с inline-thumbnail.
+
+**Файлы:** `frontend/src/components/ticket/TicketComposeArea.vue` (переписан), `frontend/src/stores/tickets.ts` (+~30 строк), `frontend/src/pages/TicketsPage.vue` (~30 строк изменений), `backend/tickets/schemas.py` (+1 поле), `backend/tickets/router.py` (+~70 строк, новый DELETE-эндпоинт + линковка), `backend/notifications/email.py` (+~120 строк).
+
+---
+
 ### 2026-04-29 — feat(chat-loader): drag-and-drop кнопки AI-виджета по 4 углам с persistence
 
 **Проблема (от пользователя):** статические `data-offset-x/y` от админа сайта не покрывают все случаи перекрытия. На разных страницах одного и того же сайта виджет может мешать в одном месте и не мешать в другом, а пиксельная подгонка ломается при ресайзе/смене страницы. «Жёсткая привязка» неудобна.

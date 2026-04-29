@@ -99,6 +99,10 @@ class EventRead(BaseModel):
 class CommentCreate(BaseModel):
     text: str = Field(..., min_length=1, max_length=10000)
     is_internal: bool = Field(default=False, description="Внутренний комментарий")
+    attachment_ids: list[str] = Field(
+        default_factory=list,
+        description="ID вложений, предварительно загруженных через POST /tickets/{id}/attachments. Будут привязаны к этому комментарию и приложены к email-уведомлению.",
+    )
 
 
 class CommentRead(BaseModel):

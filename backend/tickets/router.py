@@ -1009,6 +1009,29 @@ async def add_comment(
     await session.commit()
     await session.refresh(comment)
 
+    # Линкуем pre-uploaded attachments к этому комментарию.
+    # Защита: только attachments этого тикета и ещё не привязанные к другому
+    # комментарию (commit_id IS NULL). Это даёт идемпотентность и не позволяет
+    # «угнать» чужой attachment.
+    comment_attachments: list[Attachment] = []
+    if payload.attachment_ids:
+        from sqlalchemy import update as sa_update
+        await session.execute(
+            sa_update(Attachment)
+            .where(
+                Attachment.id.in_(payload.attachment_ids),
+                Attachment.ticket_id == ticket_id,
+                Attachment.comment_id.is_(None),
+            )
+            .values(comment_id=comment.id)
+        )
+        await session.commit()
+
+        att_res = await session.execute(
+            select(Attachment).where(Attachment.comment_id == comment.id)
+        )
+        comment_attachments = list(att_res.scalars().all())
+
     # Уведомление создателю тикета (если комментирует не он сам и не внутренний)
     if not is_internal and ticket.creator_id != str(current_user.id):
         creator = await session.execute(select(User).where(User.id == ticket.creator_id))
@@ -1028,7 +1051,17 @@ async def add_comment(
                     user=creator_user,
                 )
             else:
-                # Email — для всех остальных источников
+                # Email — для всех остальных источников.
+                # Передаём метаданные привязанных attachments для прикрепления к письму.
+                attachments_payload = [
+                    {
+                        "storage_path": a.storage_path,
+                        "filename": a.filename,
+                        "content_type": a.content_type,
+                        "size": a.size,
+                    }
+                    for a in comment_attachments
+                ]
                 background_tasks.add_task(
                     notify_ticket_comment,
                     creator_email=creator_user.email,
@@ -1036,6 +1069,7 @@ async def add_comment(
                     title=ticket.title,
                     comment_text=payload.text,
                     author_name=current_user.full_name or current_user.email,
+                    attachments=attachments_payload,
                 )
 
     # WS real-time: уведомить о новом комментарии
@@ -1090,6 +1124,61 @@ async def upload_attachment(
     await session.commit()
     await session.refresh(attachment)
     return AttachmentRead.model_validate(attachment)
+
+
+@router.delete(
+    "/{ticket_id}/attachments/{attachment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+)
+async def delete_attachment(
+    ticket_id: str,
+    attachment_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Удалить вложение, ещё не привязанное к комментарию.
+
+    Используется composer'ом: пользователь может убрать прикреплённый файл
+    из черновика до отправки. Запрещаем удаление, если attachment уже привязан
+    к какому-либо комментарию (`comment_id IS NOT NULL`) — это сохраняет
+    целостность исторических сообщений.
+    """
+    result = await session.execute(
+        select(Attachment).where(
+            Attachment.id == attachment_id,
+            Attachment.ticket_id == ticket_id,
+        )
+    )
+    attachment = result.scalar_one_or_none()
+    if not attachment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Вложение не найдено")
+
+    # Только тот, кто загрузил, или staff может удалять
+    from backend.auth.models import UserRole
+    is_staff = current_user.role in (UserRole.SUPPORT_AGENT, UserRole.ADMIN)
+    if attachment.uploader_id != str(current_user.id) and not is_staff:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет прав на удаление")
+
+    if attachment.comment_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Вложение уже отправлено в составе комментария — удалить нельзя",
+        )
+
+    # Удаляем файл с диска (best-effort, ошибки логируем но не пробрасываем)
+    file_path = UPLOAD_DIR / attachment.storage_path
+    try:
+        if file_path.is_file():
+            file_path.unlink()
+    except OSError as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Не удалось удалить файл %s: %s", file_path, exc
+        )
+
+    await session.delete(attachment)
+    await session.commit()
 
 
 @router.get("/{ticket_id}/attachments/{attachment_id}")

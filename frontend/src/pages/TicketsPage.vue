@@ -297,7 +297,16 @@ function confirmDeleteView(view: SavedView, event: Event) {
   })
 }
 
-function onPageChange(event: { page: number }) { loadTickets(event.page + 1) }
+function onPageChange(event: { page: number; rows: number }) {
+  // PrimeVue Paginator при смене rows-per-page эмитит то же событие @page.
+  // Если число строк изменилось — отдаём управление store.setPerPage,
+  // который сам перезагрузит первую страницу с новым per_page.
+  if (event.rows !== store.perPage) {
+    store.setPerPage(event.rows)
+    return
+  }
+  loadTickets(event.page + 1)
+}
 
 watch(searchQuery, (v, prev) => {
   if (v !== prev && activeSavedViewId.value) activeSavedViewId.value = null
@@ -308,8 +317,6 @@ watch(searchQuery, (v, prev) => {
 watch([statusFilter, categoryFilter], () => {
   if (activeSavedViewId.value) activeSavedViewId.value = null
 }, { deep: true })
-
-function openTicket(id: string) { router.push(`/tickets/${id}`) }
 
 // Активный статус — индикатор «кто ответил последним» показываем только
 // для таких тикетов. Для resolved/closed история уже зафиксирована.
@@ -485,13 +492,13 @@ onUnmounted(() => {
     </div>
 
     <div v-else class="ticket-list">
-      <article
+      <RouterLink
         v-for="ticket in store.tickets"
         :key="ticket.id"
+        :to="`/tickets/${ticket.id}`"
         class="ticket-row"
         :class="{ 'row-urgent': ticket.urgent, 'row-unread': isStaff && ticket.has_unread_reply }"
         :style="{ '--priority-color': priorityColors[ticket.priority] || '#64748b' }"
-        @click="openTicket(ticket.id)"
       >
         <div class="row-priority-bar" />
 
@@ -589,14 +596,17 @@ onUnmounted(() => {
 
           <div class="row-date">{{ formatDate(ticket.created_at) }}</div>
         </div>
-      </article>
+      </RouterLink>
     </div>
 
     <Paginator
-      v-if="store.total > 20"
-      :rows="20"
+      v-if="store.total > store.perPage"
+      :rows="store.perPage"
       :total-records="store.total"
-      :first="(store.page - 1) * 20"
+      :first="(store.page - 1) * store.perPage"
+      :rows-per-page-options="[20, 50, 100]"
+      template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink RowsPerPageDropdown CurrentPageReport"
+      current-page-report-template="{first}–{last} из {totalRecords}"
       @page="onPageChange"
     />
 
@@ -756,8 +766,14 @@ onUnmounted(() => {
   position: relative; display: flex; align-items: center; gap: 16px;
   padding: 14px 16px 14px 22px; background: white; border: 1px solid #e2e8f0;
   border-radius: 10px; cursor: pointer; transition: all 0.15s; overflow: hidden;
+  /* RouterLink рендерится как <a> — нейтрализуем дефолтные стили якоря,
+     чтобы карточка визуально не отличалась от прежнего <article>. */
+  text-decoration: none;
+  color: inherit;
 }
-.ticket-row:hover { border-color: #cbd5e1; box-shadow: 0 2px 8px rgba(0,0,0,0.04); transform: translateY(-1px); }
+.ticket-row:hover { border-color: #cbd5e1; box-shadow: 0 2px 8px rgba(0,0,0,0.04); transform: translateY(-1px); text-decoration: none; }
+.ticket-row:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
+.ticket-row:visited { color: inherit; }
 
 .row-priority-bar {
   position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--priority-color);
