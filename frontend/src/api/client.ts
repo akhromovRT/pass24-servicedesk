@@ -61,16 +61,17 @@ async function request<T>(
     throw new Error(error.detail || `HTTP ${response.status}`)
   }
 
-  // Защита от случая, когда сервер ответил 200 с HTML вместо JSON (например,
-  // если SPA-fallback middleware ошибочно перехватил AJAX-запрос). В таком
-  // случае токен мог истечь — отправляем на /login, чтобы переавторизоваться.
+  // Защита от случая, когда сервер ответил 200 с HTML вместо JSON (SPA-fallback
+  // middleware ошибочно перехватил AJAX-запрос — токен протух). Сужаем строго
+  // до Content-Type: text/html, чтобы не ловить пустые 200, plain-text ответы
+  // и прочие штатные сценарии.
   const contentType = response.headers.get('content-type') || ''
-  if (!contentType.includes('application/json')) {
+  if (contentType.includes('text/html')) {
     if (token) {
       clearToken()
       window.location.href = '/login'
     }
-    throw new Error('Unexpected response format (not JSON)')
+    throw new Error('Unexpected HTML response (token expired?)')
   }
 
   return response.json()
