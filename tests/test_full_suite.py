@@ -918,3 +918,105 @@ class TestGuestTicket:
             pytest.skip("Guest endpoint not deployed")
         assert r.status_code == 201
         assert r.json()["status"] == "new"
+
+
+# =====================================================================
+# 11. NOTIFICATIONS (recent feed)
+# =====================================================================
+
+class TestNotificationsRecent:
+    """Эндпоинт /tickets/notifications/recent — лента уведомлений для агентов."""
+
+    async def test_recent_resident_forbidden(self, client):
+        """Резиденты не получают ленту (возвращается пустой ответ)."""
+        h = await _auth_headers(client, _email("resnotif"))
+        r = await client.get("/tickets/notifications/recent", headers=h)
+        assert r.status_code == 200
+        data = r.json()
+        assert data["unread_count"] == 0
+        assert data["items"] == []
+
+    async def test_recent_agent_sees_unread(self, client):
+        """Агент получает свежее уведомление с is_unread=True после комментария клиента."""
+        res_email = _email("resnotif2")
+        res_h = await _auth_headers(client, res_email, name="Resident Notif")
+
+        # Создаём тикет от резидента
+        r = await client.post("/tickets/", json={
+            "title": "Уведомление-тест: домофон",
+            "description": "Тестовое уведомление для агентской ленты " + "x" * 30,
+        }, headers=res_h)
+        assert r.status_code == 201
+        ticket_id = r.json()["id"]
+
+        # Резидент добавляет публичный комментарий → has_unread_reply=True
+        rc = await client.post(
+            f"/tickets/{ticket_id}/comments",
+            json={"text": "Добавляю детали по проблеме", "is_internal": False},
+            headers=res_h,
+        )
+        assert rc.status_code == 201
+
+        # Агент запрашивает ленту
+        _, agent_h = await _create_agent(client)
+        r = await client.get("/tickets/notifications/recent?limit=10", headers=agent_h)
+        assert r.status_code == 200
+        data = r.json()
+        ids = [item["id"] for item in data["items"]]
+        assert ticket_id in ids
+        item = next(it for it in data["items"] if it["id"] == ticket_id)
+        assert item["is_unread"] is True
+        assert data["unread_count"] >= 1
+
+    async def test_recent_period_days_filter(self, client):
+        """period_days=1 ограничивает ленту последними 24 часами."""
+        res_email = _email("resnotif3")
+        res_h = await _auth_headers(client, res_email, name="Resident Notif3")
+        r = await client.post("/tickets/", json={
+            "title": "Уведомление period-filter",
+            "description": "Тест period_days " + "y" * 30,
+        }, headers=res_h)
+        ticket_id = r.json()["id"]
+        await client.post(
+            f"/tickets/{ticket_id}/comments",
+            json={"text": "Свежий комментарий клиента", "is_internal": False},
+            headers=res_h,
+        )
+
+        _, agent_h = await _create_agent(client)
+        # period_days=1 — свежий тикет должен присутствовать
+        r1 = await client.get(
+            "/tickets/notifications/recent?limit=50&period_days=1",
+            headers=agent_h,
+        )
+        assert r1.status_code == 200
+        ids = [it["id"] for it in r1.json()["items"]]
+        assert ticket_id in ids
+
+    async def test_recent_excludes_internal_and_staff_comments(self, client):
+        """В ленту попадают только публичные комментарии клиента, не staff и не internal."""
+        res_email = _email("resnotif4")
+        res_h = await _auth_headers(client, res_email, name="Resident Notif4")
+        r = await client.post("/tickets/", json={
+            "title": "Тикет без клиентского комментария",
+            "description": "Только staff/internal коммменты " + "z" * 30,
+        }, headers=res_h)
+        ticket_id = r.json()["id"]
+
+        _, agent_h = await _create_agent(client)
+        # Агент пишет публичный + internal — ни один не должен поднять тикет в ленту
+        await client.post(
+            f"/tickets/{ticket_id}/comments",
+            json={"text": "Публичный ответ агента", "is_internal": False},
+            headers=agent_h,
+        )
+        await client.post(
+            f"/tickets/{ticket_id}/comments",
+            json={"text": "Внутренняя заметка", "is_internal": True},
+            headers=agent_h,
+        )
+
+        r = await client.get("/tickets/notifications/recent?limit=50", headers=agent_h)
+        assert r.status_code == 200
+        ids = [it["id"] for it in r.json()["items"]]
+        assert ticket_id not in ids

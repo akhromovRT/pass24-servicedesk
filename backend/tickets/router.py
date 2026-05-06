@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -508,7 +508,6 @@ async def list_tickets(
         count_query = count_query.where(Ticket.customer_id.in_(permanent_ids))
 
     # Saved views (пресеты)
-    from datetime import timedelta
     now = datetime.utcnow()
     if view == "open":
         open_statuses = ["new", "in_progress", "waiting_for_user", "on_hold", "engineer_visit"]
@@ -725,6 +724,78 @@ async def get_unread_notifications(
             for t in tickets
         ],
     }
+
+
+@router.get("/notifications/recent")
+async def get_recent_notifications(
+    limit: int = Query(10, ge=1, le=200),
+    period_days: int = Query(0, ge=0, le=365, description="0 = без ограничения"),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Лента последних уведомлений для агента/админа.
+
+    Уведомление — тикет с публичным комментарием от клиента (или входящим письмом,
+    которое тоже превращается в публичный комментарий). `is_unread` отражает текущее
+    состояние тикета: True пока агент не открыл/не ответил.
+    """
+    from backend.auth.models import UserRole
+
+    if current_user.role not in (UserRole.SUPPORT_AGENT, UserRole.ADMIN):
+        return {"unread_count": 0, "items": []}
+
+    # Подзапрос: дата последнего публичного комментария клиента по каждому тикету.
+    # Не учитываем internal-комментарии и комментарии сотрудников — нас интересуют
+    # только активности, которые превращаются в "уведомление" для агента.
+    last_reply_subq = (
+        select(
+            TicketComment.ticket_id.label("ticket_id"),
+            func.max(TicketComment.created_at).label("last_reply_at"),
+        )
+        .where(
+            TicketComment.is_internal == False,  # noqa: E712
+            TicketComment.author_is_staff == False,  # noqa: E712
+        )
+        .group_by(TicketComment.ticket_id)
+        .subquery()
+    )
+
+    query = (
+        select(Ticket, last_reply_subq.c.last_reply_at)
+        .join(last_reply_subq, last_reply_subq.c.ticket_id == Ticket.id)
+        .order_by(last_reply_subq.c.last_reply_at.desc())
+    )
+
+    if period_days > 0:
+        cutoff = datetime.utcnow() - timedelta(days=period_days)
+        query = query.where(last_reply_subq.c.last_reply_at >= cutoff)
+
+    query = query.limit(limit)
+
+    result = await session.execute(query)
+    rows = result.all()
+
+    unread_result = await session.execute(
+        select(func.count())
+        .select_from(Ticket)
+        .where(Ticket.has_unread_reply == True)  # noqa: E712
+    )
+    unread_count = unread_result.scalar_one()
+
+    items = []
+    for ticket, last_reply_at in rows:
+        items.append({
+            "id": ticket.id,
+            "title": ticket.title,
+            "status": ticket.status.value if hasattr(ticket.status, 'value') else str(ticket.status),
+            "priority": ticket.priority.value if hasattr(ticket.priority, 'value') else str(ticket.priority),
+            "contact_name": ticket.contact_name,
+            "contact_email": ticket.contact_email,
+            "updated_at": last_reply_at.isoformat(),
+            "is_unread": bool(ticket.has_unread_reply),
+        })
+
+    return {"unread_count": unread_count, "items": items}
 
 
 # ---------------------------------------------------------------------------
