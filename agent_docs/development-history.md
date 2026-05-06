@@ -9,6 +9,44 @@
 
 ## Записи
 
+### 2026-05-06 — feat(notifications): дропдаун с лентой уведомлений + фикс колокольчика
+
+**Что сделано:**
+- Backend: новый endpoint `GET /tickets/notifications/recent?limit=10&period_days=0..365` —
+  возвращает топ-N тикетов с последним публичным комментарием клиента и флагом
+  `is_unread` (текущее состояние `Ticket.has_unread_reply`). `period_days=0` — без
+  ограничения по времени, иначе фильтр по дате последнего ответа клиента. Старый
+  `/notifications/unread` оставлен (бэкап для старых клиентов).
+- Frontend `NotificationBell.vue`: переписан на собственный `<button>` 40×40
+  вместо `<Button size="small">` — иконка `pi pi-bell 1.25rem` теперь
+  центрируется внутри круга, бэйдж с z-index/box-shadow не обрезается на
+  родителе (убран `overflow:hidden`). Дропдаун:
+  - топ-10 уведомлений: непрочитанные подсвечены голубым фоном + жирным
+    текстом + синяя точка-метка; прочитанные приглушены серым.
+  - Кнопка «Смотреть все» под списком → ре-фетч с `period_days=30, limit=200`,
+    `max-height: 60vh`. В разворнутом виде — кнопка «Свернуть».
+  - Polling 20 сек ходит только в compact-режиме (не сбивает развёрнутый UI).
+- Тесты: добавлен класс `TestNotificationsRecent` (4 теста) — RBAC, is_unread,
+  period_days, фильтр staff/internal комментариев.
+
+**Почему:**
+- Колокольчик визуально обрезался (size=small + position абсолютного бэйджа за
+  кнопкой); список давал только непрочитанные без истории.
+- Запрос пользователя: показывать последние 10 уведомлений (читаные + непрочитаные)
+  + кнопку для расширения за месяц.
+
+**Обновления:**
+- [x] Frontend: `vue-tsc -b` OK, `vite build` OK, `vitest run` 17/17 OK.
+- [x] Backend: `pytest --collect-only` собирает все 75 тестов, импорт
+      `backend.tickets.router` подтверждает `/tickets/notifications/recent`
+      зарегистрирован. Интеграционные `TestNotificationsRecent` требуют запущенный
+      dev-сервер (см. `agent_docs/guides/environment-setup.md`) — гонятся через
+      CI/manual prod run, локально без PostgreSQL не запускались.
+
+**Ветка/мерж:** `dev-loginov` → `main`.
+
+---
+
 ### 2026-04-29 — fix(routing): SPA-fallback middleware для конфликта SPA-route и API-endpoint (ADR-018)
 
 **Проблема:** после релиза `<RouterLink>` для middle-click new tab (см. запись про email-вложения ниже) пользователи получали `{"detail":"Not authenticated"}` JSON в новой вкладке, а позже toast `Unexpected token '<', "<!DOCTYPE..." is not valid JSON` при обычном клике на карточку. Корневая причина — давний скрытый баг: SPA-route `/tickets/:id` совпадает с backend API `GET /tickets/{ticket_id}`. AJAX от фронта работал (есть `Authorization: Bearer ...`), но прямой переход в браузере (middle-click, F5, ссылка из email) шёл без header'а — backend отдавал JSON 401 вместо HTML страницы тикета. Те же email-ссылки `support.pass24pro.ru/tickets/<id>` в SLA/CSAT-уведомлениях тоже отдавали 401 раньше — просто никто не пытался по ним кликнуть из чужого браузера.
