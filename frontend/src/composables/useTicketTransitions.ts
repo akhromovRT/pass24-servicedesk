@@ -18,7 +18,6 @@ const ALL_STATUSES: StatusTransition[] = [
 ]
 
 function transitionsFor(current: TicketStatus): StatusTransition[] {
-  if (current === 'closed') return []
   return ALL_STATUSES.filter(s => s.value !== current)
 }
 
@@ -29,7 +28,7 @@ const TRANSITIONS: Record<TicketStatus, StatusTransition[]> = {
   on_hold: transitionsFor('on_hold'),
   engineer_visit: transitionsFor('engineer_visit'),
   resolved: transitionsFor('resolved'),
-  closed: [],
+  closed: transitionsFor('closed'),
 }
 
 const STATUS_LABELS: Record<TicketStatus, string> = {

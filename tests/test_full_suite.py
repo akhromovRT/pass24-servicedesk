@@ -857,17 +857,25 @@ class TestBusinessLogic:
             assert event is not None
 
     def test_fsm_invalid_transitions(self):
+        """Единственный недопустимый переход — «сам в себя»; CLOSED → * разрешён."""
         from backend.tickets.models import Ticket, TicketStatus
-        invalid = [
-            ("new", "closed"),
-            ("new", "waiting_for_user"),
-            ("in_progress", "new"),
-            ("resolved", "waiting_for_user"),
-        ]
-        for start, end in invalid:
-            t = Ticket(title="Test", description="D", status=TicketStatus(start))
-            with pytest.raises(ValueError):
-                t.transition("actor", TicketStatus(end))
+        for status_value in ("new", "in_progress", "waiting_for_user",
+                              "on_hold", "engineer_visit", "resolved", "closed"):
+            t = Ticket(title="Test", description="D", status=TicketStatus(status_value))
+            with pytest.raises(ValueError, match="Недопустимый переход"):
+                t.transition("actor", TicketStatus(status_value))
+
+    def test_fsm_closed_can_reopen(self):
+        """Из CLOSED разрешён переход в любой open-статус (например, IN_PROGRESS)."""
+        from backend.tickets.models import Ticket, TicketStatus
+        t = Ticket(title="Reopen", description="D")
+        t.transition("actor", TicketStatus.RESOLVED)
+        t.transition("actor", TicketStatus.CLOSED)
+        assert t.status == TicketStatus.CLOSED.value or t.status == TicketStatus.CLOSED
+        event = t.transition("actor", TicketStatus.IN_PROGRESS)
+        assert t.status == TicketStatus.IN_PROGRESS.value or t.status == TicketStatus.IN_PROGRESS
+        assert t.resolved_at is None
+        assert event is not None
 
     def test_sla_first_response_tracked(self):
         from backend.tickets.models import Ticket, TicketStatus

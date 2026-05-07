@@ -105,19 +105,24 @@ def test_transition_reopen():
     assert ticket.status == TicketStatus.IN_PROGRESS
 
 
-def test_invalid_transition_raises():
+def test_same_status_transition_raises():
+    """Переход «сам в себя» — единственный недопустимый переход."""
     ticket = _make_ticket(title="Недопустимый переход")
     with pytest.raises(ValueError, match="Недопустимый переход"):
-        ticket.transition(actor_id="agent-1", new_status=TicketStatus.CLOSED)
+        ticket.transition(actor_id="agent-1", new_status=TicketStatus.NEW)
 
 
-def test_closed_ticket_cannot_change_status():
-    ticket = _make_ticket(title="Закрытый тикет")
+def test_closed_ticket_can_be_reopened():
+    """Закрытый тикет можно переоткрыть — ответ клиента после CLOSED не должен
+    блокировать сотрудника тп от ручной смены статуса."""
+    ticket = _make_ticket(title="Reopen после закрытия")
     ticket.transition(actor_id="agent-1", new_status=TicketStatus.RESOLVED)
     ticket.transition(actor_id="agent-1", new_status=TicketStatus.CLOSED)
 
-    with pytest.raises(ValueError, match="закрытого тикета"):
-        ticket.transition(actor_id="agent-1", new_status=TicketStatus.IN_PROGRESS)
+    event = ticket.transition(actor_id="agent-1", new_status=TicketStatus.IN_PROGRESS)
+    assert ticket.status == TicketStatus.IN_PROGRESS
+    assert ticket.resolved_at is None
+    assert event is not None
 
 
 def test_transition_creates_event():

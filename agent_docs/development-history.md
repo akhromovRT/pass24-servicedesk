@@ -9,6 +9,51 @@
 
 ## Записи
 
+### 2026-05-07 — feat(tickets): reopen из CLOSED + полный список статусов в дропдауне
+
+**Что сделано:**
+- Backend `Ticket.transition` (`backend/tickets/models.py`): убран guard
+  `if self.status == TicketStatus.CLOSED: raise`. Теперь FSM запрещает только
+  переход «сам в себя»; CLOSED → любой open-статус разрешён. Существующая
+  логика сброса `resolved_at` при reopen в IN_PROGRESS уже была — работает
+  корректно.
+- Frontend `useTicketTransitions.ts`: `transitionsFor('closed')` теперь
+  возвращает все статусы кроме `closed`. Дропдаун `TicketStatusDropdown`
+  показывает полный список переходов независимо от текущего статуса.
+- Тесты:
+  - `test_tickets_models.py::test_invalid_transition_raises` →
+    переименован в `test_same_status_transition_raises` (теперь
+    единственный недопустимый переход — «сам в себя»).
+  - `test_closed_ticket_cannot_change_status` → переписан в
+    `test_closed_ticket_can_be_reopened` (closed → in_progress, resolved_at
+    обнуляется).
+  - `test_full_suite.py::TestBusinessLogic::test_fsm_invalid_transitions` —
+    теперь проверяет «сам в себя» для всех 7 статусов.
+  - Добавлен `test_fsm_closed_can_reopen`.
+
+**Поведение auto-transition:** при ответе клиента в CLOSED тикете флаг
+`has_unread_reply` ставится (тикет всплывает в ленте уведомлений), но статус
+не меняется автоматически — сотрудник тп вручную решает, переоткрывать ли.
+Это уже было корректно реализовано в `tickets/router.py` и
+`notifications/inbound.py` — auto-transition срабатывает только при
+`status == WAITING_FOR_USER`.
+
+**Почему:**
+- Запрос пользователя: после установки CLOSED невозможно было сменить статус,
+  даже если клиент отвечает и работа возобновляется.
+
+**Обновления:**
+- [x] Frontend: vue-tsc, vite build, vitest 17/17 — зелёные.
+- [x] Backend: unit-тесты 42/42 проходят (2 pre-existing failures на Python
+      3.14 quirks — `test_priority_critical_incident`,
+      `test_fsm_all_valid_transitions` — присутствуют и без моих изменений,
+      проверено `git stash`). Интеграционные тесты гонятся через CI/manual
+      run (см. `agent_docs/guides/environment-setup.md`).
+
+**Ветка/мерж:** `dev-loginov` → `main`.
+
+---
+
 ### 2026-05-06 — feat(notifications): дропдаун с лентой уведомлений + фикс колокольчика
 
 **Что сделано:**

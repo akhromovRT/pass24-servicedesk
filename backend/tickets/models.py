@@ -373,11 +373,13 @@ class Ticket(SQLModel, table=True):
         self.recompute_sla_pause(now)
 
     def transition(self, actor_id: str, new_status: TicketStatus) -> "TicketEvent":
-        """FSM переходов статусов."""
-        if self.status == TicketStatus.CLOSED:
-            raise ValueError("Нельзя менять статус закрытого тикета")
+        """FSM переходов статусов.
 
-        # Из любого статуса (кроме CLOSED) можно перейти в любой другой
+        Допустим переход из любого статуса в любой другой, включая reopen из
+        CLOSED — клиент может ответить после закрытия, и сотрудник поддержки
+        вручную переоткроет тикет (например, в IN_PROGRESS). Запрещён только
+        переход «сам в себя».
+        """
         all_targets = {
             TicketStatus.NEW,
             TicketStatus.IN_PROGRESS,
