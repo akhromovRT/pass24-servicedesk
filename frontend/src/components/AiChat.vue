@@ -23,6 +23,7 @@ interface ChatResponse {
 
 interface GuestTicketResponse {
   ticket_id: string
+  ticket_number?: number | null
   title: string
   status: string
   auth_required: boolean
@@ -169,9 +170,12 @@ async function submitGuestTicket() {
 
     ticketSuccess.value = true
     showTicketForm.value = false
+    const numberLabel = resp.ticket_number != null
+      ? `#${resp.ticket_number}`
+      : resp.ticket_id.slice(0, 8)
     messages.value.push({
       role: 'system',
-      content: `Заявка создана! Номер: ${resp.ticket_id.slice(0, 8)}. Все обновления придут на ${ticketEmail.value}. Вы можете отвечать на письма — ответы будут добавлены в заявку.`,
+      content: `Заявка создана! Номер: ${numberLabel}. Все обновления придут на ${ticketEmail.value}. Вы можете отвечать на письма — ответы будут добавлены в заявку.`,
     })
   } catch (e: any) {
     messages.value.push({

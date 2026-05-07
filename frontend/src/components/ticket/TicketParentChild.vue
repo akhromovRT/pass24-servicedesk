@@ -12,6 +12,7 @@ import type { Ticket, TicketStatus, TicketPriority, PaginatedResponse } from '..
 
 interface ChildTicket {
   id: string
+  number?: number | null
   title: string
   status: TicketStatus
   priority: TicketPriority
@@ -31,7 +32,7 @@ const toast = useToast()
 
 const childTickets = ref<ChildTicket[]>([])
 const childrenCount = ref(0)
-const parentTicket = ref<{ id: string; title: string } | null>(null)
+const parentTicket = ref<{ id: string; number?: number | null; title: string } | null>(null)
 
 const dialogVisible = ref(false)
 const searchQuery = ref('')
@@ -40,7 +41,8 @@ const searchLoading = ref(false)
 
 let searchDebounce: ReturnType<typeof setTimeout> | null = null
 
-function shortId(id: string): string {
+function shortId(id: string, number?: number | null): string {
+  if (number != null) return String(number)
   return id.replace(/-/g, '').slice(0, 8).toUpperCase()
 }
 
@@ -59,7 +61,7 @@ async function loadParent() {
   if (!props.ticket.parent_ticket_id) { parentTicket.value = null; return }
   try {
     const data = await api.get<Ticket>(`/tickets/${props.ticket.parent_ticket_id}`)
-    parentTicket.value = { id: data.id, title: data.title }
+    parentTicket.value = { id: data.id, number: data.number, title: data.title }
   } catch { parentTicket.value = null }
 }
 
@@ -123,7 +125,7 @@ defineExpose({ loadChildren, loadParent })
       <div class="block-label">Problem (родительский):</div>
       <div class="linked-ticket-item">
         <a class="ticket-link" @click="router.push(`/tickets/${parentTicket.id}`)">
-          #{{ shortId(parentTicket.id) }} {{ parentTicket.title }}
+          #{{ shortId(parentTicket.id, parentTicket.number) }} {{ parentTicket.title }}
         </a>
         <Button icon="pi pi-times" text severity="danger" size="small" @click="unlinkFromParent" />
       </div>
@@ -135,7 +137,7 @@ defineExpose({ loadChildren, loadParent })
       <div v-for="child in childTickets" :key="child.id" class="linked-ticket-item">
         <div class="child-info">
           <a class="ticket-link" @click="router.push(`/tickets/${child.id}`)">
-            #{{ shortId(child.id) }}
+            #{{ shortId(child.id, child.number) }}
           </a>
           <span class="child-title">{{ child.title }}</span>
         </div>
@@ -157,7 +159,7 @@ defineExpose({ loadChildren, loadParent })
       <InputText v-model="searchQuery" placeholder="Поиск тикетов..." class="w-full mb-3" @input="onSearchInput" />
       <div v-if="searchLoading" class="text-center p-3"><i class="pi pi-spin pi-spinner"></i></div>
       <div v-for="t in searchResults" :key="t.id" class="search-result-item" @click="linkToParent(t.id)">
-        <span class="search-id">#{{ shortId(t.id) }}</span>
+        <span class="search-id">#{{ shortId(t.id, t.number) }}</span>
         <span>{{ t.title }}</span>
         <TicketStatusBadge :status="t.status" />
       </div>

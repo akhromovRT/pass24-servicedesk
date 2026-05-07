@@ -3,6 +3,7 @@ from datetime import datetime
 from enum import Enum
 from typing import List, Optional
 
+import sqlalchemy as sa
 from sqlmodel import Column, Field, Relationship, SQLModel, String
 
 from backend.tickets.business_hours import business_hours_between
@@ -147,6 +148,10 @@ class Ticket(SQLModel, table=True):
     __tablename__ = "tickets"
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    # Короткий последовательный номер для UI и email-тегов. Стартовое значение
+    # генерирует БД через SEQUENCE tickets_number_seq (миграция 029). По
+    # умолчанию None при инстанцировании в Python, БД заполняет на INSERT.
+    number: Optional[int] = Field(default=None, sa_column=Column(sa.BigInteger, sa.Sequence("tickets_number_seq"), unique=True, index=True, nullable=False))
     creator_id: str = Field(index=True)
     assignee_id: Optional[str] = Field(default=None, index=True)
     assignment_group: str = Field(

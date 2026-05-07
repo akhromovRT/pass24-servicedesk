@@ -143,8 +143,9 @@ async def handle_unlinked_text(message: Message, **data) -> None:
                 text=comment_text,
                 attachments=attachments,
             )
+            ticket_label = active.number if active.number is not None else active.id[:8]
             await message.answer(
-                f"📎 Принято в заявку <b>#{active.id[:8]}</b>.\n\n"
+                f"📎 Принято в заявку <b>#{ticket_label}</b>.\n\n"
                 f"💡 Привяжите аккаунт — и получите полноценное меню с историей заявок.",
                 parse_mode="HTML",
                 reply_markup=_link_prompt_kb(),
@@ -171,8 +172,9 @@ async def handle_unlinked_text(message: Message, **data) -> None:
             },
             user=user,
         )
+        new_ticket_label = ticket.number if ticket.number is not None else ticket.id[:8]
         await message.answer(
-            f"✅ <b>Заявка #{ticket.id[:8]} создана!</b>\n\n"
+            f"✅ <b>Заявка #{new_ticket_label} создана!</b>\n\n"
             f"Менеджер рассмотрит её в ближайшее время. Продолжайте писать сюда — "
             f"следующие сообщения попадут в эту же заявку.\n\n"
             f"💡 Привяжите аккаунт, чтобы получить меню с историей заявок, "

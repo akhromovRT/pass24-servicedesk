@@ -46,9 +46,13 @@ CATEGORY_KEYWORDS = {
     "app": ["приложен", "мобильн", "android", "ios", "обновлен", "установ"],
 }
 
-# Паттерн тега тикета в теме: [PASS24-abc12345]
+# Паттерны тега тикета: новый [PASS24-1234] (числовой номер) и legacy
+# [PASS24-abc12345] (8 hex от UUID). Парсер сначала пробует числовой, потом
+# legacy — старые цепочки писем продолжают корректно матчиться.
+TICKET_TAG_NUMBER_RE = re.compile(r"\[PASS24-(\d+)\]", re.IGNORECASE)
 TICKET_TAG_RE = re.compile(r"\[PASS24-([a-f0-9]{8})\]", re.IGNORECASE)
-# Паттерн тега в теле письма (без скобок): PASS24-abc12345
+# Аналогично для тела письма (без скобок): PASS24-1234 / PASS24-abc12345
+TICKET_BODY_TAG_NUMBER_RE = re.compile(r"PASS24-(\d+)\b", re.IGNORECASE)
 TICKET_BODY_TAG_RE = re.compile(r"PASS24-([a-f0-9]{8})", re.IGNORECASE)
 
 
@@ -535,6 +539,30 @@ async def _search_knowledge_base(query: str, session) -> list[dict]:
     return [{"title": a.title, "slug": a.slug, "category": a.category} for a in articles]
 
 
+async def _handle_reply_by_number(mail_data: dict, ticket_number: int) -> bool:
+    """Обрабатывает ответ по новому тегу `[PASS24-{number}]`.
+
+    Тонкая обёртка: находит UUID тикета по короткому номеру, делегирует
+    `_handle_reply` (общая логика — комментарий, вложения, идемпотентность).
+    """
+    from backend.database import async_session_factory
+    from backend.tickets.models import Ticket
+
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(Ticket.id).where(Ticket.number == ticket_number)
+        )
+        ticket_id = result.scalar_one_or_none()
+
+    if not ticket_id:
+        logger.warning(
+            "Тикет #%s не найден для ответа от %s",
+            ticket_number, mail_data["from_email"],
+        )
+        return False
+    return await _handle_reply(mail_data, ticket_id[:8])
+
+
 async def _handle_reply(mail_data: dict, ticket_id_prefix: str) -> bool:
     """Обрабатывает ответ на существующий тикет: комментарий + вложения.
 
@@ -862,7 +890,7 @@ async def _handle_new_ticket(mail_data: dict) -> None:
         search_query = f"{title} {body[:200]}"
         articles = await _search_knowledge_base(search_query, session)
 
-        tag = ticket_subject_tag(ticket.id)
+        tag = ticket_subject_tag(ticket.id, ticket.number)
         priority_label = PRIORITY_LABELS.get(
             ticket.priority.value if hasattr(ticket.priority, 'value') else str(ticket.priority),
             "Обычный",
@@ -963,7 +991,15 @@ async def process_incoming_emails() -> int:
     for mail_data in emails:
         subject = mail_data["subject"]
 
-        # 1. Ответ с тегом [PASS24-xxxxxxxx] в теме
+        # 1a. Ответ с новым тегом [PASS24-{number}] (числовой номер тикета)
+        num_match = TICKET_TAG_NUMBER_RE.search(subject)
+        if num_match:
+            handled = await _handle_reply_by_number(mail_data, int(num_match.group(1)))
+            if handled:
+                processed += 1
+                continue
+
+        # 1b. Ответ с legacy-тегом [PASS24-abc12345] (UUID-prefix) в теме
         tag_match = TICKET_TAG_RE.search(subject)
         if tag_match:
             ticket_id_prefix = tag_match.group(1)
@@ -972,9 +1008,15 @@ async def process_incoming_emails() -> int:
                 processed += 1
                 continue
 
-        # 1b. Тег PASS24-xxxxxxxx в теле письма (надёжный fallback)
-        # Ищем в raw_body (до очистки), т.к. _clean_body удаляет строку-референс
+        # 1c. Тег PASS24-* в теле письма (надёжный fallback). Ищем в raw_body
+        # до _clean_body, т.к. cleanup вырезает строку-референс.
         raw_body = mail_data.get("raw_body", mail_data.get("body", ""))
+        body_num_match = TICKET_BODY_TAG_NUMBER_RE.search(raw_body)
+        if body_num_match:
+            handled = await _handle_reply_by_number(mail_data, int(body_num_match.group(1)))
+            if handled:
+                processed += 1
+                continue
         body_tag_match = TICKET_BODY_TAG_RE.search(raw_body)
         if body_tag_match:
             ticket_id_prefix = body_tag_match.group(1)

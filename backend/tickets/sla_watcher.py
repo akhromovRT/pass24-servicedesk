@@ -55,7 +55,7 @@ async def _check_sla_breaches() -> int:
                 warned += 1
 
                 # Email админам
-                tag = ticket_subject_tag(t.id)
+                tag = ticket_subject_tag(t.id, t.number)
                 mins_left = int(time_to_breach.total_seconds() // 60)
                 await _send_email(
                     to="support@pass24online.ru",

@@ -510,7 +510,7 @@ onUnmounted(() => {
           </div>
 
           <div class="row-meta">
-            <span class="meta-id">#{{ ticket.id.slice(0, 8).toUpperCase() }}</span>
+            <span class="meta-id">#{{ ticket.number ?? ticket.id.slice(0, 8).toUpperCase() }}</span>
             <span class="meta-sep">·</span>
             <span v-if="isStaff && ticket.product" class="meta-item">
               <i class="pi pi-box" />{{ productLabels[ticket.product] || ticket.product }}

@@ -144,7 +144,7 @@ onUnmounted(() => {
         @click="goBack"
       />
       <div class="header-info" v-if="ticket">
-        <span class="ticket-id">#{{ ticket.id.replace(/-/g, '').slice(0, 8).toUpperCase() }}</span>
+        <span class="ticket-id">#{{ ticket.number ?? ticket.id.replace(/-/g, '').slice(0, 8).toUpperCase() }}</span>
         <h1 class="ticket-title">{{ ticket.title }}</h1>
         <div class="ticket-meta">
           <TicketStatusBadge :status="ticket.status" :simplified="!isStaff" />

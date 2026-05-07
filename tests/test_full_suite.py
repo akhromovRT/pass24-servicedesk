@@ -929,6 +929,80 @@ class TestGuestTicket:
 
 
 # =====================================================================
+# 11.5 TICKET NUMBER (короткий пользовательский номер)
+# =====================================================================
+
+class TestTicketNumber:
+    """tickets.number — короткий последовательный ID."""
+
+    async def test_ticket_response_has_number(self, client):
+        """API на создание тикета возвращает поле `number`."""
+        h = await _auth_headers(client, _email("number"))
+        r = await client.post("/tickets/", json={
+            "title": "Номер заявки в API",
+            "description": "Проверяем, что API возвращает короткий номер " + "x" * 20,
+        }, headers=h)
+        assert r.status_code == 201
+        data = r.json()
+        assert "number" in data
+        # number может быть None у тикетов до миграции, но новые INSERT через
+        # SEQUENCE его всегда заполняют — ожидаем int.
+        assert isinstance(data["number"], int)
+        assert data["number"] > 0
+
+    async def test_get_ticket_by_number(self, client):
+        """GET /tickets/by-number/{n} возвращает тикет с этим номером."""
+        h = await _auth_headers(client, _email("bynum"))
+        r = await client.post("/tickets/", json={
+            "title": "Поиск по номеру",
+            "description": "Проверка by-number endpoint " + "y" * 30,
+        }, headers=h)
+        assert r.status_code == 201
+        ticket = r.json()
+        ticket_id = ticket["id"]
+        ticket_number = ticket["number"]
+
+        rb = await client.get(f"/tickets/by-number/{ticket_number}", headers=h)
+        assert rb.status_code == 200
+        assert rb.json()["id"] == ticket_id
+        assert rb.json()["number"] == ticket_number
+
+    async def test_get_ticket_by_number_not_found(self, client):
+        """Несуществующий номер → 404."""
+        h = await _auth_headers(client, _email("bynum404"))
+        r = await client.get("/tickets/by-number/99999999", headers=h)
+        assert r.status_code == 404
+
+    def test_subject_tag_uses_number_when_available(self):
+        """ticket_subject_tag отдаёт [PASS24-{number}], если number задан."""
+        from backend.notifications.email import ticket_subject_tag
+        # с number — числовой формат
+        assert ticket_subject_tag("abc12345-uuid", ticket_number=42) == "[PASS24-42]"
+        # без number — fallback на UUID-prefix
+        assert ticket_subject_tag("abc12345-uuid", ticket_number=None) == "[PASS24-abc12345]"
+        assert ticket_subject_tag("abc12345-uuid") == "[PASS24-abc12345]"
+
+    def test_inbound_regex_matches_number_and_legacy(self):
+        """Парсер inbound понимает оба формата тегов."""
+        from backend.notifications.inbound import (
+            TICKET_TAG_NUMBER_RE,
+            TICKET_TAG_RE,
+            TICKET_BODY_TAG_NUMBER_RE,
+            TICKET_BODY_TAG_RE,
+        )
+        # Subject tags
+        m_num = TICKET_TAG_NUMBER_RE.search("Re: [PASS24-123] Тема")
+        assert m_num and m_num.group(1) == "123"
+        m_legacy = TICKET_TAG_RE.search("Re: [PASS24-abcd1234] Тема")
+        assert m_legacy and m_legacy.group(1) == "abcd1234"
+        # Body tags
+        b_num = TICKET_BODY_TAG_NUMBER_RE.search("--- Не удаляйте: PASS24-77 ---")
+        assert b_num and b_num.group(1) == "77"
+        b_legacy = TICKET_BODY_TAG_RE.search("PASS24-deadbeef")
+        assert b_legacy and b_legacy.group(1) == "deadbeef"
+
+
+# =====================================================================
 # 11. NOTIFICATIONS (recent feed)
 # =====================================================================
 

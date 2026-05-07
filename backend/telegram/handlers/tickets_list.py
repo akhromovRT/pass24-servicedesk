@@ -128,8 +128,11 @@ async def _render_list(callback, user, *, filter_val: str, page: int) -> None:
     # Ticket rows — each opens the card
     for t in tickets:
         kb.row()
+        ticket_label = t.number if t.number is not None else t.id[:8]
+        # callback_data оставляем по UUID-prefix — это стабильный ключ для
+        # навигационной логики обработчиков `tl:open:*`.
         kb.button(
-            text=f"{STATUS_EMOJI.get(t.status, '')} #{t.id[:8]}",
+            text=f"{STATUS_EMOJI.get(t.status, '')} #{ticket_label}",
             callback_data=f"tl:open:{t.id[:8]}",
         )
 

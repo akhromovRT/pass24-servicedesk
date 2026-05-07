@@ -8,6 +8,7 @@ from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
+from typing import Optional
 
 import aiosmtplib
 
@@ -196,14 +197,22 @@ async def _send_email(
         logger.error("Ошибка отправки email: %s — %s", subject, exc)
 
 
-def ticket_subject_tag(ticket_id: str) -> str:
-    """Формирует тег тикета для темы письма: [PASS24-abc12345]."""
+def ticket_subject_tag(ticket_id: str, ticket_number: Optional[int] = None) -> str:
+    """Формирует тег тикета для темы письма.
+
+    Новый формат: `[PASS24-1234]` (по короткому номеру тикета). Если `ticket_number`
+    не передан (например, тикет старый или number ещё не доставлен из БД) —
+    fallback на `[PASS24-abc12345]` от первых 8 символов UUID. Inbound-парсер
+    `notifications/inbound.py` понимает оба формата.
+    """
+    if ticket_number is not None:
+        return f"[PASS24-{ticket_number}]"
     return f"[PASS24-{ticket_id[:8]}]"
 
 
-def _ticket_body_reference(ticket_id: str) -> str:
+def _ticket_body_reference(ticket_id: str, ticket_number: Optional[int] = None) -> str:
     """HTML-блок с идентификатором тикета в теле письма для надёжного threading."""
-    tag = ticket_id[:8]
+    tag = str(ticket_number) if ticket_number is not None else ticket_id[:8]
     return (
         '<div style="color:#999;font-size:11px;border-top:1px solid #eee;'
         'padding-top:8px;margin-top:20px;">'
@@ -246,12 +255,13 @@ async def notify_ticket_created(
     contact_phone: str = "",
     sla_response_hours: int = 4,
     sla_resolve_hours: int = 24,
+    ticket_number: Optional[int] = None,
 ) -> None:
     """Уведомление о создании тикета с полным контекстом."""
     priority_label = PRIORITY_LABELS.get(priority, priority)
     product_label = PRODUCT_LABELS.get(product, product) if product else ""
     type_label = TYPE_LABELS.get(ticket_type, ticket_type) if ticket_type else ""
-    tag = ticket_subject_tag(ticket_id)
+    tag = ticket_subject_tag(ticket_id, ticket_number)
     portal_url = "https://support.pass24pro.ru"
 
     # Цвет приоритета
@@ -381,7 +391,7 @@ async def notify_ticket_created(
                 <p style="color: #94a3b8; font-size: 12px; margin: 24px 0 0; text-align:center;">
                     PASS24 Service Desk · support@pass24online.ru
                 </p>
-                {_ticket_body_reference(ticket_id)}
+                {_ticket_body_reference(ticket_id, ticket_number)}
             </div>
         </div>
         """,
@@ -443,11 +453,12 @@ async def notify_ticket_status_changed(
     old_status: str,
     new_status: str,
     actor_name: str,
+    ticket_number: Optional[int] = None,
 ) -> None:
     """Уведомление о смене статуса + CSAT запрос при resolved."""
     old_label = STATUS_LABELS.get(old_status, old_status)
     new_label = STATUS_LABELS.get(new_status, new_status)
-    tag = ticket_subject_tag(ticket_id)
+    tag = ticket_subject_tag(ticket_id, ticket_number)
 
     # CSAT block при переходе в resolved
     csat_block = ""
@@ -490,7 +501,7 @@ async def notify_ticket_status_changed(
                 <p style="color: #64748b; font-size: 14px; margin: 16px 0 0;">
                     Вы можете отслеживать статус заявки в личном кабинете Service Desk.
                 </p>
-                {_ticket_body_reference(ticket_id)}
+                {_ticket_body_reference(ticket_id, ticket_number)}
             </div>
         </div>
         """,
@@ -505,6 +516,7 @@ async def notify_ticket_comment(
     comment_text: str,
     author_name: str,
     attachments: list[dict] | None = None,
+    ticket_number: Optional[int] = None,
 ) -> None:
     """Уведомление о новом комментарии к тикету.
 
@@ -512,7 +524,7 @@ async def notify_ticket_comment(
     как `Content-Disposition: attachment`. Превышающие лимит упоминаются в HTML
     со ссылкой на тикет в кабинете.
     """
-    tag = ticket_subject_tag(ticket_id)
+    tag = ticket_subject_tag(ticket_id, ticket_number)
     portal_url = f"https://support.pass24pro.ru/tickets/{ticket_id}"
 
     # Делим attachments на «помещаются в лимит» и «слишком большие».
@@ -575,7 +587,7 @@ async def notify_ticket_comment(
                     <p style="color: #334155; margin: 0; white-space: pre-wrap;">{comment_text}</p>
                 </div>
                 {attachments_html}
-                {_ticket_body_reference(ticket_id)}
+                {_ticket_body_reference(ticket_id, ticket_number)}
             </div>
         </div>
         """,

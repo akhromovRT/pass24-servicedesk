@@ -86,6 +86,14 @@ const router = createRouter({
       component: () => import('../pages/TicketDetailPage.vue'),
       meta: { auth: true },
     },
+    // Короткие URL по номеру: /tickets/n/123 → редирект на /tickets/{uuid}.
+    // SPA сам резолвит через GET /tickets/by-number/{n}, потом replace на UUID-роут.
+    {
+      path: '/tickets/n/:number(\\d+)',
+      name: 'ticket-by-number',
+      component: () => import('../pages/TicketByNumberRedirect.vue'),
+      meta: { auth: true },
+    },
     {
       path: '/analytics',
       name: 'analytics',

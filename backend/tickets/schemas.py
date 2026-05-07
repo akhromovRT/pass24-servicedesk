@@ -82,6 +82,7 @@ class GuestTicketResponse(BaseModel):
     """Ответ на создание гостевого тикета."""
 
     ticket_id: str
+    ticket_number: Optional[int] = None  # короткий номер для UI (1, 2, 3, ...)
     title: str
     status: str = "new"
     auth_required: bool = False  # True если email уже зарегистрирован с паролем
@@ -133,6 +134,9 @@ class TicketRead(BaseModel):
     """Полная схема чтения тикета."""
 
     id: str
+    # Короткий пользовательский номер тикета (1, 2, 3, ...). UUID `id` — стабильный
+    # внутренний ключ; `number` — для UI и email-тегов [PASS24-{number}].
+    number: Optional[int] = None
     creator_id: str
     assignee_id: Optional[str] = None
     title: str

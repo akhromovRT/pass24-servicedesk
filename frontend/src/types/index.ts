@@ -32,6 +32,9 @@ export type AssignmentGroup = 'l1_support' | 'l2_engineers' | 'l3_development' |
 
 export interface Ticket {
   id: string
+  // Короткий пользовательский номер (1, 2, 3, ...). Может отсутствовать на
+  // legacy-ответах от API, поэтому делаем optional для безопасной типизации.
+  number?: number | null
   creator_id: string
   assignee_id: string | null
   assignment_group: string | null

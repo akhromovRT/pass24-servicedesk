@@ -9,6 +9,71 @@
 
 ## Записи
 
+### 2026-05-07 — feat(tickets): короткий пользовательский номер #N для UI и email
+
+**Что сделано:**
+- БД: миграция `029_ticket_number.py` — добавлена колонка
+  `tickets.number BIGINT UNIQUE NOT NULL`. Бэкфилл существующих тикетов в порядке
+  `created_at, id` через `ROW_NUMBER()`. Sequence `tickets_number_seq` (старт =
+  `MAX(number)+1`) заведена как DEFAULT, чтобы новые INSERT получали следующий
+  номер атомарно (без race condition вида `MAX(...)+1`). UUID `id` остаётся
+  стабильным внутренним ключом — не меняется.
+- Backend:
+  - `Ticket.number: Optional[int]` (`backend/tickets/models.py`) с привязкой к
+    sequence через SQLAlchemy `Column`.
+  - `TicketRead.number`, `GuestTicketResponse.ticket_number` в схемах.
+  - Email-теги: новый формат `[PASS24-{number}]`, fallback на старый
+    `[PASS24-{uuid_prefix}]`. Парсер inbound поддерживает оба (числовой
+    `TICKET_TAG_NUMBER_RE` пробуется первым, legacy `TICKET_TAG_RE` — fallback,
+    то же для тела письма). Старые цепочки писем продолжают матчиться.
+  - `notify_ticket_created/_status_changed/_comment` принимают опциональный
+    `ticket_number`, пробрасывается в `ticket_subject_tag`.
+  - Новый endpoint `GET /tickets/by-number/{n}` — поиск тикета по номеру,
+    делегирует обычному `get_ticket(uuid)`. Зарегистрирован ДО `/{ticket_id}`,
+    чтобы не конфликтовать.
+  - Telegram-бот (`compat.py`, `tickets_list.py`): пользовательский показ
+    через `#{number}`, `callback_data` остаётся на UUID-prefix как стабильный
+    ключ.
+  - Merge: описание событий теперь `#{number}`.
+- Frontend:
+  - `Ticket.number?: number | null` в типах.
+  - `TicketsPage`, `TicketDetailPage`, `TicketParentChild`: показ
+    `ticket.number ?? id.slice(0,8)` (graceful fallback).
+  - `CreateTicketPage`, `ChatWidgetPage`, `AiChat`: показ номера в подтверждении
+    создания тикета.
+  - Новая страница `TicketByNumberRedirect.vue` + маршрут
+    `/tickets/n/{number}` → SPA резолвит UUID через `/tickets/by-number/{n}` и
+    делает `replace`. URL `/tickets/{uuid}` остаётся каноническим, чтобы не
+    ломать ссылки в живой email-переписке.
+- Тесты: класс `TestTicketNumber` (5 тестов) — `number` в API ответе,
+  by-number lookup, 404, `ticket_subject_tag` с number/без, regex для
+  legacy/числовых тегов в теме и теле.
+
+**Backward-compat:**
+- Email-теги: оставлены навсегда (старые цепочки матчатся). Inbound пробует
+  числовой regex, потом UUID-prefix.
+- URL фронта `/tickets/{uuid}` — канонический. Короткие `/tickets/n/{n}` — для
+  удобной коммуникации (чат, переписка, голос).
+- Bitrix-sync и интеграции — UUID не меняется, sync-ключи стабильны.
+
+**Почему:**
+- Запрос пользователя: уйти от `#17274D50` (UUID-prefix) к простой
+  последовательной нумерации (1, 2, 3, ...) для удобства коммуникации с
+  клиентами.
+
+**Обновления:**
+- [x] Frontend: vue-tsc, vite build, vitest 17/17 — зелёные.
+- [x] Backend: 44/44 unit-тестов прошли (включая 5 новых для number);
+      pre-existing 2 failures на Python 3.14 не связаны.
+- [ ] **На проде требуется применить миграцию 029** перед перезапуском
+      приложения (`alembic upgrade head`), иначе INSERT в `tickets` упадёт
+      на NOT NULL `number`. Бэкфилл существующих тикетов выполнится
+      автоматически в апгрейде.
+
+**Ветка/мерж:** `dev-loginov` → `main`.
+
+---
+
 ### 2026-05-07 — feat(tickets): reopen из CLOSED + полный список статусов в дропдауне
 
 **Что сделано:**

@@ -273,7 +273,7 @@ async function onSubmit() {
   // Всегда через guest endpoint если не авторизован
   if (!isAuthenticated()) {
     try {
-      const resp = await api.post<{ ticket_id: string }>('/tickets/guest', {
+      const resp = await api.post<{ ticket_id: string; ticket_number?: number | null }>('/tickets/guest', {
         email: email.value.trim(),
         name: contactName.value.trim() || undefined,
         title: title.value.trim(),
@@ -287,7 +287,9 @@ async function onSubmit() {
         source_article_slug: fromArticleSlug.value || undefined,
       } as any)
       ticketCreated.value = true
-      createdTicketId.value = resp.ticket_id.slice(0, 8)
+      createdTicketId.value = resp.ticket_number != null
+        ? `#${resp.ticket_number}`
+        : resp.ticket_id.slice(0, 8)
       toast.add({ severity: 'success', summary: 'Заявка создана', detail: `Обновления на ${email.value}`, life: 5000 })
     } catch (e: any) {
       toast.add({ severity: 'error', summary: 'Ошибка', detail: e.message || 'Не удалось создать', life: 4000 })

@@ -248,6 +248,7 @@ async def create_guest_ticket(
         contact_phone=ticket.contact_phone or "",
         sla_response_hours=ticket.sla_response_hours or 4,
         sla_resolve_hours=ticket.sla_resolve_hours or 24,
+        ticket_number=ticket.number,
     )
 
     # Если новый пользователь — приветственное письмо
@@ -277,6 +278,7 @@ async def create_guest_ticket(
 
     return GuestTicketResponse(
         ticket_id=ticket.id,
+        ticket_number=ticket.number,
         title=ticket.title,
         status="new",
         auth_required=False,
@@ -406,6 +408,7 @@ async def create_ticket(
         contact_phone=ticket.contact_phone or "",
         sla_response_hours=ticket.sla_response_hours or 4,
         sla_resolve_hours=ticket.sla_resolve_hours or 24,
+        ticket_number=ticket.number,
     )
 
     # Загрузка связей для ответа
@@ -880,6 +883,29 @@ async def suggest_objects(
     ]
 
 
+@router.get("/by-number/{number}", response_model=TicketRead)
+async def get_ticket_by_number(
+    number: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> TicketRead:
+    """Найти тикет по короткому номеру → отдать как обычный get_ticket.
+
+    Используется для редиректа из URL `/tickets/n/{number}` в SPA и для
+    интеграций, которые знают только номер.
+    """
+    result = await session.execute(
+        select(Ticket.id).where(Ticket.number == number)
+    )
+    ticket_id = result.scalar_one_or_none()
+    if not ticket_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Тикет не найден",
+        )
+    return await get_ticket(ticket_id=ticket_id, session=session, current_user=current_user)
+
+
 @router.get("/{ticket_id}", response_model=TicketRead)
 async def get_ticket(
     ticket_id: str,
@@ -979,6 +1005,7 @@ async def update_ticket_status(
                 old_status=old_status,
                 new_status=new_status_val,
                 actor_name=current_user.full_name or current_user.email,
+                ticket_number=ticket.number,
             )
 
     # WS real-time: уведомить всех подключённых о смене статуса
@@ -1141,6 +1168,7 @@ async def add_comment(
                     comment_text=payload.text,
                     author_name=current_user.full_name or current_user.email,
                     attachments=attachments_payload,
+                    ticket_number=ticket.number,
                 )
 
     # WS real-time: уведомить о новом комментарии
@@ -1792,16 +1820,18 @@ async def merge_ticket(
     session.add(source)
 
     # Событие в target
+    source_label = source.number if source.number is not None else source.id[:8]
+    target_label = target.number if target.number is not None else target.id[:8]
     merge_event = TicketEvent(
         ticket_id=target.id,
         actor_id=str(current_user.id),
-        description=f"В тикет слит дубликат #{source.id[:8]} ({source.title})",
+        description=f"В тикет слит дубликат #{source_label} ({source.title})",
     )
     session.add(merge_event)
     close_event = TicketEvent(
         ticket_id=source.id,
         actor_id=str(current_user.id),
-        description=f"Слит в #{target.id[:8]}",
+        description=f"Слит в #{target_label}",
     )
     session.add(close_event)
 
