@@ -33,6 +33,10 @@
 - `agent_docs/guides/telegram-bot-api-self-hosted.md` — **runbook** для self-hosted `telegram-bot-api` на Hetzner CX23 (`178.104.228.43`): операции, мониторинг, rollback, rotation. См. ADR-015.
 - `agent_docs/guides/archiving-and-temp.md` — архивация и временные файлы.
 
+## Отчёты и метрики
+- `backend/scripts/report_apr_may_2026.sql` — **воспроизводимый SQL-отчёт по тикетам** (15 секций: объём, SLA, сроки, темы, агенты, CSAT). Read-only; для нового периода менять даты в CTE `period`. Прод: `ssh root@5.42.101.27 'docker exec -i pass24-postgres psql -U pass24 -d pass24_servicedesk'`.
+- `docs/management-report-apr-may-2026.md` — управленческий отчёт за апрель + 1–15 мая 2026 (для отчётной презентации).
+
 ## Шаблоны
 - `agent_docs/templates/architecture.md`
 - `agent_docs/templates/adr.md`
